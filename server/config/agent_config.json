@@ -1,0 +1,68 @@
+{
+  "version": "1.0",
+  "description": "八大智能体模型配置 - 修改后服务自动热更新",
+  "A1": {
+    "agent_name": "谋策阁",
+    "model_group": "advisor",
+    "model_name": "",
+    "temperature": 0.7,
+    "max_tokens": 4096,
+    "enabled": true
+  },
+  "A2": {
+    "agent_name": "群雄殿",
+    "model_group": "advisor",
+    "model_name": "",
+    "temperature": 0.7,
+    "max_tokens": 4096,
+    "enabled": true
+  },
+  "A3": {
+    "agent_name": "律法堂",
+    "model_group": "advisor",
+    "model_name": "",
+    "temperature": 0.6,
+    "max_tokens": 4096,
+    "enabled": true
+  },
+  "A4": {
+    "agent_name": "谍报司",
+    "model_group": "enemy",
+    "model_name": "",
+    "temperature": 0.8,
+    "max_tokens": 1024,
+    "enabled": true
+  },
+  "A5": {
+    "agent_name": "司天台",
+    "model_group": "enemy",
+    "model_name": "",
+    "temperature": 0.7,
+    "max_tokens": 1024,
+    "enabled": true
+  },
+  "A6": {
+    "agent_name": "外交署",
+    "model_group": "law",
+    "model_name": "",
+    "temperature": 0.6,
+    "max_tokens": 4096,
+    "enabled": true
+  },
+  "A7": {
+    "agent_name": "宗室府",
+    "model_group": "advisor",
+    "model_name": "",
+    "temperature": 0.6,
+    "max_tokens": 1024,
+    "enabled": true
+  },
+  "A8": {
+    "agent_name": "国史馆",
+    "model_group": "law",
+    "model_name": "",
+    "temperature": 0.5,
+    "max_tokens": 8192,
+    "enabled": true
+  }
+}

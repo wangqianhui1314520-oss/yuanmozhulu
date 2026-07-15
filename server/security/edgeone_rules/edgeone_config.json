@@ -1,0 +1,68 @@
+{
+  "version": "1.0",
+  "server_port": 8800,
+  "edgeone": {
+    "zone_id": "ZONE_PLACEHOLDER",
+    "security_template_id": "TEMPLATE_PLACEHOLDER",
+    "security_headers": {
+      "enabled": true,
+      "csp_mode": "strict",
+      "hsts_enabled": true,
+      "hsts_max_age": 31536000,
+      "hsts_include_subdomains": true,
+      "x_content_type_options": "nosniff",
+      "x_frame_options": "DENY",
+      "x_xss_protection": "1; mode=block",
+      "referrer_policy": "strict-origin-when-cross-origin"
+    },
+    "waf": {
+      "enabled": true,
+      "mode": "prevent",
+      "paranoia_level": 2,
+      "rules": {
+        "sql_injection": "deny",
+        "xss": "deny",
+        "command_injection": "deny",
+        "path_traversal": "deny",
+        "file_upload": {
+          "enabled": true,
+          "max_size_mb": 10,
+          "allowed_types": ["json", "csv", "txt"]
+        }
+      }
+    },
+    "ddos_protection": {
+      "enabled": true,
+      "mode": "adaptive",
+      "syn_flood_threshold_pps": 100000,
+      "ack_flood_threshold_pps": 150000,
+      "http_flood_threshold_rps": 5000,
+      "connection_limit": 10000
+    },
+    "bot_management": {
+      "enabled": true,
+      "known_bot_action": "allow",
+      "unknown_bot_action": "challenge",
+      "bot_detection_level": "aggressive"
+    },
+    "rate_limiting": {
+      "enabled": true,
+      "global": "60r/m",
+      "ai_endpoints": "10r/m",
+      "game_commands": "30r/m",
+      "burst_multiplier": 2.0
+    },
+    "origin_protection": {
+      "enabled": true,
+      "origin_pull_protocol": "https",
+      "origin_health_check": {
+        "enabled": true,
+        "path": "/api/health",
+        "interval_seconds": 30,
+        "timeout_seconds": 5,
+        "healthy_threshold": 3,
+        "unhealthy_threshold": 2
+      }
+    }
+  }
+}

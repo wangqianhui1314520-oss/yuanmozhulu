@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>元末逐鹿 · 九大势力关系网络</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: #0a0a0a;
+    color: #d4c5a9;
+    font-family: "SimSun","Noto Serif SC",serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+  canvas { display: block; }
+  .title {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 28px;
+    letter-spacing: 6px;
+    color: #c9a96e;
+    text-shadow: 0 0 20px rgba(201,169,110,0.3);
+    z-index: 10;
+    pointer-events: none;
+  }
+  .subtitle {
+    position: fixed;
+    top: 58px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 14px;
+    color: #887755;
+    letter-spacing: 3px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .legend {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 30px;
+    font-size: 13px;
+    color: #887766;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .legend .dot { display:inline-block; width:10px; height:10px; border-radius:50%; }
+  .legend .dot.enemy { background:#c0392b; box-shadow:0 0 8px #c0392b; }
+  .legend .dot.tension { background:#d35400; box-shadow:0 0 8px #d35400; }
+  .legend .dot.friendly { background:#27ae60; box-shadow:0 0 8px #27ae60; }
+  .tooltip {
+    position: fixed;
+    background: rgba(10,8,5,0.95);
+    border: 1px solid #c9a96e;
+    padding: 12px 16px;
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 100;
+    font-size: 13px;
+    line-height: 1.6;
+    max-width: 280px;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .tooltip .name { font-size: 16px; color: #c9a96e; margin-bottom: 4px; }
+  .tooltip .tag { display:inline-block; background:rgba(201,169,110,0.15); padding:2px 6px; border-radius:2px; margin:2px; font-size:11px; }
+</style>
+</head>
+<body>
+<div class="title">元末逐鹿 · 势力关系图</div>
+<div class="subtitle">至正十一年 · 九大势力战略格局</div>
+<div class="legend">
+  <span><i class="dot enemy"></i>死敌</span>
+  <span><i class="dot tension"></i>紧张</span>
+  <span><i class="dot friendly"></i>友善</span>
+</div>
+<div class="tooltip" id="tooltip"></div>
+<canvas id="canvas"></canvas>
+
+<script>
+const factions = [
+  { id:'faction_yuan', name:'元廷', full:'元顺帝（大元朝廷）', color:'#8B0000', x:520, y:110, troops:'6,000', treasury:'20,000', tags:['蒙古铁骑','正统名分','勋贵侵蚀'], diff:'地狱', cap:'大都' },
+  { id:'faction_wangbaobao', name:'王保保', full:'扩廓帖木儿（河南王）', color:'#666699', x:350, y:180, troops:'4,000', treasury:'8,000', tags:['忠勇无双','骑兵统帅','元廷柱石'], diff:'中等', cap:'太原' },
+  { id:'faction_mobei', name:'漠北诸部', full:'蒙古草原部落联盟', color:'#887766', x:720, y:60, troops:'4,500', treasury:'5,000', tags:['游牧骑射','劫掠为生','草原雄风'], diff:'困难', cap:'和林' },
+  { id:'faction_zhuyuanzhang', name:'朱元璋', full:'朱元璋（西吴）', color:'#DC143C', x:620, y:380, troops:'3,000', treasury:'8,000', tags:['深谋远虑','严刑峻法','知人善任'], diff:'普通', cap:'应天' },
+  { id:'faction_chenyouliang', name:'陈友谅', full:'陈友谅（陈汉）', color:'#1E90FF', x:430, y:340, troops:'5,000', treasury:'12,000', tags:['野心勃勃','猜忌多疑','水战精通'], diff:'困难', cap:'武昌' },
+  { id:'faction_zhangshicheng', name:'张士诚', full:'张士诚（大周）', color:'#FF8C00', x:720, y:310, troops:'3,500', treasury:'15,000', tags:['偏安一隅','富甲一方','优柔寡断'], diff:'简单', cap:'平江' },
+  { id:'faction_xushouhui', name:'徐寿辉', full:'徐寿辉（天完）', color:'#996633', x:300, y:310, troops:'3,500', treasury:'6,000', tags:['弥勒信徒','红巾领袖','仁厚之主'], diff:'困难', cap:'襄阳' },
+  { id:'faction_fangguozhen', name:'方国珍', full:'方国珍（浙东节度）', color:'#20B2AA', x:820, y:420, troops:'2,000', treasury:'6,000', tags:['海上枭雄','投机善变','重利轻义'], diff:'中等', cap:'庆元' },
+  { id:'faction_mingyuzhen', name:'明玉珍', full:'明玉珍（大夏）', color:'#B8860B', x:180, y:430, troops:'3,000', treasury:'6,500', tags:['仁厚之主','蜀道自守','偏安一隅'], diff:'简单', cap:'重庆' },
+];
+
+const relations = [
+  {from:'faction_yuan', to:'faction_zhuyuanzhang', label:'讨逆', val:-30},
+  {from:'faction_yuan', to:'faction_xushouhui', label:'红巾叛军', val:-30},
+  {from:'faction_zhuyuanzhang', to:'faction_chenyouliang', label:'天下之争', val:-25},
+  {from:'faction_chenyouliang', to:'faction_zhuyuanzhang', label:'鄱阳湖', val:-25},
+  {from:'faction_zhuyuanzhang', to:'faction_zhangshicheng', label:'江南争霸', val:-15},
+  {from:'faction_zhangshicheng', to:'faction_zhuyuanzhang', label:'争雄', val:-10},
+  {from:'faction_wangbaobao', to:'faction_xushouhui', label:'红巾讨伐', val:-20},
+  {from:'faction_xushouhui', to:'faction_yuan', label:'反元复宋', val:-30},
+  {from:'faction_chenyouliang', to:'faction_xushouhui', label:'弑主之仇', val:-15},
+  {from:'faction_mingyuzhen', to:'faction_zhuyuanzhang', label:'同出红巾', val:5},
+  {from:'faction_fangguozhen', to:'faction_zhangshicheng', label:'海陆之争', val:-5},
+  {from:'faction_mobei', to:'faction_yuan', label:'草原霸权', val:-10},
+  {from:'faction_mobei', to:'faction_wangbaobao', label:'草原控制权', val:-15},
+];
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+let w, h, particles=[], hoveredNode=null, mouse={x:0,y:0}, time=0;
+
+function resize(){
+  w = canvas.width = window.innerWidth;
+  h = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Particle system for background
+for(let i=0;i<60;i++) particles.push({x:Math.random()*w,y:Math.random()*h,r:Math.random()*1.5+0.5,vx:(Math.random()-0.5)*0.3,vy:(Math.random()-0.5)*0.3,alpha:Math.random()*0.4+0.1});
+
+function getPos(f){
+  return { x:f.x*w/1000, y:f.y*h/600 };
+}
+function getFactionById(id){ return factions.find(f=>f.id===id); }
+
+canvas.addEventListener('mousemove', e=>{
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  hoveredNode = null;
+  for(let f of factions){
+    let p = getPos(f);
+    if(Math.hypot(mouse.x-p.x, mouse.y-p.y) < 40){
+      hoveredNode = f;
+      break;
+    }
+  }
+  tooltip.style.opacity = hoveredNode ? '1' : '0';
+  if(hoveredNode){
+    tooltip.style.left = (mouse.x+20)+'px';
+    tooltip.style.top = (mouse.y-20)+'px';
+    tooltip.innerHTML = `
+      <div class="name" style="color:${hoveredNode.color}">${hoveredNode.name} <small>${hoveredNode.title||''}</small></div>
+      <div style="font-size:11px;color:#998877;margin-bottom:6px">${hoveredNode.full} · 都城:${hoveredNode.cap}</div>
+      <div style="margin-bottom:4px;"><span style="color:#c9a96e">兵:</span>${hoveredNode.troops} <span style="color:#c9a96e;margin-left:8px">库:</span>${hoveredNode.treasury}两</div>
+      <div>${hoveredNode.tags.map(t=>'<span class="tag">'+t+'</span>').join('')}</div>
+      <div style="font-size:11px;color:#887766;margin-top:4px">难度:<span style="color:${hoveredNode.diff==='地狱'?'#c0392b':hoveredNode.diff==='困难'?'#e67e22':hoveredNode.diff==='普通'?'#f1c40f':'#27ae60'}">${hoveredNode.diff}</span></div>`;
+  }
+});
+
+function draw(){
+  ctx.clearRect(0,0,w,h);
+
+  // Background glow
+  let grad = ctx.createRadialGradient(w/2,h/2,0,w/2,h/2,w*0.7);
+  grad.addColorStop(0,'rgba(201,169,110,0.04)');
+  grad.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=grad;
+  ctx.fillRect(0,0,w,h);
+
+  // Particles
+  time+=0.005;
+  for(let p of particles){
+    p.x+=p.vx;
+    p.y+=p.vy;
+    if(p.x<0||p.x>w)p.vx*=-1;
+    if(p.y<0||p.y>h)p.vy*=-1;
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+    ctx.fillStyle=`rgba(201,169,110,${p.alpha})`;
+    ctx.fill();
+  }
+
+  // Draw relations
+  for(let rel of relations){
+    let from = getPos(getFactionById(rel.from));
+    let to = getPos(getFactionById(rel.to));
+    let alpha = 0.4;
+    let color = rel.val <= -25 ? '#c0392b' : rel.val <= -10 ? '#d35400' : '#27ae60';
+    let width = Math.abs(rel.val)/25 * 2;
+
+    // Dash for tension lines
+    if(rel.val > -25 && rel.val < 0){
+      ctx.setLineDash([6,4]);
+    } else { ctx.setLineDash([]); }
+
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.globalAlpha = alpha;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([]);
+
+    // Label at midpoint
+    let mx = (from.x+to.x)/2, my = (from.y+to.y)/2;
+    ctx.font = '10px "SimSun",serif';
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.7;
+    ctx.textAlign = 'center';
+    ctx.fillText(`${rel.label||''} ${rel.val}`, mx, my-4);
+    ctx.globalAlpha = 1;
+  }
+
+  // Draw faction nodes
+  for(let f of factions){
+    let p = getPos(f);
+    let isHovered = hoveredNode === f;
+
+    // Outer glow
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, isHovered?48:38, 0, Math.PI*2);
+    ctx.fillStyle = f.color+'20';
+    ctx.fill();
+
+    // Ring
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, isHovered?38:30, 0, Math.PI*2);
+    ctx.strokeStyle = f.color;
+    ctx.lineWidth = isHovered?3:2;
+    ctx.shadowColor = f.color;
+    ctx.shadowBlur = isHovered?20:8;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Fill circle
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, isHovered?32:25, 0, Math.PI*2);
+    let fgrad = ctx.createRadialGradient(p.x-5, p.y-5, 2, p.x, p.y, isHovered?32:25);
+    fgrad.addColorStop(0, f.color);
+    fgrad.addColorStop(1, '#0a0a0a');
+    ctx.fillStyle = fgrad;
+    ctx.fill();
+
+    // Name
+    ctx.font = `${isHovered?'16px':'14px'} "SimSun","Noto Serif SC",serif`;
+    ctx.fillStyle = '#d4c5a9';
+    ctx.textAlign = 'center';
+    ctx.fillText(f.name, p.x, p.y+52);
+  }
+
+  // Draw region boundaries (subtle arcs)
+  ctx.strokeStyle = 'rgba(201,169,110,0.1)';
+  ctx.lineWidth = 0.5;
+
+  // North region: 元廷-王保保-漠北
+  ctx.beginPath();
+  let yuan = getPos(getFactionById('faction_yuan'));
+  let wbb = getPos(getFactionById('faction_wangbaobao'));
+  let mobei = getPos(getFactionById('faction_mobei'));
+  ctx.moveTo(yuan.x,yuan.y);
+  ctx.quadraticCurveTo((yuan.x+mobei.x)/2, yuan.y-40, mobei.x, mobei.y);
+  ctx.strokeStyle='rgba(139,0,0,0.12)';
+  ctx.stroke();
+
+  // Label regions
+  ctx.font = '12px "SimSun",serif';
+  ctx.fillStyle = 'rgba(136,119,102,0.5)';
+  ctx.textAlign = 'center';
+  ctx.fillText('北方蒙古三角', (yuan.x+wbb.x+mobei.x)/3, yuan.y-30);
+  ctx.fillText('中部红巾三角', 500, 280);
+  ctx.fillText('外围偏安三角', 560, 460);
+
+  requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+</body>
+</html>

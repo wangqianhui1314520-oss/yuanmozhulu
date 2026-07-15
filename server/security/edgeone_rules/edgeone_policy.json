@@ -1,0 +1,315 @@
+{
+  "security_headers": {
+    "csp": {
+      "enabled": true,
+      "mode": "strict",
+      "directives": {
+        "default-src": [
+          "'self'"
+        ],
+        "script-src": [
+          "'self'",
+          "'unsafe-inline'",
+          "'unsafe-eval'",
+          "blob:"
+        ],
+        "style-src": [
+          "'self'",
+          "'unsafe-inline'",
+          "https://fonts.googleapis.com"
+        ],
+        "img-src": [
+          "'self'",
+          "data:",
+          "blob:",
+          "https:"
+        ],
+        "font-src": [
+          "'self'",
+          "https://fonts.gstatic.com",
+          "data:"
+        ],
+        "connect-src": [
+          "'self'",
+          "ws:",
+          "wss:",
+          "https:"
+        ],
+        "media-src": [
+          "'self'",
+          "blob:"
+        ],
+        "worker-src": [
+          "'self'",
+          "blob:"
+        ],
+        "frame-ancestors": [
+          "'none'"
+        ],
+        "form-action": [
+          "'self'"
+        ],
+        "base-uri": [
+          "'self'"
+        ]
+      }
+    },
+    "hsts": {
+      "enabled": true,
+      "max_age": 31536000,
+      "include_subdomains": true,
+      "preload": true
+    },
+    "x_content_type_options": "nosniff",
+    "x_frame_options": "DENY",
+    "x_xss_protection": "1; mode=block",
+    "referrer_policy": "strict-origin-when-cross-origin",
+    "permissions_policy": "camera=(), microphone=(), geolocation=(), interest-cohort=(), autoplay=*",
+    "cache_control": {
+      "api": "no-store, no-cache, must-revalidate",
+      "static": "public, max-age=86400"
+    }
+  },
+  "waf_rules": {
+    "version": "1.0",
+    "rules": [
+      {
+        "id": "waf-001",
+        "name": "SQL Injection Protection",
+        "description": "拦截SQL注入尝试",
+        "action": "deny",
+        "conditions": [
+          {
+            "target": "query_string",
+            "operator": "contains",
+            "values": [
+              "union select",
+              "drop table",
+              "drop database",
+              "insert into",
+              "delete from",
+              "1=1",
+              "' or ",
+              "--",
+              "/*",
+              "*/"
+            ]
+          },
+          {
+            "target": "request_body",
+            "operator": "regex",
+            "values": [
+              "(?i)(\\bunion\\b.*\\bselect\\b)",
+              "(?i)(\\bdrop\\b\\s+\\btable\\b)",
+              "(?i)(';\\s*(drop|delete|update|insert))"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "waf-002",
+        "name": "XSS Protection",
+        "description": "拦截跨站脚本攻击",
+        "action": "deny",
+        "conditions": [
+          {
+            "target": "request_body",
+            "operator": "regex",
+            "values": [
+              "(?i)<\\s*script",
+              "(?i)javascript\\s*:",
+              "(?i)on\\w+\\s*=",
+              "(?i)<iframe",
+              "(?i)eval\\s*\\("
+            ]
+          }
+        ]
+      },
+      {
+        "id": "waf-003",
+        "name": "Command Injection Protection",
+        "description": "拦截命令注入尝试",
+        "action": "deny",
+        "conditions": [
+          {
+            "target": "request_body",
+            "operator": "regex",
+            "values": [
+              "[;&|`$]",
+              "\\.\\.\\/",
+              "\\bcat\\b\\s+/",
+              "\\brm\\b\\s+-rf"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "waf-004",
+        "name": "Prompt Injection Protection",
+        "description": "拦截LLM提示注入攻击",
+        "action": "deny",
+        "conditions": [
+          {
+            "target": "request_body",
+            "operator": "regex",
+            "values": [
+              "(?i)ignore\\s+(all\\s+)?(previous|above|prior)\\s+(instruction|prompt)",
+              "(?i)you\\s+are\\s+(now|no\\s+longer)\\s+(an?\\s+)?(AI|assistant|bot)",
+              "(?i)jailbreak",
+              "(?i)developer\\s*mode",
+              "忽略(你|前|上面|之前)的",
+              "你(现在|不再|不再是)一个"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "waf-005",
+        "name": "Request Size Limit",
+        "description": "请求体大小限制",
+        "action": "deny",
+        "conditions": [
+          {
+            "target": "content_length",
+            "operator": "greater_than",
+            "value": "10485760"
+          }
+        ]
+      },
+      {
+        "id": "waf-006",
+        "name": "Path Traversal Protection",
+        "description": "拦截路径遍历攻击",
+        "action": "deny",
+        "conditions": [
+          {
+            "target": "uri",
+            "operator": "contains",
+            "values": [
+              "../",
+              "..\\",
+              "%2e%2e",
+              "%00"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "waf-007",
+        "name": "Game API Abuse Protection",
+        "description": "游戏API滥用防护",
+        "action": "challenge",
+        "conditions": [
+          {
+            "target": "uri",
+            "operator": "contains",
+            "values": [
+              "/api/game/command",
+              "/api/edict/"
+            ]
+          },
+          {
+            "target": "request_rate",
+            "operator": "greater_than",
+            "value": "30"
+          }
+        ]
+      },
+      {
+        "id": "waf-008",
+        "name": "AI Endpoint Protection",
+        "description": "AI接口保护",
+        "action": "challenge",
+        "conditions": [
+          {
+            "target": "uri",
+            "operator": "contains",
+            "values": [
+              "/api/edict/execute",
+              "/api/faction/ai-decision"
+            ]
+          },
+          {
+            "target": "request_rate",
+            "operator": "greater_than",
+            "value": "5"
+          }
+        ]
+      }
+    ]
+  },
+  "ddos_protection": {
+    "enabled": true,
+    "mode": "adaptive",
+    "thresholds": {
+      "syn_flood": {
+        "pps": 100000,
+        "action": "challenge"
+      },
+      "ack_flood": {
+        "pps": 150000,
+        "action": "challenge"
+      },
+      "udp_flood": {
+        "pps": 200000,
+        "action": "drop"
+      },
+      "icmp_flood": {
+        "pps": 50000,
+        "action": "drop"
+      },
+      "http_flood": {
+        "rps": 5000,
+        "action": "challenge"
+      },
+      "connection_flood": {
+        "connections": 10000,
+        "action": "drop"
+      }
+    },
+    "bypass_ips": []
+  },
+  "bot_management": {
+    "enabled": true,
+    "known_bots": {
+      "search_engines": "allow",
+      "social_media": "allow"
+    },
+    "unknown_bots": {
+      "action": "challenge",
+      "js_challenge": true
+    },
+    "bot_detection": {
+      "behavior_analysis": true,
+      "fingerprinting": true,
+      "reputation_check": true
+    },
+    "custom_rules": [
+      {
+        "name": "Game State Scraping Protection",
+        "condition": "high_request_rate AND known_scraper_ua",
+        "action": "deny"
+      },
+      {
+        "name": "API Abuse Bot Pattern",
+        "condition": "repetitive_api_calls AND no_user_interaction",
+        "action": "challenge"
+      }
+    ]
+  },
+  "game_specific": {
+    "rate_limits": {
+      "global": "60 req/min per IP",
+      "ai_endpoints": "10 req/min per IP",
+      "game_commands": "30 req/min per IP",
+      "edict_execute": "5 req/min per IP"
+    },
+    "content_rules": {
+      "max_edict_length": 3000,
+      "max_command_size": 10000,
+      "allowed_file_types": [
+        "json"
+      ]
+    }
+  }
+}

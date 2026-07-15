@@ -1,0 +1,578 @@
+{
+  "results": [
+    {
+      "step": "0.1",
+      "level": "INFO",
+      "msg": "健康检查..."
+    },
+    {
+      "step": "0.1",
+      "level": "INFO",
+      "msg": "版本=3.0.0, AI=可用, 回合=0, 势力数=9"
+    },
+    {
+      "step": "1.1",
+      "level": "INFO",
+      "msg": "获取势力配置..."
+    },
+    {
+      "step": "1.1",
+      "level": "INFO",
+      "msg": "势力数: 9"
+    },
+    {
+      "step": "1.1",
+      "level": "INFO",
+      "msg": "  元廷 (faction_yuan) 难度=地狱 兵力=6000"
+    },
+    {
+      "step": "1.1",
+      "level": "INFO",
+      "msg": "  朱元璋 (faction_zhuyuanzhang) 难度=普通 兵力=3000"
+    },
+    {
+      "step": "1.1",
+      "level": "INFO",
+      "msg": "  陈友谅 (faction_chenyouliang) 难度=困难 兵力=5000"
+    },
+    {
+      "step": "1.1",
+      "level": "INFO",
+      "msg": "  张士诚 (faction_zhangshicheng) 难度=简单 兵力=3500"
+    },
+    {
+      "step": "1.1",
+      "level": "INFO",
+      "msg": "  方国珍 (faction_fangguozhen) 难度=中等 兵力=2000"
+    },
+    {
+      "step": "1.1",
+      "level": "INFO",
+      "msg": "  徐寿辉 (faction_xushouhui) 难度=困难 兵力=3500"
+    },
+    {
+      "step": "1.1",
+      "level": "INFO",
+      "msg": "  明玉珍 (faction_mingyuzhen) 难度=简单 兵力=3000"
+    },
+    {
+      "step": "1.1",
+      "level": "INFO",
+      "msg": "  王保保 (faction_wangbaobao) 难度=中等 兵力=4000"
+    },
+    {
+      "step": "1.1",
+      "level": "INFO",
+      "msg": "  漠北诸部 (faction_mobei) 难度=困难 兵力=4500"
+    },
+    {
+      "step": "2.1",
+      "level": "INFO",
+      "msg": "初始化游戏（朱元璋·君主亲政）..."
+    },
+    {
+      "step": "2.1",
+      "level": "ERROR",
+      "msg": "初始化失败: 业务code=400: 无效的游戏模式: ruler，仅支持 player_turn / ai_watch"
+    },
+    {
+      "step": "2.1b",
+      "level": "INFO",
+      "msg": "尝试 restart..."
+    },
+    {
+      "step": "2.1b",
+      "level": "INFO",
+      "msg": "restart 成功"
+    },
+    {
+      "step": "3.1",
+      "level": "INFO",
+      "msg": "获取游戏状态..."
+    },
+    {
+      "step": "3.1",
+      "level": "WARN",
+      "msg": "【问题】player_faction 字段为空"
+    },
+    {
+      "step": "3.1",
+      "level": "INFO",
+      "msg": "当前回合: ?"
+    },
+    {
+      "step": "3.1",
+      "level": "INFO",
+      "msg": "控制地块数: 0"
+    },
+    {
+      "step": "4.1",
+      "level": "WARN",
+      "msg": "【问题】征兵(recruit) 失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "4.1",
+      "level": "INFO",
+      "msg": "  响应: {\"code\": 403, \"msg\": \"请先开局\", \"data\": null}"
+    },
+    {
+      "step": "4.2",
+      "level": "WARN",
+      "msg": "【问题】开发农业(develop) 失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "4.2",
+      "level": "INFO",
+      "msg": "  响应: {\"code\": 403, \"msg\": \"请先开局\", \"data\": null}"
+    },
+    {
+      "step": "4.3",
+      "level": "WARN",
+      "msg": "【问题】训练(train) 失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "4.3",
+      "level": "INFO",
+      "msg": "  响应: {\"code\": 403, \"msg\": \"请先开局\", \"data\": null}"
+    },
+    {
+      "step": "4.4",
+      "level": "WARN",
+      "msg": "【问题】城防加固(fortify) 失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "4.4",
+      "level": "INFO",
+      "msg": "  响应: {\"code\": 403, \"msg\": \"请先开局\", \"data\": null}"
+    },
+    {
+      "step": "4.5",
+      "level": "WARN",
+      "msg": "【问题】侦查陈友谅(scout) 失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "4.5",
+      "level": "INFO",
+      "msg": "  响应: {\"code\": 403, \"msg\": \"请先开局\", \"data\": null}"
+    },
+    {
+      "step": "5.1",
+      "level": "INFO",
+      "msg": "NL解析: '从应天府调拨银两五百，征兵三千，加紧训练'..."
+    },
+    {
+      "step": "5.1",
+      "level": "WARN",
+      "msg": "【问题】NL解析失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "5.1",
+      "level": "INFO",
+      "msg": "  响应: {\"code\": 403, \"msg\": \"请先开局\", \"data\": null}"
+    },
+    {
+      "step": "6.1",
+      "level": "INFO",
+      "msg": "战略建议请求..."
+    },
+    {
+      "step": "6.1",
+      "level": "INFO",
+      "msg": "谋士建议: 【天下大势】\n至正十一年春，天下板荡，红巾蜂起，元室倾颓在即。主公初起濠梁，地无一垄，兵不满百，当务之急乃聚粮募兵，徐图立足之地。\n\n【军事方略】\n主公今无寸土，宜速赴濠州投郭子兴，借其势募兵五百，据守钟离。待秋收粮足，可西取定远，收编民兵三千，以为根基。孙子云“先为不可胜”，此时不可浪战。\n\n【内政要务】\n当务之急乃开垦荒田，建“屯田所”三座，每所储粮千石。另设“招贤馆”一处，广纳淮西豪杰，如徐达、汤和等辈。府库空虚，可暂借富户粮秣，许以日后免税。\n\n【外交谋略】\n元廷虽衰，然刘福通、徐寿辉等势大，主公宜遣使结好郭子兴，称其“叔父”，借其名号聚义。对元军则示弱，献降表以缓其兵。待根基稳固，再"
+    },
+    {
+      "step": "6.2",
+      "level": "INFO",
+      "msg": "谋士自由对话..."
+    },
+    {
+      "step": "6.2",
+      "level": "INFO",
+      "msg": "刘基回复: 【天下大势】元失其鹿，天下共逐之。主公初起濠梁，地狭兵寡，当以积蓄为本，不可轻动。\n\n【军事方略】今无邻敌之患，宜先募乡勇三千，屯于濠州城外，操练阵法。待秋粮熟时，可图定远、滁州二地，以为根基。孙子云“先为不可胜，以待敌之可胜”，此之谓也。\n\n【内政要务】当速建“屯田所”三座，开垦荒田，储粮万石；再设“招贤馆”一处，广纳淮西豪杰。粮足则兵强，贤聚则谋定，此立国之本。\n\n【外交谋略】元廷虽衰，然不可"
+    },
+    {
+      "step": "7.1",
+      "level": "INFO",
+      "msg": "推进回合..."
+    },
+    {
+      "step": "7.1",
+      "level": "WARN",
+      "msg": "【问题】回合推进失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "7.1",
+      "level": "INFO",
+      "msg": "  响应: {\"code\": 403, \"msg\": \"请先开局\", \"data\": null}"
+    },
+    {
+      "step": "8.0",
+      "level": "INFO",
+      "msg": "获取当前状态..."
+    },
+    {
+      "step": "8.0",
+      "level": "INFO",
+      "msg": "当前: 库银=? | 兵力=? | 战马=?"
+    },
+    {
+      "step": "8.1",
+      "level": "WARN",
+      "msg": "【问题】买马(buy_horses) 失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "8.2",
+      "level": "WARN",
+      "msg": "【问题】巡查(patrol) 失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "8.3",
+      "level": "WARN",
+      "msg": "【问题】练兵(train_troops) 失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "8.4",
+      "level": "INFO",
+      "msg": "外交 — 向张士诚通商..."
+    },
+    {
+      "step": "8.4",
+      "level": "INFO",
+      "msg": "通商 → 业务code=403: 请先开局 | 请先开局"
+    },
+    {
+      "step": "8.5",
+      "level": "INFO",
+      "msg": "外交 — 向明玉珍求盟..."
+    },
+    {
+      "step": "8.5",
+      "level": "INFO",
+      "msg": "同盟 → 业务code=403: 请先开局 | 请先开局"
+    },
+    {
+      "step": "8.6",
+      "level": "INFO",
+      "msg": "推进第2回合..."
+    },
+    {
+      "step": "8.6",
+      "level": "WARN",
+      "msg": "【问题】第2回合推进失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "9.1",
+      "level": "INFO",
+      "msg": "部署细作到陈友谅..."
+    },
+    {
+      "step": "9.1",
+      "level": "WARN",
+      "msg": "【问题】细作部署失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "9.2",
+      "level": "INFO",
+      "msg": "建造粮仓..."
+    },
+    {
+      "step": "9.2",
+      "level": "INFO",
+      "msg": "建造 → 业务code=403: 请先开局 | 请先开局"
+    },
+    {
+      "step": "9.3",
+      "level": "INFO",
+      "msg": "获取地图数据..."
+    },
+    {
+      "step": "9.3",
+      "level": "WARN",
+      "msg": "【问题】地图获取失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "9.4",
+      "level": "INFO",
+      "msg": "推进第3回合..."
+    },
+    {
+      "step": "9.4",
+      "level": "WARN",
+      "msg": "【问题】第3回合推进失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "10.1",
+      "level": "INFO",
+      "msg": "快速存档..."
+    },
+    {
+      "step": "10.1",
+      "level": "WARN",
+      "msg": "【问题】快速存档失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "10.2",
+      "level": "INFO",
+      "msg": "存档列表..."
+    },
+    {
+      "step": "10.2",
+      "level": "INFO",
+      "msg": "存档数: 3"
+    },
+    {
+      "step": "10.2",
+      "level": "INFO",
+      "msg": "  saves: [{\"filename\": \"save_slot0_round0.json\", \"slot\": 0, \"round\": 0, \"year\": 1351, \"month\": 4, \"season\": \"Season.SPRING\", \"faction\": \"faction_zhuyuanzhang\", \"faction_name\": \"朱元璋\", \"note\": \"\", \"saved_at\": \"2"
+    },
+    {
+      "step": "10.2",
+      "level": "INFO",
+      "msg": "  auto_saves: [{\"filename\": \"auto_round1.json\", \"slot\": -1, \"round\": 1, \"year\": 1351, \"month\": 5, \"season\": \"\", \"faction\": \"ruler_tatar\", \"faction_name\": \"ruler_tatar\", \"note\": \"自动存档 - 第1回合\", \"saved_at\": \"2026-07-1"
+    },
+    {
+      "step": "10.2",
+      "level": "INFO",
+      "msg": "  total_count: 14"
+    },
+    {
+      "step": "10.3",
+      "level": "INFO",
+      "msg": "手动存档到槽位1..."
+    },
+    {
+      "step": "10.3",
+      "level": "INFO",
+      "msg": "手动存档 → 业务code=403: 请先开局"
+    },
+    {
+      "step": "11.1",
+      "level": "INFO",
+      "msg": "推进第4回合..."
+    },
+    {
+      "step": "11.1",
+      "level": "WARN",
+      "msg": "【问题】第4回合推进失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "11.1",
+      "level": "INFO",
+      "msg": "  响应: {\"code\": 403, \"msg\": \"请先开局\", \"data\": null}"
+    },
+    {
+      "step": "12.1",
+      "level": "WARN",
+      "msg": "【问题】皇家宗室 获取失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "12.2",
+      "level": "WARN",
+      "msg": "【问题】朝堂总览 获取失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "12.3",
+      "level": "WARN",
+      "msg": "【问题】国策 获取失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "12.4",
+      "level": "WARN",
+      "msg": "【问题】武将 获取失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "12.5",
+      "level": "WARN",
+      "msg": "【问题】战争状态 获取失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "12.6",
+      "level": "WARN",
+      "msg": "【问题】活跃战争 获取失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "12.7",
+      "level": "WARN",
+      "msg": "【问题】结局进度 获取失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "12.8",
+      "level": "WARN",
+      "msg": "【问题】外交摘要 获取失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "13.1",
+      "level": "INFO",
+      "msg": "获取最终游戏状态..."
+    },
+    {
+      "step": "13.1",
+      "level": "INFO",
+      "msg": "势力: ?"
+    },
+    {
+      "step": "13.1",
+      "level": "INFO",
+      "msg": "库银=? | 粮草=? | 兵力=?"
+    },
+    {
+      "step": "13.1",
+      "level": "INFO",
+      "msg": "声望=? | 民心=?"
+    },
+    {
+      "step": "13.1",
+      "level": "INFO",
+      "msg": "战马=? | 军械=?"
+    },
+    {
+      "step": "13.1",
+      "level": "INFO",
+      "msg": "当前回合: ?"
+    },
+    {
+      "step": "13.2",
+      "level": "INFO",
+      "msg": "结局检查..."
+    },
+    {
+      "step": "13.3",
+      "level": "INFO",
+      "msg": "最终健康检查..."
+    },
+    {
+      "step": "13.3",
+      "level": "INFO",
+      "msg": "AI=可用, 回合=0, Token消耗=118279"
+    }
+  ],
+  "issues": [
+    {
+      "step": "3.1",
+      "severity": "HIGH",
+      "msg": "player_faction 字段为空"
+    },
+    {
+      "step": "4.1",
+      "severity": "MEDIUM",
+      "msg": "征兵(recruit) 失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "4.2",
+      "severity": "MEDIUM",
+      "msg": "开发农业(develop) 失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "4.3",
+      "severity": "MEDIUM",
+      "msg": "训练(train) 失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "4.4",
+      "severity": "MEDIUM",
+      "msg": "城防加固(fortify) 失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "4.5",
+      "severity": "MEDIUM",
+      "msg": "侦查陈友谅(scout) 失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "5.1",
+      "severity": "MEDIUM",
+      "msg": "NL解析失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "7.1",
+      "severity": "HIGH",
+      "msg": "回合推进失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "8.1",
+      "severity": "MEDIUM",
+      "msg": "买马(buy_horses) 失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "8.2",
+      "severity": "MEDIUM",
+      "msg": "巡查(patrol) 失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "8.3",
+      "severity": "MEDIUM",
+      "msg": "练兵(train_troops) 失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "8.6",
+      "severity": "HIGH",
+      "msg": "第2回合推进失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "9.1",
+      "severity": "MEDIUM",
+      "msg": "细作部署失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "9.3",
+      "severity": "MEDIUM",
+      "msg": "地图获取失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "9.4",
+      "severity": "HIGH",
+      "msg": "第3回合推进失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "10.1",
+      "severity": "MEDIUM",
+      "msg": "快速存档失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "11.1",
+      "severity": "HIGH",
+      "msg": "第4回合推进失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "12.1",
+      "severity": "LOW",
+      "msg": "皇家宗室 获取失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "12.2",
+      "severity": "LOW",
+      "msg": "朝堂总览 获取失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "12.3",
+      "severity": "LOW",
+      "msg": "国策 获取失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "12.4",
+      "severity": "LOW",
+      "msg": "武将 获取失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "12.5",
+      "severity": "LOW",
+      "msg": "战争状态 获取失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "12.6",
+      "severity": "LOW",
+      "msg": "活跃战争 获取失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "12.7",
+      "severity": "LOW",
+      "msg": "结局进度 获取失败: 业务code=403: 请先开局"
+    },
+    {
+      "step": "12.8",
+      "severity": "LOW",
+      "msg": "外交摘要 获取失败: 业务code=403: 请先开局"
+    }
+  ],
+  "total_steps": 89,
+  "total_issues": 25
+}

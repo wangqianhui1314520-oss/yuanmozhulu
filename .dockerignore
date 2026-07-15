@@ -1,0 +1,46 @@
+# =============================================================================
+# 元末逐鹿 3.0 · Docker 构建排除
+# =============================================================================
+
+# 依赖
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.venv
+**/venv
+
+# IDE / 元数据
+**/.codebuddy
+**/.vscode
+**/.idea
+**/.DS_Store
+
+# 日志
+logs/
+*.log
+
+# 测试
+tests/
+test_*.py
+_test_*.py
+_test_*.txt
+
+# 文档
+docs/
+README.md
+
+# 环境（不应打入镜像）
+.env
+.env.local
+
+# 游戏存档（运行时生成，不打包进镜像）
+data/archives/
+
+# Python
+*.egg-info
+.pytest_cache
+.mypy_cache
+
+# 临时文件
+*.tmp
+*.swp

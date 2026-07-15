@@ -1,0 +1,20 @@
+{
+  "方国珍": [
+    "回合1推进返回0事件"
+  ],
+  "王保保": [
+    "EXCEPTION: Traceback (most recent call last):\n  File \"D:\\AI\\元末逐鹿3.0原版\\元末逐鹿\\_quick_test.py\", line 88, in <module>\n    p=test(fid,name,actions)\n      ^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\AI\\元末逐鹿3.0原版\\元末逐鹿\\_quick_test.py\", line 51, in test\n    print(f\"\\n    ✓ {act}{' (⚠'+warn+')' if warn else ''}\", end=\"\", flush=True)\nOSError: [Errno 22] Invalid argument\n"
+  ],
+  "陈友谅": [
+    "EXCEPTION: Traceback (most recent call last):\n  File \"D:\\AI\\元末逐鹿3.0原版\\元末逐鹿\\_quick_test.py\", line 88, in <module>\n    p=test(fid,name,actions)\n      ^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\AI\\元末逐鹿3.0原版\\元末逐鹿\\_quick_test.py\", line 22, in test\n    print(\"[init]\", end=\" \", flush=True)\nOSError: [Errno 22] Invalid argument\n"
+  ],
+  "徐寿辉": [
+    "EXCEPTION: Traceback (most recent call last):\n  File \"D:\\AI\\元末逐鹿3.0原版\\元末逐鹿\\_quick_test.py\", line 88, in <module>\n    p=test(fid,name,actions)\n      ^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\AI\\元末逐鹿3.0原版\\元末逐鹿\\_quick_test.py\", line 22, in test\n    print(\"[init]\", end=\" \", flush=True)\nOSError: [Errno 22] Invalid argument\n"
+  ],
+  "漠北诸部": [
+    "EXCEPTION: Traceback (most recent call last):\n  File \"D:\\AI\\元末逐鹿3.0原版\\元末逐鹿\\_quick_test.py\", line 88, in <module>\n    p=test(fid,name,actions)\n      ^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\AI\\元末逐鹿3.0原版\\元末逐鹿\\_quick_test.py\", line 22, in test\n    print(\"[init]\", end=\" \", flush=True)\nOSError: [Errno 22] Invalid argument\n"
+  ],
+  "元廷": [
+    "EXCEPTION: Traceback (most recent call last):\n  File \"D:\\AI\\元末逐鹿3.0原版\\元末逐鹿\\_quick_test.py\", line 88, in <module>\n    p=test(fid,name,actions)\n      ^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\AI\\元末逐鹿3.0原版\\元末逐鹿\\_quick_test.py\", line 22, in test\n    print(\"[init]\", end=\" \", flush=True)\nOSError: [Errno 22] Invalid argument\n"
+  ]
+}

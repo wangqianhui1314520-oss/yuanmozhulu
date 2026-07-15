@@ -1,0 +1,418 @@
+{
+  "version": "3.0",
+  "description": "国策树 - 四大分支：内政、军事、外交、经济",
+  "policies": {
+    "civil": {
+      "name": "内政",
+      "icon": "🏛",
+      "description": "治国安邦、安抚民心、整饬吏治",
+      "branches": [
+        {
+          "id": "civil_people",
+          "name": "安民之策",
+          "tiers": [
+            {
+              "tier": 1,
+              "id": "relief_grain",
+              "name": "赈灾备荒",
+              "cost": 800,
+              "effects": {"realm_stability": 5, "grain_production": 10},
+              "description": "设立常平仓，灾年开仓放粮，平抑粮价"
+            },
+            {
+              "tier": 2,
+              "id": "land_reform",
+              "name": "均田制",
+              "cost": 1500,
+              "requires": ["relief_grain"],
+              "effects": {"realm_stability": 10, "population_growth": 15},
+              "description": "丈量田亩，抑制兼并，使耕者有其田"
+            },
+            {
+              "tier": 3,
+              "id": "abolish_servitude",
+              "name": "废除贱籍",
+              "cost": 2500,
+              "requires": ["land_reform"],
+              "effects": {"realm_stability": 15, "reputation": 15, "population_growth": 20},
+              "description": "废除世袭贱籍制度，释放劳动力，天下归心"
+            }
+          ]
+        },
+        {
+          "id": "civil_bureau",
+          "name": "吏治之策",
+          "tiers": [
+            {
+              "tier": 1,
+              "id": "imperial_exam",
+              "name": "科举取士",
+              "cost": 1000,
+              "effects": {"court_stability": 5, "official_ability_bonus": 5},
+              "description": "开科取士，选拔贤能，打破门阀垄断"
+            },
+            {
+              "tier": 2,
+              "id": "censor_system",
+              "name": "监察御史",
+              "cost": 1800,
+              "requires": ["imperial_exam"],
+              "effects": {"court_stability": 10, "corruption_reduction": 20},
+              "description": "设立监察御史，巡视地方，惩治贪腐"
+            },
+            {
+              "tier": 3,
+              "id": "merit_system",
+              "name": "考成法",
+              "cost": 3000,
+              "requires": ["censor_system"],
+              "effects": {"court_stability": 15, "development_speed": 25},
+              "description": "以政绩考核官吏，能者上、庸者下"
+            }
+          ]
+        },
+        {
+          "id": "civil_welfare",
+          "name": "民生之策",
+          "tiers": [
+            {
+              "tier": 1,
+              "id": "water_works",
+              "name": "兴修水利",
+              "cost": 1200,
+              "effects": {"grain_production": 15, "flood_reduction": 20},
+              "description": "疏浚河道、修建堤坝，防治水患"
+            },
+            {
+              "tier": 2,
+              "id": "medical_system",
+              "name": "惠民药局",
+              "cost": 2000,
+              "requires": ["water_works"],
+              "effects": {"population_growth": 10, "plague_reduction": 30},
+              "description": "设立惠民药局，防治疫病，救济贫民"
+            },
+            {
+              "tier": 3,
+              "id": "universal_education",
+              "name": "社学教化",
+              "cost": 3500,
+              "requires": ["medical_system"],
+              "effects": {"realm_stability": 10, "reputation": 20, "culture_bonus": 15},
+              "description": "广设社学，教化百姓，开民智、正风俗"
+            }
+          ]
+        }
+      ]
+    },
+    "military": {
+      "name": "军事",
+      "icon": "⚔",
+      "description": "整军经武、攻城略地、御敌卫国",
+      "branches": [
+        {
+          "id": "mil_army",
+          "name": "强军之策",
+          "tiers": [
+            {
+              "tier": 1,
+              "id": "military_drill",
+              "name": "整军操练",
+              "cost": 1000,
+              "effects": {"troop_power": 10, "morale_bonus": 5},
+              "description": "加强军队训练，提高将士战力"
+            },
+            {
+              "tier": 2,
+              "id": "elite_guard",
+              "name": "组建精锐",
+              "cost": 2000,
+              "requires": ["military_drill"],
+              "effects": {"troop_power": 20, "elite_troops_ratio": 15},
+              "description": "选拔精锐，组建亲军营和先锋营"
+            },
+            {
+              "tier": 3,
+              "id": "firearms_corps",
+              "name": "火器营",
+              "cost": 4000,
+              "requires": ["elite_guard"],
+              "effects": {"troop_power": 30, "siege_bonus": 25},
+              "description": "组建火器营，配备火铳、火炮"
+            }
+          ]
+        },
+        {
+          "id": "mil_defense",
+          "name": "城防之策",
+          "tiers": [
+            {
+              "tier": 1,
+              "id": "fortify_cities",
+              "name": "加固城防",
+              "cost": 1500,
+              "effects": {"fortification_bonus": 1, "siege_defense": 15},
+              "description": "修缮城墙、增设箭楼，加强防御"
+            },
+            {
+              "tier": 2,
+              "id": "garrison_system",
+              "name": "卫所屯田",
+              "cost": 2500,
+              "requires": ["fortify_cities"],
+              "effects": {"garrison_cost_reduction": 20, "border_defense": 15},
+              "description": "设立卫所，兵农合一，屯田自给"
+            },
+            {
+              "tier": 3,
+              "id": "great_wall",
+              "name": "修筑长城",
+              "cost": 5000,
+              "requires": ["garrison_system"],
+              "effects": {"border_defense": 30, "fortification_bonus": 2},
+              "description": "修筑边墙，御敌于国门之外"
+            }
+          ]
+        },
+        {
+          "id": "mil_logistics",
+          "name": "后勤之策",
+          "tiers": [
+            {
+              "tier": 1,
+              "id": "supply_depots",
+              "name": "粮草储备",
+              "cost": 800,
+              "effects": {"march_cost_reduction": 10, "grain_storage": 500},
+              "description": "各地设立粮仓，保障军需"
+            },
+            {
+              "tier": 2,
+              "id": "postal_stations",
+              "name": "驿站传讯",
+              "cost": 1500,
+              "requires": ["supply_depots"],
+              "effects": {"march_speed": 15, "reinforce_speed": 20},
+              "description": "广设驿站，军情通达、援军速至"
+            },
+            {
+              "tier": 3,
+              "id": "navy_build",
+              "name": "水师舰队",
+              "cost": 3500,
+              "requires": ["supply_depots"],
+              "effects": {"naval_power": 30, "trade_protection": 15},
+              "description": "打造水师，控制江河湖海"
+            }
+          ]
+        }
+      ]
+    },
+    "diplomacy": {
+      "name": "外交",
+      "icon": "🤝",
+      "description": "纵横捭阖、合纵连横、远交近攻",
+      "branches": [
+        {
+          "id": "dip_alliance",
+          "name": "联盟之策",
+          "tiers": [
+            {
+              "tier": 1,
+              "id": "envoy_system",
+              "name": "遣使通好",
+              "cost": 600,
+              "effects": {"diplo_attitude_boost": 5, "diplo_cost_reduction": 10},
+              "description": "派遣使节，互通有无，改善邦交"
+            },
+            {
+              "tier": 2,
+              "id": "marriage_alliance",
+              "name": "联姻结盟",
+              "cost": 1500,
+              "requires": ["envoy_system"],
+              "effects": {"alliance_strength": 20, "attitude_boost": 15},
+              "description": "以婚姻为纽带，巩固同盟关系"
+            },
+            {
+              "tier": 3,
+              "id": "hegemon_coalition",
+              "name": "霸主联邦",
+              "cost": 3000,
+              "requires": ["marriage_alliance"],
+              "effects": {"coalition_leadership": 25, "ally_morale": 10},
+              "description": "号令诸侯，组建以我为首的军事联邦"
+            }
+          ]
+        },
+        {
+          "id": "dip_trade",
+          "name": "通商之策",
+          "tiers": [
+            {
+              "tier": 1,
+              "id": "market_open",
+              "name": "开市通商",
+              "cost": 800,
+              "effects": {"trade_income": 20, "diplo_attitude_boost": 5},
+              "description": "开放互市，促进贸易往来"
+            },
+            {
+              "tier": 2,
+              "id": "silk_road",
+              "name": "丝路贸易",
+              "cost": 2000,
+              "requires": ["market_open"],
+              "effects": {"trade_income": 40, "rare_goods": 10},
+              "description": "重开丝绸之路，通商西域诸国"
+            },
+            {
+              "tier": 3,
+              "id": "maritime_trade",
+              "name": "海上贸易",
+              "cost": 3500,
+              "requires": ["silk_road"],
+              "effects": {"trade_income": 60, "naval_range": 15},
+              "description": "造船出海，与南洋西洋诸国通商"
+            }
+          ]
+        },
+        {
+          "id": "dip_espionage",
+          "name": "谋略之策",
+          "tiers": [
+            {
+              "tier": 1,
+              "id": "spy_network",
+              "name": "细作网络",
+              "cost": 1000,
+              "effects": {"spy_success_rate": 10, "intel_gathering": 15},
+              "description": "建立情报网，刺探敌国虚实"
+            },
+            {
+              "tier": 2,
+              "id": "divide_enemy",
+              "name": "离间之计",
+              "cost": 1800,
+              "requires": ["spy_network"],
+              "effects": {"spy_discord_bonus": 20, "enemy_loyalty_penalty": 10},
+              "description": "离间敌国君臣，分化瓦解"
+            },
+            {
+              "tier": 3,
+              "id": "puppet_ruler",
+              "name": "扶立傀儡",
+              "cost": 3000,
+              "requires": ["divide_enemy"],
+              "effects": {"puppet_control": 25, "vassal_acceptance": 20},
+              "description": "扶植亲己势力，遥控他国朝政"
+            }
+          ]
+        }
+      ]
+    },
+    "economy": {
+      "name": "经济",
+      "icon": "💰",
+      "description": "富国强兵、理财增收、开发资源",
+      "branches": [
+        {
+          "id": "eco_agriculture",
+          "name": "农政之策",
+          "tiers": [
+            {
+              "tier": 1,
+              "id": "crop_rotation",
+              "name": "轮作休耕",
+              "cost": 500,
+              "effects": {"grain_production": 15, "land_fertility": 10},
+              "description": "推广轮作休耕，提高土地产出"
+            },
+            {
+              "tier": 2,
+              "id": "new_crops",
+              "name": "引种新粮",
+              "cost": 1200,
+              "requires": ["crop_rotation"],
+              "effects": {"grain_production": 25, "famine_resistance": 20},
+              "description": "引进高产作物，增加粮食种类"
+            },
+            {
+              "tier": 3,
+              "id": "granary_network",
+              "name": "天下粮仓",
+              "cost": 2500,
+              "requires": ["new_crops"],
+              "effects": {"grain_storage": 2000, "famine_resistance": 40},
+              "description": "全国建立粮仓网络，储备三年之粮"
+            }
+          ]
+        },
+        {
+          "id": "eco_industry",
+          "name": "工坊之策",
+          "tiers": [
+            {
+              "tier": 1,
+              "id": "iron_mining",
+              "name": "冶铁开矿",
+              "cost": 1000,
+              "effects": {"arms_production": 15, "construction_speed": 10},
+              "description": "开矿冶铁，提升军械产量"
+            },
+            {
+              "tier": 2,
+              "id": "textile_industry",
+              "name": "织造工坊",
+              "cost": 1800,
+              "requires": ["iron_mining"],
+              "effects": {"treasury_income": 20, "trade_goods": 15},
+              "description": "设立织造工坊，丝绸布匹行销天下"
+            },
+            {
+              "tier": 3,
+              "id": "salt_iron_monopoly",
+              "name": "盐铁专卖",
+              "cost": 3000,
+              "requires": ["textile_industry"],
+              "effects": {"treasury_income": 40, "arms_production": 25},
+              "description": "盐铁官营，国用充足"
+            }
+          ]
+        },
+        {
+          "id": "eco_finance",
+          "name": "财政之策",
+          "tiers": [
+            {
+              "tier": 1,
+              "id": "paper_currency",
+              "name": "发行宝钞",
+              "cost": 1500,
+              "effects": {"treasury_income": 15, "trade_speed": 10},
+              "description": "发行纸币，促进商业流通"
+            },
+            {
+              "tier": 2,
+              "id": "tax_reform",
+              "name": "一条鞭法",
+              "cost": 2500,
+              "requires": ["paper_currency"],
+              "effects": {"tax_efficiency": 30, "corruption_reduction": 15},
+              "description": "简化税制，合并赋役，减少中饱"
+            },
+            {
+              "tier": 3,
+              "id": "national_bank",
+              "name": "国库总揽",
+              "cost": 4000,
+              "requires": ["tax_reform"],
+              "effects": {"treasury_income": 50, "interest_income": 10},
+              "description": "统一财政收支，设立国家金库"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

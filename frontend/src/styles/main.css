@@ -1,0 +1,656 @@
+/* ============================================================
+ * 《元末逐鹿》全局视觉规范 V4.1 — 竹简为骨·墨色为肉·朱批为魂·金铜为印
+ * 统一配色 · 三层字体 · 书卷动画 · 三类按钮 · 古风质感
+ * ============================================================ */
+
+/* ===== CSS 变量：V4.1 竹简深色调（默认主模式） ===== */
+:root {
+  /* 底色系统 — 竹简深底/木牍肌理 */
+  --bg-base: #181410;
+  --bg-parchment: #181410;
+  --bg-panel: #221d16;
+  --bg-card: #27221a;
+  --bg-hover: #322b20;
+  --bg-input: #1c1812;
+
+  /* 边框色系 — 老旧破损木纹边缘 */
+  --border-main: #3d3228;
+  --border-light: #352c23;
+  --border-strong: #4e4033;
+
+  /* 鎏金高亮 — 官印/标题描边/重要数值 */
+  --gold: #b8963e;
+  --gold-dim: #8a7030;
+  --gold-dark: #5c4a1e;
+
+  /* 文字色系 — 竹简正文/批注 */
+  --text-main: #e0d5b8;
+  --text-secondary: #c4b898;
+  --text-dim: #8c8068;
+  --text-muted: #625848;
+
+  /* 朱批红 — 印章/批注/选中高亮，饱和度提升 */
+  --danger: #c43a3a;
+  --danger-hover: #d94a4a;
+  --danger-dark: #8b2020;
+
+  /* 翠绿 — 正面/增益 */
+  --jade: #5b8c5a;
+  --jade-dim: #3d6b3c;
+
+  /* 九大势力色（适配竹简深底） */
+  --color-yuan: #b88a2a;
+  --color-zhuyuan: #c43a3a;
+  --color-chen: #4a8ac0;
+  --color-zhang: #c89830;
+  --color-fang: #3a9080;
+  --color-wang: #8a60b0;
+  --color-ming: #a08030;
+  --color-tatar: #788898;
+  --color-xushou: #a04030;
+
+  /* 季节色 */
+  --season-spring: #6a8a4a;
+  --season-summer: #b84a3a;
+  --season-autumn: #c8a040;
+  --season-winter: #6a7a8a;
+
+  /* 间距/圆角 — 古风小切角 */
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+
+  /* 字体缩放 */
+  --fs-xs: 11px;
+  --fs-sm: 13px;
+  --fs-md: 15px;
+  --fs-lg: 18px;
+  --fs-xl: 22px;
+  --fs-xxl: 28px;
+  --fs-title: 36px;
+
+  /* 过渡 */
+  --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --duration-fast: 0.15s;
+  --duration-normal: 0.25s;
+  --duration-slow: 0.4s;
+
+  /* V4.1 新增：字体系统 */
+  --font-seal: "STKaiti", "KaiTi", "FZShuTi", "STSong", serif;
+  --font-body: "SimSun", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", serif;
+  --font-annotation: "FangSong", "FangSong_GB2312", serif;
+}
+
+/* ===== 浅色阅览模式 ===== */
+.theme-light {
+  --bg-base: #f5efe0;
+  --bg-parchment: #f5efe0;
+  --bg-panel: #ede4d0;
+  --bg-card: #f0e6d2;
+  --bg-hover: #e8dcc0;
+  --bg-input: #f8f2e5;
+
+  --border-main: #c4b898;
+  --border-light: #d5c8a8;
+  --border-strong: #a89878;
+
+  --text-main: #2c1810;
+  --text-secondary: #5c4030;
+  --text-dim: #8b7355;
+  --text-muted: #a89878;
+}
+
+/* ===== 全局重置 ===== */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  min-width: 1024px;
+  min-height: 600px;
+  overflow: hidden;
+  font-family: var(--font-body);
+  font-size: var(--fs-md);
+  line-height: 1.75;
+  background: var(--bg-base);
+  color: var(--text-main);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+}
+
+/* ===== V4.1 竹简纹理覆盖层 — 纤维+木牍肌理+墨晕暗角 ===== */
+.yuanmo-app {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.yuanmo-app::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 99998;
+  pointer-events: none;
+  background:
+    /* 竖纹 — 仿竹简纤维（加粗加密） */
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 2px,
+      rgba(184, 150, 62, 0.018) 2px,
+      rgba(184, 150, 62, 0.018) 4px
+    ),
+    /* 横纹 — 仿木牍年轮纹理 */
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 4px,
+      rgba(184, 150, 62, 0.025) 4px,
+      rgba(184, 150, 62, 0.025) 5px
+    ),
+    /* 不规则木纹 — 仿天然木牍裂隙 */
+    repeating-linear-gradient(
+      2deg,
+      transparent,
+      transparent 40px,
+      rgba(139, 112, 64, 0.012) 40px,
+      rgba(139, 112, 64, 0.012) 41px
+    ),
+    /* 墨晕 — 四角轻微暗角 */
+    radial-gradient(
+      ellipse at 50% 50%,
+      transparent 55%,
+      rgba(0, 0, 0, 0.2) 100%
+    );
+  mix-blend-mode: multiply;
+}
+
+/* ===== 滚动条 ===== */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-panel); }
+::-webkit-scrollbar-thumb {
+  background: var(--border-main);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+/* ===== 三类按钮体系 — V4.1 竹简政令风格 ===== */
+
+/* 1. 常规政令按钮 — 木牍深褐底色 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 20px;
+  border: 1px solid var(--border-main);
+  background: linear-gradient(180deg, #322b20 0%, #27221a 100%);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  border-radius: var(--radius-sm);
+  letter-spacing: 1px;
+}
+.btn:hover {
+  background: linear-gradient(180deg, #3d3228 0%, #322b20 100%);
+  border-color: var(--border-strong);
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* 2. 确认/执行/开局按钮 — 鎏金底色 */
+.btn-gold {
+  background: linear-gradient(180deg, var(--gold) 0%, var(--gold-dim) 100%);
+  border-color: var(--gold);
+  color: #181410;
+  font-weight: bold;
+  letter-spacing: 2px;
+}
+.btn-gold:hover {
+  background: linear-gradient(180deg, #c9a848 0%, var(--gold) 100%);
+  border-color: #c9a848;
+  box-shadow: 0 2px 16px rgba(184, 150, 62, 0.25);
+}
+.btn-gold:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 6px rgba(184, 150, 62, 0.18);
+}
+
+/* 3. 危险操作按钮 — 朱红底色 */
+.btn-danger {
+  background: linear-gradient(180deg, var(--danger) 0%, var(--danger-dark) 100%);
+  border-color: var(--danger);
+  color: #e0d5b8;
+  letter-spacing: 2px;
+}
+.btn-danger:hover {
+  background: linear-gradient(180deg, var(--danger-hover) 0%, var(--danger) 100%);
+  border-color: var(--danger-hover);
+  box-shadow: 0 2px 16px rgba(196, 58, 58, 0.3);
+}
+.btn-danger:active {
+  transform: translateY(1px);
+}
+
+/* 兼容旧 className */
+.btn-primary {
+  background: linear-gradient(180deg, var(--gold) 0%, var(--gold-dim) 100%);
+  border-color: var(--gold);
+  color: #181410;
+  font-weight: bold;
+}
+
+/* ===== 全局弹窗体系 — V4.1 竹简木牍 ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(3px);
+}
+
+.modal-panel {
+  position: relative;
+  background: var(--bg-panel);
+  border: 2px solid var(--border-main);
+  border-radius: var(--radius-md);
+  box-shadow:
+    0 8px 48px rgba(0, 0, 0, 0.55),
+    0 2px 10px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(184, 150, 62, 0.06);
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  /* 仿古小切角 */
+  clip-path: polygon(
+    3px 0, calc(100% - 3px) 0,
+    100% 3px, 100% calc(100% - 3px),
+    calc(100% - 3px) 100%, 3px 100%,
+    0 calc(100% - 3px), 0 3px
+  );
+}
+
+/* 弹窗头部 — 竹简标题栏 */
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-light);
+  background: linear-gradient(180deg, #322b20 0%, #27221a 100%);
+  flex-shrink: 0;
+}
+
+.modal-header h3 {
+  font-family: var(--font-seal);
+  font-size: var(--fs-lg);
+  font-weight: normal;
+  color: var(--gold);
+  letter-spacing: 4px;
+}
+
+.modal-close {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-main);
+  background: var(--bg-card);
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: all var(--duration-fast);
+}
+.modal-close:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* 弹窗内容区 */
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+/* ===== 弹窗动画：竹简展开/收拢 ===== */
+@keyframes scrollUnfold {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.3) scaleX(0.7);
+    transform-origin: top center;
+    filter: blur(4px);
+  }
+  60% {
+    opacity: 1;
+    transform: scaleY(1.02) scaleX(1.01);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scaleY(1) scaleX(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes scrollFold {
+  0% {
+    opacity: 1;
+    transform: scaleY(1) scaleX(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleY(0.3) scaleX(0.7);
+    transform-origin: top center;
+    filter: blur(4px);
+  }
+}
+
+.modal-enter-active {
+  animation: scrollUnfold 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.modal-leave-active {
+  animation: scrollFold 0.25s ease-in;
+}
+
+/* 遮罩淡入淡出 */
+.modal-overlay-enter-active,
+.modal-overlay-leave-active {
+  transition: opacity 0.3s ease;
+}
+.modal-overlay-enter-from,
+.modal-overlay-leave-to {
+  opacity: 0;
+}
+
+/* ===== Tab 切换 — 古籍翻页高亮 ===== */
+.tab-nav {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border-main);
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+.tab-btn {
+  padding: 8px 18px;
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  letter-spacing: 2px;
+  transition: all var(--duration-fast);
+  position: relative;
+}
+
+.tab-btn:hover {
+  color: var(--text-secondary);
+}
+
+.tab-btn.active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+}
+
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 4px;
+  right: 4px;
+  height: 1px;
+  background: var(--gold);
+  opacity: 0.4;
+}
+
+/* ===== 表单控件 ===== */
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="url"],
+select,
+textarea {
+  background: var(--bg-input);
+  border: 1px solid var(--border-main);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color var(--duration-fast);
+  width: 100%;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(184, 150, 62, 0.12);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+  font-family: var(--font-annotation);
+}
+
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238c8068' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+  cursor: pointer;
+}
+
+select option {
+  background: var(--bg-panel);
+  color: var(--text-main);
+}
+
+/* 滑块 (range) */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--border-main);
+  border-radius: 2px;
+  outline: none;
+  border: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--gold);
+  border: 1px solid var(--gold-dim);
+  cursor: pointer;
+}
+
+/* ===== 卡片/条目 ===== */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  transition: border-color var(--duration-fast);
+}
+.card:hover {
+  border-color: var(--border-main);
+}
+
+/* ===== 提示工具 ===== */
+.tooltip {
+  position: absolute;
+  z-index: 20000;
+  background: var(--bg-panel);
+  border: 1px solid var(--gold-dim);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: var(--fs-xs);
+  color: var(--text-main);
+  white-space: nowrap;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  font-family: var(--font-annotation);
+}
+
+/* ===== Toast 提示 ===== */
+.toast {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30000;
+  padding: 10px 24px;
+  background: var(--bg-panel);
+  border: 1px solid var(--gold);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  font-family: var(--font-annotation);
+  font-size: var(--fs-sm);
+  letter-spacing: 2px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.55);
+  animation: toastIn 0.3s var(--ease-out);
+}
+
+.toast-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ===== 印章标记 — V4.1 朱批提升饱和度 ===== */
+.seal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: 2px solid var(--danger);
+  border-radius: 2px;
+  color: var(--danger);
+  font-family: var(--font-seal);
+  font-size: 24px;
+  transform: rotate(-5deg);
+  letter-spacing: 2px;
+}
+
+/* ===== 邸报提示条 ===== */
+.notice-banner {
+  padding: 8px 16px;
+  margin: 4px 0;
+  border-left: 3px solid var(--gold);
+  background: rgba(184, 150, 62, 0.08);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  font-family: var(--font-annotation);
+  letter-spacing: 1px;
+}
+
+.notice-banner.danger {
+  border-left-color: var(--danger);
+  background: rgba(196, 58, 58, 0.08);
+  color: var(--danger);
+}
+
+/* ===== 古风分割线 ===== */
+.divider-ink {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.divider-ink .line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border-main), transparent);
+}
+
+.divider-ink .diamond {
+  color: var(--gold-dim);
+  font-size: 8px;
+}
+
+/* ===== 动画工具类 ===== */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulseGold {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(184, 150, 62, 0); }
+  50% { box-shadow: 0 0 10px 3px rgba(184, 150, 62, 0.2); }
+}
+
+@keyframes pulseDanger {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(196, 58, 58, 0); }
+  50% { box-shadow: 0 0 8px 3px rgba(196, 58, 58, 0.2); }
+}
+
+.animate-fade-in { animation: fadeIn 0.3s var(--ease-out); }
+.animate-pulse-gold { animation: pulseGold 2s infinite; }
+.animate-pulse-danger { animation: pulseDanger 2s infinite; }
+
+/* ===== 通用状态文字 ===== */
+.text-gold { color: var(--gold); }
+.text-danger { color: var(--danger); }
+.text-jade { color: var(--jade); }
+.text-dim { color: var(--text-dim); }
+.text-muted { color: var(--text-muted); }
+
+/* ===== 响应式适配 ===== */
+@media (max-width: 1280px) {
+  .modal-panel { max-width: 95vw; }
+  :root {
+    --fs-md: 14px;
+    --fs-lg: 16px;
+  }
+}
+
+@media (max-width: 1024px) {
+  html, body { min-width: 800px; }
+}
+
+@media (max-height: 700px) {
+  .modal-panel { max-height: 90vh; }
+  .modal-body { padding: 10px 14px; }
+}

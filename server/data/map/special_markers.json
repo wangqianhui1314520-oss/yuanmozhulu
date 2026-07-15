@@ -1,0 +1,270 @@
+{
+  "version": "4.0",
+  "level": "prefecture",
+  "meta": {
+    "capitals": 9,
+    "ports": 8,
+    "passes": 10,
+    "ferries": 5,
+    "strategic": 45
+  },
+  "markers": {
+    "22,23": {
+      "is_strategic": true,
+      "strategic_name": "广州",
+      "strategic_note": "岭南都会"
+    },
+    "26,20": {
+      "is_port": true,
+      "is_strategic": true,
+      "strategic_name": "泉州港",
+      "strategic_note": "泉州港 - 港口"
+    },
+    "18,16": {
+      "is_ferry": true,
+      "is_strategic": true,
+      "strategic_name": "夷陵渡",
+      "strategic_note": "夷陵渡 - 渡口"
+    },
+    "14,14": {
+      "is_capital": true,
+      "is_strategic": true,
+      "strategic_name": "成都",
+      "strategic_note": "成都 - 势力首都"
+    },
+    "21,13": {
+      "is_pass": true,
+      "is_strategic": true,
+      "strategic_name": "虎牢关",
+      "strategic_note": "虎牢关 - 关隘"
+    },
+    "22,13": {
+      "is_capital": true,
+      "is_strategic": true,
+      "strategic_name": "汴梁",
+      "strategic_note": "汴梁 - 势力首都"
+    },
+    "14,18": {
+      "is_capital": true,
+      "is_strategic": true,
+      "strategic_name": "中庆",
+      "strategic_note": "中庆 - 势力首都"
+    },
+    "21,17": {
+      "is_pass": true,
+      "is_strategic": true,
+      "strategic_name": "大散关",
+      "strategic_note": "大散关 - 关隘"
+    },
+    "17,15": {
+      "is_strategic": true,
+      "strategic_name": "重庆",
+      "strategic_note": "山城要塞"
+    },
+    "25,9": {
+      "is_port": true,
+      "is_strategic": true,
+      "strategic_name": "直沽",
+      "strategic_note": "直沽 - 港口"
+    },
+    "24,13": {
+      "is_ferry": true,
+      "is_strategic": true,
+      "strategic_name": "黄河渡",
+      "strategic_note": "黄河渡 - 渡口"
+    },
+    "16,18": {
+      "is_ferry": true,
+      "is_strategic": true,
+      "strategic_name": "沅江渡",
+      "strategic_note": "沅江渡 - 渡口"
+    },
+    "24,8": {
+      "is_capital": true,
+      "is_strategic": true,
+      "strategic_name": "大都",
+      "strategic_note": "大都 - 势力首都"
+    },
+    "28,5": {
+      "is_strategic": true,
+      "strategic_name": "辽阳",
+      "strategic_note": "东北都会"
+    },
+    "29,6": {
+      "is_port": true,
+      "is_strategic": true,
+      "strategic_name": "西京港",
+      "strategic_note": "西京港 - 港口"
+    },
+    "24,16": {
+      "is_strategic": true,
+      "strategic_name": "庐州",
+      "strategic_note": "江淮重镇"
+    },
+    "8,8": {
+      "is_strategic": true,
+      "strategic_name": "甘州",
+      "strategic_note": "丝路重镇"
+    },
+    "20,9": {
+      "is_pass": true,
+      "is_strategic": true,
+      "strategic_name": "居庸关",
+      "strategic_note": "居庸关 - 关隘"
+    },
+    "26,15": {
+      "is_capital": true,
+      "is_strategic": true,
+      "strategic_name": "集庆",
+      "strategic_note": "集庆 - 势力首都"
+    },
+    "27,16": {
+      "is_port": true,
+      "is_strategic": true,
+      "strategic_name": "扬州港",
+      "strategic_note": "扬州港 - 港口"
+    },
+    "30,7": {
+      "is_strategic": true,
+      "strategic_name": "开城",
+      "strategic_note": "高丽王都"
+    },
+    "14,13": {
+      "is_pass": true,
+      "is_strategic": true,
+      "strategic_name": "剑门关",
+      "strategic_note": "剑门关 - 关隘"
+    },
+    "18,19": {
+      "is_strategic": true,
+      "strategic_name": "潭州",
+      "strategic_note": "长沙要冲"
+    },
+    "25,18": {
+      "is_pass": true,
+      "is_strategic": true,
+      "strategic_name": "仙霞关",
+      "strategic_note": "仙霞关 - 关隘"
+    },
+    "22,7": {
+      "is_strategic": true,
+      "strategic_name": "上都",
+      "strategic_note": "元朝夏都"
+    },
+    "34,9": {
+      "is_strategic": true,
+      "strategic_name": "平安京",
+      "strategic_note": "日本天皇御所"
+    },
+    "21,20": {
+      "is_ferry": true,
+      "is_strategic": true,
+      "strategic_name": "赣江渡",
+      "strategic_note": "赣江渡 - 渡口"
+    },
+    "18,4": {
+      "is_capital": true,
+      "is_strategic": true,
+      "strategic_name": "和林",
+      "strategic_note": "和林 - 势力首都"
+    },
+    "33,11": {
+      "is_port": true,
+      "is_strategic": true,
+      "strategic_name": "堺港",
+      "strategic_note": "堺港 - 港口"
+    },
+    "28,17": {
+      "is_port": true,
+      "is_strategic": true,
+      "strategic_name": "明州港",
+      "strategic_note": "明州港 - 港口"
+    },
+    "29,18": {
+      "is_capital": true,
+      "is_strategic": true,
+      "strategic_name": "庆元",
+      "strategic_note": "庆元 - 势力首都"
+    },
+    "20,22": {
+      "is_pass": true,
+      "is_strategic": true,
+      "strategic_name": "梅关",
+      "strategic_note": "梅关 - 关隘"
+    },
+    "16,15": {
+      "is_pass": true,
+      "is_strategic": true,
+      "strategic_name": "瞿塘关",
+      "strategic_note": "瞿塘关 - 关隘"
+    },
+    "28,16": {
+      "is_capital": true,
+      "is_strategic": true,
+      "strategic_name": "平江",
+      "strategic_note": "平江 - 势力首都"
+    },
+    "20,17": {
+      "is_capital": true,
+      "is_strategic": true,
+      "strategic_name": "武昌",
+      "strategic_note": "武昌 - 势力首都"
+    },
+    "32,9": {
+      "is_port": true,
+      "is_strategic": true,
+      "strategic_name": "博多港",
+      "strategic_note": "博多港 - 港口"
+    },
+    "24,14": {
+      "is_pass": true,
+      "is_strategic": true,
+      "strategic_name": "武关",
+      "strategic_note": "武关 - 关隘"
+    },
+    "16,10": {
+      "is_pass": true,
+      "is_strategic": true,
+      "strategic_name": "潼关",
+      "strategic_note": "潼关 - 关隘"
+    },
+    "17,11": {
+      "is_pass": true,
+      "is_strategic": true,
+      "strategic_name": "函谷关",
+      "strategic_note": "函谷关 - 关隘"
+    },
+    "27,15": {
+      "is_strategic": true,
+      "strategic_name": "扬州",
+      "strategic_note": "漕运中枢"
+    },
+    "23,8": {
+      "is_strategic": true,
+      "strategic_name": "大都",
+      "strategic_note": "元朝都城，北方政治中心"
+    },
+    "24,9": {
+      "is_strategic": true,
+      "strategic_name": "真定",
+      "strategic_note": "北方重镇"
+    },
+    "27,10": {
+      "is_port": true,
+      "is_strategic": true,
+      "strategic_name": "登州",
+      "strategic_note": "登州 - 港口"
+    },
+    "23,16": {
+      "is_ferry": true,
+      "is_strategic": true,
+      "strategic_name": "汉水渡",
+      "strategic_note": "汉水渡 - 渡口"
+    },
+    "26,17": {
+      "is_strategic": true,
+      "strategic_name": "杭州",
+      "strategic_note": "南宋故都"
+    }
+  }
+}

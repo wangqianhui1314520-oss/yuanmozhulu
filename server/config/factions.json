@@ -1,0 +1,337 @@
+{
+  "version": "3.0",
+  "_adviser_config": {
+    "description": "各势力谋士团配置 - 元末九大势力",
+    "model_provider": "hunyuan",
+    "model_group": "advisor",
+    "default_model": "deepseek-v3"
+  },
+  "factions": {
+    "faction_yuan": {
+      "id": "faction_yuan",
+      "name": "元廷",
+      "full_name": "元顺帝（大元朝廷）",
+      "title": "大元皇帝",
+      "color": "#8B0000",
+      "capital_tile": "tile_dadu",
+      "initial_territory": [
+        "tile_dadu",
+        "tile_jinan", "tile_zhending", "tile_baoding", "tile_hejian",
+        "tile_daming", "tile_xian",
+        "tile_suzhou_gs", "tile_ningxia"
+      ],
+      "initial_treasury": 20000,
+      "initial_grain": 8000,
+      "initial_arms": 300,
+      "initial_horses": 200,
+      "initial_troops": 6000,
+      "initial_reputation": 60,
+      "personality_tags": ["蒙古铁骑", "正统名分", "勋贵侵蚀", "民族隔阂"],
+      "difficulty": "地狱",
+      "playable": true,
+      "adviser_team": ["tuotuo", "chahan_temur", "hama"],
+      "adviser_description": "元廷谋士团：脱脱丞相主政、察罕帖木儿统军、哈麻把持宫廷",
+      "buffs": [
+        { "name": "北地铁骑", "effect": "骑兵战力+35%", "type": "military" },
+        { "name": "正统名分", "effect": "初始声望+20", "type": "diplomacy" }
+      ],
+      "debuffs": [
+        { "name": "勋贵侵蚀", "effect": "每月国库流失2%银两", "type": "economy" },
+        { "name": "民族隔阂", "effect": "汉人地块每月民心-5", "type": "civil" },
+        { "name": "朝堂腐败", "effect": "朝堂稳定度每月-2", "type": "court" }
+      ],
+      "ai_logic": { "expansion": 0.2, "consolidation": 0.6, "diplomacy": 0.3, "military": 0.5, "economy": 0.2 },
+      "image": "/assets/factions/a6f30b6324fce83790efa49f2d0929fd.jpg",
+      "voice": "朕承大元社稷，君临天下。然乱世汹汹，红巾四起。卿既来辅朕，当重整河山，中兴大元。"
+    },
+    "faction_zhuyuanzhang": {
+      "id": "faction_zhuyuanzhang",
+      "name": "朱元璋",
+      "full_name": "朱元璋（西吴）",
+      "title": "吴国公",
+      "color": "#DC143C",
+      "capital_tile": "tile_yingtian",
+      "initial_territory": [
+        "tile_yingtian", "tile_chuzhou", "tile_hezhou", "tile_taiping",
+        "tile_zhenjiang", "tile_changzhou", "tile_huizhou", "tile_ningguo",
+        "tile_guangde", "tile_raozhou", "tile_xinzhou"
+      ],
+      "initial_treasury": 8000,
+      "initial_grain": 4000,
+      "initial_arms": 80,
+      "initial_horses": 30,
+      "initial_troops": 3000,
+      "initial_reputation": 40,
+      "personality_tags": ["深谋远虑", "严刑峻法", "知人善任"],
+      "difficulty": "普通",
+      "playable": true,
+      "adviser_team": ["liu_ji", "li_shanchang", "xu_da", "chang_yuchun", "song_lian", "hu_weiyong", "zhu_sheng"],
+      "adviser_description": "西吴谋士团：刘基运筹帷幄、李善长坐镇后方、徐达常遇春统兵征伐、朱升定鼎国策",
+      "buffs": [
+        { "name": "安民之治", "effect": "流民转化率+30%", "type": "civil" },
+        { "name": "屯田养兵", "effect": "驻军粮草消耗-20%", "type": "military" }
+      ],
+      "debuffs": [
+        { "name": "文武党争", "effect": "朝堂派系冲突概率+20%", "type": "court" },
+        { "name": "根基未固", "effect": "初始兵力较少", "type": "military" }
+      ],
+      "ai_logic": { "expansion": 0.6, "consolidation": 0.4, "diplomacy": 0.4, "military": 0.6, "economy": 0.5 },
+      "image": "/assets/factions/b47057828607bd36e92aa37417631bf9.jpg",
+      "voice": "孤起于淮右，布衣提三尺剑，渡江取金陵。高筑墙，广积粮，缓称王。今日择我入世，必当驱除鞑虏，恢复中华。"
+    },
+    "faction_chenyouliang": {
+      "id": "faction_chenyouliang",
+      "name": "陈友谅",
+      "full_name": "陈友谅（陈汉）",
+      "title": "汉帝",
+      "color": "#1E90FF",
+      "capital_tile": "tile_wuchang",
+      "initial_territory": [
+        "tile_wuchang", "tile_jiangzhou", "tile_yuezhou", "tile_changsha",
+        "tile_hengzhou", "tile_jingjiang", "tile_longxing", "tile_jian",
+        "tile_ganzhou_jx", "tile_jingzhou", "tile_yichang"
+      ],
+      "initial_treasury": 12000,
+      "initial_grain": 6000,
+      "initial_arms": 150,
+      "initial_horses": 50,
+      "initial_troops": 5000,
+      "initial_reputation": 35,
+      "personality_tags": ["野心勃勃", "猜忌多疑", "水战精通"],
+      "difficulty": "困难",
+      "playable": true,
+      "adviser_team": ["zhang_dingbian", "zou_pusheng", "zhang_bixian"],
+      "adviser_description": "陈汉谋士团：张定边忠勇无双、邹普胜谋划方略、张必先保障后勤",
+      "buffs": [
+        { "name": "倾国水师", "effect": "水战战力+50%", "type": "military" },
+        { "name": "荆楚粮仓", "effect": "粮食产量+20%", "type": "economy" }
+      ],
+      "debuffs": [
+        { "name": "苛政失心", "effect": "民心下降速度+30%", "type": "civil" },
+        { "name": "弑主之名", "effect": "外交好感度-15", "type": "diplomacy" }
+      ],
+      "ai_logic": { "expansion": 0.7, "consolidation": 0.2, "diplomacy": 0.2, "military": 0.8, "economy": 0.3 },
+      "image": "/assets/factions/a1838ce68653600728081332905c0fd1.jpg",
+      "voice": "朕据荆楚，拥水师之利，志在一统。朱元璋、张士诚皆不足惧。择我者，当共图九五之尊。"
+    },
+    "faction_zhangshicheng": {
+      "id": "faction_zhangshicheng",
+      "name": "张士诚",
+      "full_name": "张士诚（大周）",
+      "title": "周王",
+      "color": "#FF8C00",
+      "capital_tile": "tile_pingjiang",
+      "initial_territory": [
+        "tile_pingjiang", "tile_hangzhou", "tile_songjiang", "tile_huzhou",
+        "tile_jiaxin", "tile_shaoxing", "tile_gaoyou", "tile_yangzhou",
+        "tile_taizhou_js"
+      ],
+      "initial_treasury": 15000,
+      "initial_grain": 7000,
+      "initial_arms": 100,
+      "initial_horses": 40,
+      "initial_troops": 3500,
+      "initial_reputation": 45,
+      "personality_tags": ["偏安一隅", "富甲一方", "优柔寡断"],
+      "difficulty": "简单",
+      "playable": true,
+      "adviser_team": ["zhang_shide", "lv_zhen", "pan_yuanming"],
+      "adviser_description": "大周谋士团：张士德统军作战、吕珍经营财政、潘元明周旋外交",
+      "buffs": [
+        { "name": "江南富庶", "effect": "税收+30%", "type": "economy" },
+        { "name": "海运通商", "effect": "贸易收入+25%", "type": "economy" }
+      ],
+      "debuffs": [
+        { "name": "偏安惰性", "effect": "扩张意愿-40%", "type": "military" },
+        { "name": "盐贩出身", "effect": "士绅支持度-20%", "type": "court" }
+      ],
+      "ai_logic": { "expansion": 0.2, "consolidation": 0.7, "diplomacy": 0.5, "military": 0.3, "economy": 0.8 },
+      "image": "/assets/factions/649817e3158b0df1c68ab2e2a2a0e4f7.jpg",
+      "voice": "吾据江南膏腴之地，富甲一方。然天下未定，岂能偏安？愿与卿共治吴越，以成霸业。"
+    },
+    "faction_fangguozhen": {
+      "id": "faction_fangguozhen",
+      "name": "方国珍",
+      "full_name": "方国珍",
+      "title": "浙东节度",
+      "color": "#20B2AA",
+      "capital_tile": "tile_qingyuan",
+      "initial_territory": [
+        "tile_qingyuan", "tile_taizhou_zj", "tile_wenzhou", "tile_zhoushan"
+      ],
+      "initial_treasury": 6000,
+      "initial_grain": 3000,
+      "initial_arms": 60,
+      "initial_horses": 20,
+      "initial_troops": 2000,
+      "initial_reputation": 30,
+      "personality_tags": ["海上枭雄", "投机善变", "重利轻义"],
+      "difficulty": "中等",
+      "playable": true,
+      "adviser_team": ["fang_guozhen"],
+      "adviser_description": "浙东势力：方国珍以海上贸易立足，善于投机应变",
+      "buffs": [
+        { "name": "海上通商", "effect": "海上贸易收入+50%", "type": "economy" },
+        { "name": "水师精锐", "effect": "水战战力+40%", "type": "military" }
+      ],
+      "debuffs": [
+        { "name": "海运命脉", "effect": "海上封锁时经济崩溃", "type": "economy" },
+        { "name": "根基浅薄", "effect": "领地防御薄弱", "type": "military" }
+      ],
+      "ai_logic": { "expansion": 0.3, "consolidation": 0.5, "diplomacy": 0.6, "military": 0.3, "economy": 0.7 },
+      "image": "/assets/factions/0f3acb15948b699fbbd2a780dea693b8.jpg",
+      "voice": "海上有舟，舟山有兵。吾以海贸立世，进退自如。卿若随我，纵横浙东，何愁大事不成。"
+    },
+    "faction_xushouhui": {
+      "id": "faction_xushouhui",
+      "name": "徐寿辉",
+      "full_name": "徐寿辉（天完）",
+      "title": "天完皇帝",
+      "color": "#996633",
+      "capital_tile": "tile_xiangyang",
+      "initial_territory": [
+        "tile_xiangyang", "tile_huangzhou", "tile_de_an", "tile_runing",
+        "tile_yingzhou", "tile_nanyang"
+      ],
+      "initial_treasury": 6000,
+      "initial_grain": 4000,
+      "initial_arms": 90,
+      "initial_horses": 40,
+      "initial_troops": 3500,
+      "initial_reputation": 35,
+      "personality_tags": ["弥勒信徒", "红巾领袖", "仁厚之主"],
+      "difficulty": "困难",
+      "playable": true,
+      "adviser_team": ["xushou_hui"],
+      "adviser_description": "天完势力：徐寿辉以弥勒降世号召民众，红巾军中最先称帝者",
+      "buffs": [
+        { "name": "弥勒号召", "effect": "流民征兵效率+50%", "type": "military" },
+        { "name": "红巾正统", "effect": "占领地块民心转化+20%", "type": "civil" }
+      ],
+      "debuffs": [
+        { "name": "根基不稳", "effect": "朝堂稳定度每月-3", "type": "court" },
+        { "name": "四面楚歌", "effect": "邻国关系初始-10", "type": "diplomacy" }
+      ],
+      "ai_logic": { "expansion": 0.5, "consolidation": 0.3, "diplomacy": 0.3, "military": 0.6, "economy": 0.3 },
+      "image": "/assets/factions/7a6ae9a077f4d6178e55be82b7039c7a.jpg",
+      "voice": "弥勒降世，明王出世。吾举义旗，为天下苍生。卿来辅我，当共复光明世界。"
+    },
+    "faction_mingyuzhen": {
+      "id": "faction_mingyuzhen",
+      "name": "明玉珍",
+      "full_name": "明玉珍（大夏）",
+      "title": "大夏皇帝",
+      "color": "#B8860B",
+      "capital_tile": "tile_chongqing",
+      "initial_territory": [
+        "tile_chongqing", "tile_chengdu", "tile_kuizhou", "tile_baoning",
+        "tile_xuzhou_sc", "tile_zunyi", "tile_shunqing", "tile_jiading"
+      ],
+      "initial_treasury": 6500,
+      "initial_grain": 5000,
+      "initial_arms": 90,
+      "initial_horses": 30,
+      "initial_troops": 3000,
+      "initial_reputation": 40,
+      "personality_tags": ["仁厚之主", "蜀道自守", "偏安一隅"],
+      "difficulty": "简单",
+      "playable": true,
+      "adviser_team": ["ming_yuzhen", "liu_zhen"],
+      "adviser_description": "大夏谋士团：明玉珍仁厚爱民、刘桢辅佐建制",
+      "buffs": [
+        { "name": "蜀道天险", "effect": "防御战力+40%", "type": "military" },
+        { "name": "天府粮仓", "effect": "粮食产量+25%", "type": "economy" }
+      ],
+      "debuffs": [
+        { "name": "封闭桎梏", "effect": "贸易收入-30%", "type": "economy" },
+        { "name": "出川艰难", "effect": "进攻行军消耗+50%", "type": "military" }
+      ],
+      "ai_logic": { "expansion": 0.2, "consolidation": 0.7, "diplomacy": 0.4, "military": 0.3, "economy": 0.6 },
+      "image": "/assets/factions/649817e3158b0df1c68ab2e2a2a0e4f7.jpg",
+      "voice": "孤据蜀道天险，守大夏之土。民安物阜，关河稳固。卿来辅我，可共保西陲，以观天下之变。"
+    },
+    "faction_wangbaobao": {
+      "id": "faction_wangbaobao",
+      "name": "王保保",
+      "full_name": "王保保（扩廓帖木儿）",
+      "title": "河南王",
+      "color": "#666699",
+      "capital_tile": "tile_taiyuan",
+      "initial_territory": [
+        "tile_taiyuan", "tile_datong", "tile_pingyang", "tile_yanan",
+        "tile_ganzhou", "tile_lintao"
+      ],
+      "initial_treasury": 8000,
+      "initial_grain": 5000,
+      "initial_arms": 120,
+      "initial_horses": 150,
+      "initial_troops": 4000,
+      "initial_reputation": 45,
+      "personality_tags": ["忠勇无双", "骑兵统帅", "元廷柱石", "蒙古铁骑"],
+      "difficulty": "中等",
+      "playable": true,
+      "adviser_team": ["wang_baobao"],
+      "adviser_description": "王保保势力：元末第一名将扩廓帖木儿，统率蒙古精锐铁骑",
+      "buffs": [
+        { "name": "铁骑无双", "effect": "骑兵战力+40%", "type": "military" },
+        { "name": "忠义之名", "effect": "将领忠诚度+20%", "type": "court" }
+      ],
+      "debuffs": [
+        { "name": "两线作战", "effect": "南北同时用兵，资源消耗+30%", "type": "military" },
+        { "name": "朝堂猜忌", "effect": "元廷内部掣肘", "type": "court" }
+      ],
+      "ai_logic": { "expansion": 0.5, "consolidation": 0.4, "diplomacy": 0.3, "military": 0.8, "economy": 0.3 },
+      "image": "/assets/factions/a1838ce68653600728081332905c0fd1.jpg",
+      "voice": "吾乃扩廓帖木儿，大元最后的名将。铁骑所向，天下莫敢当。卿若随我，共保大元江山。"
+    },
+    "faction_mobei": {
+      "id": "faction_mobei",
+      "name": "漠北诸部",
+      "full_name": "漠北诸部（蒙古草原部落联盟）",
+      "title": "草原大汗",
+      "color": "#887766",
+      "capital_tile": "tile_helin",
+      "initial_territory": [
+        "tile_helin", "tile_karakorum", "tile_shangdu",
+        "tile_liaoyang", "tile_shenyang"
+      ],
+      "initial_treasury": 5000,
+      "initial_grain": 2000,
+      "initial_arms": 80,
+      "initial_horses": 200,
+      "initial_troops": 4500,
+      "initial_reputation": 25,
+      "personality_tags": ["游牧骑射", "劫掠为生", "草原雄风"],
+      "difficulty": "困难",
+      "playable": true,
+      "adviser_team": ["tatar_khan"],
+      "adviser_description": "漠北草原部落联盟，游牧骑射如风，以战养战",
+      "buffs": [
+        { "name": "游牧骑射", "effect": "骑兵战力+45%", "type": "military" },
+        { "name": "以战养战", "effect": "战斗胜利获得额外银两+30%", "type": "economy" }
+      ],
+      "debuffs": [
+        { "name": "无固定根基", "effect": "非草原地块收益-40%", "type": "economy" },
+        { "name": "部落内斗", "effect": "朝堂稳定度每月-2", "type": "court" }
+      ],
+      "ai_logic": { "expansion": 0.7, "consolidation": 0.2, "diplomacy": 0.2, "military": 0.8, "economy": 0.2 },
+      "image": "/assets/factions/5812a954fbc9e83b11ddaa4cc2b7a88a.jpg",
+      "voice": "草原雄鹰，驰骋万里。漠北诸部，铁骑所至，皆为牧场。卿若随我，纵横大漠，逐鹿中原。"
+    }
+  },
+  "counter_relations": [
+    { "attacker": "faction_chenyouliang", "defender": "faction_zhuyuanzhang", "relation": -25, "reason": "天下之争" },
+    { "attacker": "faction_zhuyuanzhang", "defender": "faction_chenyouliang", "relation": -25, "reason": "鄱阳湖之争" },
+    { "attacker": "faction_zhuyuanzhang", "defender": "faction_zhangshicheng", "relation": -15, "reason": "江南争霸" },
+    { "attacker": "faction_zhangshicheng", "defender": "faction_zhuyuanzhang", "relation": -10, "reason": "江南争雄" },
+    { "attacker": "faction_yuan", "defender": "faction_zhuyuanzhang", "relation": -30, "reason": "元廷讨逆" },
+    { "attacker": "faction_yuan", "defender": "faction_xushouhui", "relation": -30, "reason": "红巾叛军" },
+    { "attacker": "faction_wangbaobao", "defender": "faction_xushouhui", "relation": -20, "reason": "红巾讨伐" },
+    { "attacker": "faction_xushouhui", "defender": "faction_yuan", "relation": -30, "reason": "反元复宋" },
+    { "attacker": "faction_mingyuzhen", "defender": "faction_zhuyuanzhang", "relation": 5, "reason": "同出红巾" },
+    { "attacker": "faction_fangguozhen", "defender": "faction_zhangshicheng", "relation": -5, "reason": "海陆之争" },
+    { "attacker": "faction_mobei", "defender": "faction_yuan", "relation": -10, "reason": "草原霸权之争" },
+    { "attacker": "faction_mobei", "defender": "faction_wangbaobao", "relation": -15, "reason": "蒙古草原控制权" },
+    { "attacker": "faction_chenyouliang", "defender": "faction_xushouhui", "relation": -15, "reason": "弑主之仇" }
+  ]
+}

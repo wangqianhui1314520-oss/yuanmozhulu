@@ -1,0 +1,29 @@
+{
+  "envId": "yuanmozhulu-d7g0odx41c77d74e6",
+  "version": "2.0",
+  "framework": {
+    "name": "yuanmo-zhulu",
+    "plugins": {
+      "cloudrun": {
+        "use": "@cloudbase/framework-plugin-container",
+        "inputs": {
+          "serviceName": "yuanmo-zhulu",
+          "servicePath": ".",
+          "containerPort": 80,
+          "dockerfile": "Dockerfile",
+          "envVariables": {
+            "TENCENT_API_KEY": "{{env.TENCENT_API_KEY}}",
+            "PYTHONUTF8": "1",
+            "PYTHONIOENCODING": "utf-8"
+          },
+          "cpu": 1,
+          "mem": 2,
+          "minNum": 1,
+          "maxNum": 1,
+          "policyType": "cpu",
+          "policyThreshold": 80
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,196 @@
+game:
+  start_year: 1351
+  start_month: 4
+  max_rounds: 240
+  months_per_year: 12
+  map_width: 42
+  map_height: 32
+  total_tiles: 1328
+  stagger_axis: X
+  stagger_index: Odd
+  hex_orientation: Flat-Top
+  hex_size_px: 72
+
+civil:
+  base_population_growth: 0.02
+  base_tax_rate: 0.15
+  refugee_threshold_morale: 30
+  famine_threshold_grain: 100
+  water_works_effect: 0.15
+  granary_capacity_per_level: 500
+  clinic_plague_reduction: 0.3
+  migration_cost_per_pop: 2
+  relief_cost_per_pop: 5
+  quarantine_duration: 3
+
+march:
+  base_march_cost: 10
+  mountain_march_mult: 2.0
+  water_march_mult: 1.5
+  siege_base_attrition: 0.05
+  wall_defense_per_level: 0.15
+  ambush_damage_mult: 1.8
+  force_assault_loss_mult: 2.5
+  garrison_rest_recovery: 0.1
+  raid_supply_steal_ratio: 0.3
+  fortification_defense_bonus: 0.2
+  border_raid_damage: 0.15
+  logistics_base_attrition: 0.02
+
+diplomacy:
+  base_relation_change: 5
+  alliance_relation_bonus: 20
+  war_relation_penalty: -50
+  tribute_min_amount: 500
+  tribute_relation_per_100: 2
+  marriage_relation_bonus: 30
+  hostage_relation_bonus: 15
+  coalition_min_members: 2
+  encircle_relation_penalty: -10
+  vassal_tribute_rate: 0.2
+  vassal_independence_war_chance: 0.3
+  trade_route_income: 100
+  peace_treaty_duration: 12
+
+spy:
+  deploy_cost: 200
+  deploy_success_base: 0.6
+  expose_cost: 150
+  expose_success_base: 0.5
+  intel_accuracy_base: 0.7
+  false_intel_plant_cost: 300
+  rumor_spread_cost: 100
+  discord_minister_cost: 250
+  double_agent_turn_cost: 400
+  spy_discovery_chance_per_turn: 0.1
+
+law:
+  trial_base_cost: 100
+  penalty_caning_damage: 10
+  penalty_exile_cost: 50
+  penalty_labor_years: 3
+  penalty_death_reputation_hit: -10
+  penalty_confiscation_treasury_gain: 0.5
+  amnesty_reputation_bonus: 15
+  amnesty_cooldown: 24
+
+vassal:
+  vassal_loyalty_decay: -2
+  vassal_aid_cost_mult: 1.5
+  vassal_rebellion_threshold: 20
+  vassal_annex_threshold: 80
+  vassal_annex_cost: 5000
+
+royal:
+  enfeoff_cost: 1000
+  enfeoff_loyalty_bonus: 10
+  prince_marry_relation_bonus: 25
+  prince_army_morale_bonus: 0.1
+  succession_struggle_chance: 0.05
+  sacrifice_cost: 500
+  sacrifice_disaster_reduction: 0.2
+  move_capital_cost: 10000
+  exile_court_maintenance: 200
+
+workshop:
+  armory_cost: 800
+  armory_arms_per_turn: 5
+  armory_upkeep: 50
+  plunder_armory_gain_ratio: 0.4
+  policy_unlock_cost: 2000
+  maritime_trade_bonus: 0.25
+  maritime_piracy_risk: 0.1
+
+sea_trade:
+  port_income_base: 150
+  trade_route_maintenance: 30
+  naval_battle_water_bonus: 0.3
+  coastal_raid_damage: 0.1
+
+save:
+  max_save_slots: 10
+  auto_save_interval: 1
+  backup_keep_count: 5
+  replay_snapshot_max: 50
+
+# ============================================================
+# 3.0 新增：四季事件系统
+# ============================================================
+season_events:
+  flood_base_chance: 0.06
+  refugee_base_chance: 0.04
+  mutiny_base_chance: 0.03
+  bandit_base_chance: 0.04
+  blizzard_base_chance: 0.07
+  spring_plow_bonus_chance: 0.15
+
+# ============================================================
+# 3.0 新增：补给线系统
+# ============================================================
+supply:
+  max_supply_distance: 4
+  safe_supply_distance: 2
+  broken_attrition_base: 0.08
+  broken_attrition_max: 0.15
+  winter_attrition_bonus: 0.04
+
+# ============================================================
+# 3.0 新增：城建基建系统
+# ============================================================
+building:
+  farmland:
+    cost: 300
+    grain_per_level: 80
+    max_level: 5
+  workshop:
+    cost: 500
+    treasury_per_level: 60
+    max_level: 4
+  beacon:
+    cost: 200
+    vision_range_per_level: 2
+    max_level: 3
+  dock:
+    cost: 400
+    trade_bonus_per_level: 0.25
+    max_level: 3
+  barracks:
+    cost: 350
+    recruit_per_level: 15
+    max_level: 4
+  granary:
+    cost: 250
+    capacity_per_level: 500
+    max_level: 5
+  clinic:
+    cost: 200
+    plague_resist_per_level: 0.3
+    max_level: 3
+  armory:
+    cost: 800
+    arms_per_level: 5
+    max_level: 4
+  stable:
+    cost: 600
+    horses_per_level: 2
+    max_level: 4
+  temple:
+    cost: 400
+    morale_per_level: 2
+    max_level: 3
+  wall:
+    cost: 600
+    fortification_per_level: 1
+    max_level: 5
+
+# ============================================================
+# 3.0 新增：国策/民心/治安系统
+# ============================================================
+policy:
+  morale_revolt_threshold: 20
+  morale_tax_penalty_threshold: 50
+  morale_recruit_bonus_threshold: 70
+  order_bandit_double_threshold: 20
+  order_revolt_risk_threshold: 15
+  corvee_morale_penalty_threshold: 30
+  policy_unlock_default_cost: 500
