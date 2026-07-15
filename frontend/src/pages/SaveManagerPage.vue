@@ -201,7 +201,7 @@ const saving = ref(false)
 const savingSlot = ref(-1)
 const loading = ref(false)
 const loadingSlot = ref<number | 'auto' | null>(null)
-const isFullscreen = ref(false)
+const { isFullscreen, toggleFullscreen } = useFullscreen()
 const saveNotes = ref<string[]>(Array(10).fill(''))
 const quickResult = ref('')
 const confirmMsg = ref('')
@@ -238,10 +238,6 @@ function formatTime(isoStr: string): string {
 
 onMounted(async () => {
   await refreshSaves()
-})
-
-onUnmounted(() => {
-  document.removeEventListener('fullscreenchange', onFullscreenChange)
 })
 
 function getSaveForSlot(slot: number) {

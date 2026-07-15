@@ -292,6 +292,13 @@ class RoundEngine:
             "purge": LockCategory.LAW,              # 清洗官员：单回合仅一次
             "cultural_policy": LockCategory.TAX,    # 文化政策：与税政共用势力锁
             "sea_policy": LockCategory.TAX,         # 海洋政策：与税政共用势力锁
+            # 2026-07-15: 补充朝堂/皇族/航海等指令的势力级锁
+            "decree": LockCategory.LAW,             # 圣旨(册立/教导/纳妃/修史/改元)
+            "marriage": LockCategory.ENFEOFF,       # 皇子联姻
+            "patrol": LockCategory.LAW,             # 水师巡航
+            "appoint": LockCategory.ENFEOFF,        # 提拔官员
+            "dismiss": LockCategory.LAW,            # 降职官员
+            "trade": LockCategory.DIPLOMACY,        # 开辟航线
         }
         if action in faction_level_actions:
             if self._op_lock.check_faction_lock(fid, faction_level_actions[action]):
@@ -352,6 +359,13 @@ class RoundEngine:
             "medical": (LockCategory.RELIEF, False),
             "ambush": (LockCategory.RECRUIT, False),
             "plunder": (LockCategory.MARCH, False),
+            # 2026-07-15: 补充政权/皇族/航海等新指令类型到锁映射表
+            "decree": (LockCategory.LAW, True),
+            "marriage": (LockCategory.ENFEOFF, True),
+            "patrol": (LockCategory.LAW, True),
+            "appoint": (LockCategory.ENFEOFF, True),
+            "dismiss": (LockCategory.LAW, True),
+            "trade": (LockCategory.DIPLOMACY, True),
         }
         
         if action in lock_map:
@@ -451,10 +465,10 @@ class RoundEngine:
                 return {"valid": False, "reason": f"地块{tile_id}不存在"}
             if tile.faction_id != player.faction_id:
                 return {"valid": False, "reason": f"地块{tile_id}不属于你方"}
-            valid_buildings = ["granary", "armory", "stable", "port", "clinic"]
+            valid_buildings = ["granary", "armory", "stable", "port", "clinic", "ship", "shipyard"]
             if building not in valid_buildings:
                 return {"valid": False, "reason": f"未知建筑类型: {building}，支持: {valid_buildings}"}
-            costs = {"granary": 800, "armory": 800, "stable": 800, "port": 1200, "clinic": 600}
+            costs = {"granary": 800, "armory": 800, "stable": 800, "port": 1200, "clinic": 600, "ship": 200, "shipyard": 400}
             cost = costs.get(building, 500)
             if player.treasury < cost:
                 return {"valid": False, "reason": f"银两不足（需要{cost}，现有{player.treasury}）"}
@@ -510,9 +524,9 @@ class RoundEngine:
             tile = self.world.get_tile(tile_id)
             if not tile:
                 return {"valid": False, "reason": f"地块{tile_id}不存在"}
-            cost = int(tile.population * 0.01)
-            if player.grain < cost:
-                return {"valid": False, "reason": f"粮草不足（需要{cost}，现有{player.grain}）"}
+            cost = params.get("cost", 300)  # 前端传入银两消耗，默认300
+            if player.treasury < cost:
+                return {"valid": False, "reason": f"银两不足（需要{cost}，现有{player.treasury}）"}
 
         elif action == "tax":
             if player.realm_stability < 30:
@@ -527,8 +541,10 @@ class RoundEngine:
                 return {"valid": False, "reason": "银两不足以纳贡"}
 
         elif action == "enfeoff":
+            # 接受 prince_name（皇子出镇）或 official_id（官员分封）
+            prince_name = params.get("prince_name", "")
             official_id = params.get("official_id", "")
-            if official_id not in self.world.officials:
+            if not prince_name and official_id not in self.world.officials:
                 return {"valid": False, "reason": "官员不存在"}
             if player.treasury < 1000:
                 return {"valid": False, "reason": "银两不足以分封"}
@@ -622,6 +638,49 @@ class RoundEngine:
             move_cost = _const.get("move_capital_cost", 10000)
             if player.treasury < move_cost:
                 return {"valid": False, "reason": f"银两不足（需要{move_cost}，现有{player.treasury}）"}
+
+        elif action == "purge":
+            official_id = params.get("official_id", "")
+            if not official_id:
+                return {"valid": False, "reason": "未指定要清洗的官员"}
+
+        elif action == "decree":
+            decree_type = params.get("decree_type", "")
+            valid_decree_types = ["chronicle", "era_name", "heir", "education", "spawn_prince"]
+            if decree_type not in valid_decree_types:
+                return {"valid": False, "reason": f"无效圣旨类型: {decree_type}，支持: {valid_decree_types}"}
+            if decree_type in ("heir", "education", "spawn_prince") and not params.get("prince_name", ""):
+                return {"valid": False, "reason": "未指定皇子名称"}
+
+        elif action == "marriage":
+            cost = params.get("cost", 300)
+            if player.treasury < cost:
+                return {"valid": False, "reason": f"银两不足（需要{cost}，现有{player.treasury}）"}
+
+        elif action == "patrol":
+            tile_id = params.get("tile_id", "")
+            tile = self.world.get_tile(tile_id)
+            if not tile:
+                return {"valid": False, "reason": f"巡航地块{tile_id}不存在"}
+
+        elif action == "appoint":
+            if not params.get("official_id", "") and not params.get("name", ""):
+                return {"valid": False, "reason": "未指定提拔官员信息"}
+
+        elif action == "dismiss":
+            if not params.get("official_id", "") and not params.get("name", ""):
+                return {"valid": False, "reason": "未指定降职官员信息"}
+
+        elif action == "trade":
+            tile_id = params.get("tile_id", "")
+            tile = self.world.get_tile(tile_id)
+            if not tile:
+                return {"valid": False, "reason": f"开航地块{tile_id}不存在"}
+            if tile.faction_id != player.faction_id:
+                return {"valid": False, "reason": f"地块{tile_id}不属于你方"}
+            cost = params.get("cost", 300)
+            if player.treasury < cost:
+                return {"valid": False, "reason": f"银两不足（需要{cost}，现有{player.treasury}）"}
 
         return {"valid": True, "reason": ""}
     
@@ -812,18 +871,24 @@ class RoundEngine:
             
             elif action == "relief":
                 tile_id = params.get("tile_id", "")
+                relief_type = params.get("type", "relieve")
                 tile = self.world.get_tile(tile_id)
                 if not tile:
                     return {"success": False, "message": f"地块{tile_id}不存在"}
                 if tile.faction_id != player.faction_id:
                     return {"success": False, "message": f"地块{tile_id}不属于你方"}
-                grain_cost = int(tile.population * 0.01)
-                if player.grain >= grain_cost:
-                    player.grain -= grain_cost
-                    tile.morale = min(100, tile.morale + 10)
-                    tile.disasters = []
-                    return {"success": True, "message": f"赈灾成功，民心恢复", "tile": tile_id}
-                return {"success": False, "message": "粮草不足"}
+                cost = params.get("cost", 300)
+                if player.treasury >= cost:
+                    player.treasury -= cost
+                    if relief_type == "treat_injured":
+                        tile.morale = min(100, tile.morale + 5)
+                        tile.population = min(tile.population + 200, tile.population * 2)
+                        return {"success": True, "message": f"施药完成，民心恢复（耗费银{cost}两）", "tile": tile_id}
+                    else:
+                        tile.morale = min(100, tile.morale + 10)
+                        tile.disasters = []
+                        return {"success": True, "message": f"赈灾成功，民心恢复（耗费银{cost}两）", "tile": tile_id}
+                return {"success": False, "message": "银两不足"}
             
             elif action == "tax":
                 tax_type = params.get("tax_type", "normal")
@@ -875,8 +940,8 @@ class RoundEngine:
                     return {"success": False, "message": f"地块{tile_id}不存在"}
                 if tile.faction_id != player.faction_id:
                     return {"success": False, "message": f"地块{tile_id}不属于你方"}
-                costs = {"granary": 800, "armory": 800, "stable": 800, "port": 1200, "clinic": 600}
-                labels = {"granary": "粮仓", "armory": "军械所", "stable": "马场", "port": "港口", "clinic": "医馆"}
+                costs = {"granary": 800, "armory": 800, "stable": 800, "port": 1200, "clinic": 600, "ship": 200, "shipyard": 400}
+                labels = {"granary": "粮仓", "armory": "军械所", "stable": "马场", "port": "港口", "clinic": "医馆", "ship": "战船", "shipyard": "船坞"}
                 cost = costs.get(building, 500)
                 label = labels.get(building, building)
                 if player.treasury >= cost:
@@ -893,7 +958,13 @@ class RoundEngine:
                         tile.clinic += 1
                     elif building == "port":
                         tile.is_port = True
-                    return {"success": True, "message": f"「{tile.tile_name or tile_id}」{label}建造完成"}
+                    elif building == "ship":
+                        tile.ships = getattr(tile, 'ships', 0) + 1
+                        tile.fleet_size = getattr(tile, 'fleet_size', 0) + 1
+                    elif building == "shipyard":
+                        tile.shipyard_level = getattr(tile, 'shipyard_level', 0) + 1
+                        tile.fleet_size = getattr(tile, 'fleet_size', 0) + 3
+                    return {"success": True, "message": f"「{tile.tile_name or tile_id}」{label}建造完成（耗费银{cost}两）"}
                 return {"success": False, "message": f"银两不足（需要{cost}，现有{player.treasury}）"}
             
             elif action == "enfeoff":
@@ -1077,6 +1148,73 @@ class RoundEngine:
                     "new_capital": tile_id,
                     "cost_silver": cost_silver,
                 }
+            
+            elif action == "decree":
+                # 圣旨指令：册立世子/教导皇子/纳妃/修史/改元
+                decree_type = params.get("decree_type", "")
+                content = params.get("content", "")
+                prince_name = params.get("prince_name", "")
+                cost = params.get("cost", 0)
+                if cost > 0 and player.treasury >= cost:
+                    player.treasury -= cost
+                if decree_type == "chronicle":
+                    return {"success": True, "message": f"史书编纂中: {content[:50]}...", "decree_type": decree_type}
+                elif decree_type == "era_name":
+                    player.era_name = content
+                    return {"success": True, "message": f"已改元「{content}」", "decree_type": decree_type}
+                elif decree_type == "heir":
+                    return {"success": True, "message": f"已册立{prince_name}为世子", "decree_type": decree_type}
+                elif decree_type == "education":
+                    return {"success": True, "message": f"已安排{prince_name}延师教导", "decree_type": decree_type}
+                elif decree_type == "spawn_prince":
+                    return {"success": True, "message": f"新皇子{prince_name}已入宗谱", "decree_type": decree_type}
+                else:
+                    return {"success": True, "message": f"圣意已下: {content[:50]}", "decree_type": decree_type}
+            
+            elif action == "marriage":
+                # 皇子联姻
+                prince_name = params.get("prince_name", "")
+                cost = params.get("cost", 300)
+                if player.treasury >= cost:
+                    player.treasury -= cost
+                player.reputation += 3
+                return {"success": True, "message": f"{prince_name}已完成大婚，声望+3（耗费银{cost}两）", "prince_name": prince_name}
+            
+            elif action == "patrol":
+                # 水师巡航
+                tile_id = params.get("tile_id", "")
+                port_name = params.get("port_name", tile_id)
+                tile = self.world.get_tile(tile_id)
+                if not tile or tile.faction_id != player.faction_id:
+                    return {"success": False, "message": f"地块{tile_id}不存在或不属于你方"}
+                tile.morale = min(100, tile.morale + 3)
+                return {"success": True, "message": f"水师已从{port_name}出航巡航", "tile": tile_id}
+            
+            elif action == "appoint":
+                # 提拔官员
+                official_id = params.get("official_id", "")
+                off_name = params.get("name", official_id)
+                return {"success": True, "message": f"已提拔{off_name}", "official_id": official_id}
+            
+            elif action == "dismiss":
+                # 降职官员
+                official_id = params.get("official_id", "")
+                off_name = params.get("name", official_id)
+                return {"success": True, "message": f"已降职{off_name}", "official_id": official_id}
+            
+            elif action == "trade":
+                # 开辟航线（非外交贸易，是内政层面的海贸航路）
+                tile_id = params.get("tile_id", "")
+                cost = params.get("cost", 300)
+                tile = self.world.get_tile(tile_id)
+                if not tile or tile.faction_id != player.faction_id:
+                    return {"success": False, "message": f"地块{tile_id}不存在或不属于你方"}
+                if player.treasury >= cost:
+                    player.treasury -= cost
+                # 标记航线开辟
+                tile.trade_route_open = True
+                tile.trade_income = getattr(tile, 'trade_income', 0) + 80
+                return {"success": True, "message": f"已从{tile.tile_name or tile_id}开辟新航线（耗费银{cost}两）", "tile": tile_id}
             
             else:
                 return {"success": False, "message": f"未知指令类型: {action}"}

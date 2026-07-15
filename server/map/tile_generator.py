@@ -242,7 +242,7 @@ def export_map_final_json(
 ):
     """导出标准化全量地图 JSON (map_final.json)"""
     output = {
-        "version": "4.0",
+        "version": "4.1",
         "level": "prefecture",  # 府州级
         "hex_size_px": int(DEFAULT_HEX_SIZE),
         "meta": {

@@ -409,7 +409,17 @@ class PeaceNegotiationEngine:
 
             elif term == PeaceTerm.RENOUNCE_CLAIMS:
                 result["claims_renounced"] = proposal.tile_ids
-                # TODO: 移除 claim_tiles 中的相关地块
+                # 确定放弃宣称的势力并移除 claim_tiles 中的相关地块
+                renouncing_faction = atk_faction if not proposal.is_from_attacker else def_faction
+                if renouncing_faction and hasattr(renouncing_faction, 'claim_tiles') and renouncing_faction.claim_tiles:
+                    old_count = len(renouncing_faction.claim_tiles)
+                    renouncing_faction.claim_tiles = [
+                        tid for tid in renouncing_faction.claim_tiles
+                        if tid not in proposal.tile_ids
+                    ]
+                    removed = old_count - len(renouncing_faction.claim_tiles)
+                    if removed > 0:
+                        logger.info(f"[Peace] {renouncing_faction.name} 放弃 {removed} 块地宣称")
                 result["message"] += " 放弃相关领土宣称。"
 
             elif term == PeaceTerm.RELEASE_PRISONERS:

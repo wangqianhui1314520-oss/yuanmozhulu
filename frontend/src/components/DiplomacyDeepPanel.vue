@@ -102,16 +102,14 @@ function getRelation(fidA: string, fidB: string): any {
 
 onMounted(() => { if (props.visible) analyzeStrategy() })
 watch(() => props.visible, (v) => { if (v) analyzeStrategy() })
-// 同时支持通过 store.activePanel 控制
-watch(() => store.activePanel, (panel) => { if (panel === 'diplomacyDeep') analyzeStrategy() })
 </script>
 
 <template>
-  <div v-if="visible || store.activePanel === 'diplomacyDeep'" class="diplomacy-overlay" @click.self="emit('close'); store.togglePanel('diplomacyDeep')">
+  <div v-if="visible" class="diplomacy-overlay" @click.self="emit('close')">
     <div class="diplomacy-panel">
       <div class="panel-header">
         <h3>🕊️ 纵横权谋</h3>
-        <button @click="emit('close'); store.togglePanel('diplomacyDeep')" class="close-btn">✕</button>
+        <button @click="emit('close')" class="close-btn">✕</button>
       </div>
 
       <div class="section-tabs">

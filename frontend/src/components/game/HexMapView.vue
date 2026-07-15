@@ -298,11 +298,10 @@ function initKonva() {
   stage = new Konva.Stage({ container, width: w, height: h })
 
   // 多层系统:
-  // bg(宣纸纹理) -> waterway(水域航道) -> hex(地形+地名) -> claim(法理宣称) ->
+  // waterway(水域航道) -> hex(地形+地名) -> claim(法理宣称) ->
   // faction(势力色块) -> building(城建) -> disaster(灾害) -> fog(迷雾) ->
   // boundary(边界) -> overlay(标记) -> garrison(驻防) ->
   // marchRoute(行军路线) -> diplomacy(外交附庸)
-  bgLayer = new Konva.Layer()
   waterwayLayer = new Konva.Layer()
   hexLayer = new Konva.Layer()
   claimLayer = new Konva.Layer()
@@ -316,17 +315,6 @@ function initKonva() {
   marchRouteLayer = new Konva.Layer()
   diplomacyLayer = new Konva.Layer()
 
-  // 生成暖羊皮纸底纹（大尺寸避免缩放模糊）
-  inkWashCanvas = generateInkWashTexture({ width: 2048, height: 1536, baseColor: '#c4b898' })
-  const bgImg = new Konva.Image({
-    image: inkWashCanvas,
-    x: 0, y: 0,
-    width: w, height: h,
-    listening: false,
-  })
-  bgLayer.add(bgImg)
-
-  stage.add(bgLayer)
   stage.add(waterwayLayer)
   stage.add(hexLayer)
   stage.add(claimLayer)
@@ -424,11 +412,6 @@ function initKonva() {
       const nh = container.clientHeight
       stage.width(nw)
       stage.height(nh)
-      // 更新背景纹理
-      if (bgLayer && bgLayer.children.length > 0) {
-        const bgImg = bgLayer.children[0] as any
-        if (bgImg && bgImg.width) { bgImg.width(nw); bgImg.height(nh) }
-      }
       interaction.updateContainerSize(nw, nh)
       // updateContainerSize 会触发 onViewportChange → renderAll
     }
@@ -1331,6 +1314,7 @@ defineExpose({ resetView, setZoomLevel, zoomIn, zoomOut, scale })
 .hex-map-container {
   width: 100%; height: 100%;
   position: relative;
+  z-index: 1;                        /* 确保在 ::before 装饰层之上 */
   overflow: hidden;
   background: #c4b898;               /* 暖羊皮纸底色 */
   cursor: grab;

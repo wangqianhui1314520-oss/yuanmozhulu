@@ -1,22 +1,23 @@
 """
-势力初始领地配置 v4.1 - 府州级整块分配 (统一势力ID)
+势力初始领地配置 v4.1 - 府州级整块分配 (统一势力ID，按沙盘地图系统文档)
 
 v4.1 变更:
+- 按文档修正势力首都：徐寿辉→汴梁(22,13)，王保保→中庆(14,18)
+- 王保保核心行省从"中书省"改为"云南"（梁王治云南）
 - 势力ID统一为 faction_ 前缀，与 factions.json 体系一致
-- 韩宋→徐寿辉(faction_xushouhui)、梁王→王保保(faction_wangbaobao)、陈友定→漠北(faction_mobei)
-- 重新设计配额算法：按独占省份限定上限+共享省份BFS公平竞争+剩余按配额比例分配
+- 配额算法：独占省份限定上限+共享省份BFS公平竞争+剩余按配额比例分配
 - 目标每势力35~95格，总计499格
 
 势力列表（统一ID体系）:
-  1. faction_yuan         元廷    - 岭北+中书省+辽阳+甘肃+陕西+宣政院
-  2. faction_xushouhui    徐寿辉   - 河南江北（继承韩宋势力范围）
-  3. faction_zhuyuanzhang 朱元璋   - 集庆(南京)周边江浙
-  4. faction_chenyouliang 陈友谅   - 武昌+江西+湖广
-  5. faction_zhangshicheng张士诚   - 平江(苏州)周边江浙
-  6. faction_fangguozhen  方国珍   - 庆元(宁波)周边浙东
-  7. faction_wangbaobao   王保保   - 山西（中书省南部，继承元廷柱石）
-  8. faction_mingyuzhen   明玉珍   - 四川盆地
-  9. faction_mobei        漠北诸部 - 岭北草原
+  1. faction_yuan         元廷    - 岭北+辽阳+中书省+陕西+甘肃+宣政院  | 首都: 大都(北京)
+  2. faction_xushouhui    徐寿辉   - 河南江北                         | 首都: 汴梁(开封)
+  3. faction_zhuyuanzhang 朱元璋   - 江浙                             | 首都: 集庆(南京)
+  4. faction_chenyouliang 陈友谅   - 江西+湖广                        | 首都: 武昌
+  5. faction_zhangshicheng张士诚   - 江浙                             | 首都: 平江(苏州)
+  6. faction_fangguozhen  方国珍   - 江浙                             | 首都: 庆元(宁波)
+  7. faction_wangbaobao   王保保   - 云南（梁王）                      | 首都: 中庆(昆明)
+  8. faction_mingyuzhen   明玉珍   - 四川                             | 首都: 成都
+  9. faction_mobei        漠北诸部 - 岭北                             | 首都: 和林
 """
 
 from __future__ import annotations
@@ -43,19 +44,19 @@ FACTION_COLORS: Dict[str, dict] = {
     "faction_chenyouliang":  {"fill": "#00008B", "border": "#4169E1", "name": "陈友谅",  "name_cn": "大汉"},
     "faction_zhangshicheng": {"fill": "#8B008B", "border": "#FF69B4", "name": "张士诚",  "name_cn": "大周"},
     "faction_fangguozhen":   {"fill": "#2F4F4F", "border": "#20B2AA", "name": "方国珍",  "name_cn": "方氏"},
-    "faction_wangbaobao":    {"fill": "#4B0082", "border": "#9370DB", "name": "王保保",  "name_cn": "河南"},
+    "faction_wangbaobao":    {"fill": "#4B0082", "border": "#9370DB", "name": "王保保",  "name_cn": "梁王"},
     "faction_mingyuzhen":    {"fill": "#8B4513", "border": "#DEB887", "name": "明玉珍",  "name_cn": "大夏"},
     "faction_mobei":         {"fill": "#556B2F", "border": "#9ACD32", "name": "漠北诸部","name_cn": "漠北"},
 }
 
 FACTION_CAPITALS: Dict[str, Tuple[int, int]] = {
     "faction_yuan":          (24, 8),    # 大都 (北京)
-    "faction_xushouhui":     (19, 16),   # 襄阳
+    "faction_xushouhui":     (22, 13),   # 汴梁 (开封)
     "faction_zhuyuanzhang":  (26, 15),   # 集庆 (南京)
     "faction_chenyouliang":  (20, 17),   # 武昌
     "faction_zhangshicheng": (28, 16),   # 平江 (苏州)
     "faction_fangguozhen":   (29, 18),   # 庆元 (宁波)
-    "faction_wangbaobao":    (18, 9),    # 太原
+    "faction_wangbaobao":    (14, 18),   # 中庆 (昆明)
     "faction_mingyuzhen":    (14, 14),   # 成都
     "faction_mobei":         (18, 4),    # 和林 (漠北草原)
 }
@@ -72,7 +73,7 @@ FACTION_CORE_PROVINCES: Dict[str, List[str]] = {
     "faction_chenyouliang":  ["jiangxi", "huguang"],
     "faction_zhangshicheng": ["jiangzhe"],
     "faction_fangguozhen":   ["jiangzhe"],
-    "faction_wangbaobao":    ["zhongshu"],
+    "faction_wangbaobao":    ["yunnan"],    # 梁王治云南
     "faction_mingyuzhen":    ["sichuan"],
     "faction_mobei":         ["lingbei"],   # 与元廷共享岭北
 }
@@ -297,7 +298,7 @@ def export_faction_territory_json(
 ):
     """导出势力领地配置 JSON"""
     output = {
-        "version": "4.0",
+        "version": "4.1",
         "level": "prefecture",
         "meta": {
             "grid_rows": GRID_ROWS,

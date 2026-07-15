@@ -41,7 +41,7 @@
         { "name": "朝堂腐败", "effect": "朝堂稳定度每月-2", "type": "court" }
       ],
       "ai_logic": { "expansion": 0.2, "consolidation": 0.6, "diplomacy": 0.3, "military": 0.5, "economy": 0.2 },
-      "image": "/assets/factions/a6f30b6324fce83790efa49f2d0929fd.jpg",
+      "image": "/assets/factions/ruler_yuan.jpg",
       "voice": "朕承大元社稷，君临天下。然乱世汹汹，红巾四起。卿既来辅朕，当重整河山，中兴大元。"
     },
     "faction_zhuyuanzhang": {
@@ -76,7 +76,7 @@
         { "name": "根基未固", "effect": "初始兵力较少", "type": "military" }
       ],
       "ai_logic": { "expansion": 0.6, "consolidation": 0.4, "diplomacy": 0.4, "military": 0.6, "economy": 0.5 },
-      "image": "/assets/factions/b47057828607bd36e92aa37417631bf9.jpg",
+      "image": "/assets/factions/ruler_zhuyuan.jpg",
       "voice": "孤起于淮右，布衣提三尺剑，渡江取金陵。高筑墙，广积粮，缓称王。今日择我入世，必当驱除鞑虏，恢复中华。"
     },
     "faction_chenyouliang": {
@@ -111,7 +111,7 @@
         { "name": "弑主之名", "effect": "外交好感度-15", "type": "diplomacy" }
       ],
       "ai_logic": { "expansion": 0.7, "consolidation": 0.2, "diplomacy": 0.2, "military": 0.8, "economy": 0.3 },
-      "image": "/assets/factions/a1838ce68653600728081332905c0fd1.jpg",
+      "image": "/assets/factions/ruler_chen.jpg",
       "voice": "朕据荆楚，拥水师之利，志在一统。朱元璋、张士诚皆不足惧。择我者，当共图九五之尊。"
     },
     "faction_zhangshicheng": {
@@ -146,7 +146,7 @@
         { "name": "盐贩出身", "effect": "士绅支持度-20%", "type": "court" }
       ],
       "ai_logic": { "expansion": 0.2, "consolidation": 0.7, "diplomacy": 0.5, "military": 0.3, "economy": 0.8 },
-      "image": "/assets/factions/649817e3158b0df1c68ab2e2a2a0e4f7.jpg",
+      "image": "/assets/factions/ruler_zhang.jpg",
       "voice": "吾据江南膏腴之地，富甲一方。然天下未定，岂能偏安？愿与卿共治吴越，以成霸业。"
     },
     "faction_fangguozhen": {
@@ -179,7 +179,7 @@
         { "name": "根基浅薄", "effect": "领地防御薄弱", "type": "military" }
       ],
       "ai_logic": { "expansion": 0.3, "consolidation": 0.5, "diplomacy": 0.6, "military": 0.3, "economy": 0.7 },
-      "image": "/assets/factions/0f3acb15948b699fbbd2a780dea693b8.jpg",
+      "image": "/assets/factions/ruler_fang.jpg",
       "voice": "海上有舟，舟山有兵。吾以海贸立世，进退自如。卿若随我，纵横浙东，何愁大事不成。"
     },
     "faction_xushouhui": {
@@ -213,7 +213,7 @@
         { "name": "四面楚歌", "effect": "邻国关系初始-10", "type": "diplomacy" }
       ],
       "ai_logic": { "expansion": 0.5, "consolidation": 0.3, "diplomacy": 0.3, "military": 0.6, "economy": 0.3 },
-      "image": "/assets/factions/7a6ae9a077f4d6178e55be82b7039c7a.jpg",
+      "image": "/assets/factions/ruler_xushou.jpg",
       "voice": "弥勒降世，明王出世。吾举义旗，为天下苍生。卿来辅我，当共复光明世界。"
     },
     "faction_mingyuzhen": {
@@ -247,7 +247,7 @@
         { "name": "出川艰难", "effect": "进攻行军消耗+50%", "type": "military" }
       ],
       "ai_logic": { "expansion": 0.2, "consolidation": 0.7, "diplomacy": 0.4, "military": 0.3, "economy": 0.6 },
-      "image": "/assets/factions/649817e3158b0df1c68ab2e2a2a0e4f7.jpg",
+      "image": "/assets/factions/ruler_ming.jpg",
       "voice": "孤据蜀道天险，守大夏之土。民安物阜，关河稳固。卿来辅我，可共保西陲，以观天下之变。"
     },
     "faction_wangbaobao": {
@@ -281,7 +281,7 @@
         { "name": "朝堂猜忌", "effect": "元廷内部掣肘", "type": "court" }
       ],
       "ai_logic": { "expansion": 0.5, "consolidation": 0.4, "diplomacy": 0.3, "military": 0.8, "economy": 0.3 },
-      "image": "/assets/factions/a1838ce68653600728081332905c0fd1.jpg",
+      "image": "/assets/factions/ruler_wang.jpg",
       "voice": "吾乃扩廓帖木儿，大元最后的名将。铁骑所向，天下莫敢当。卿若随我，共保大元江山。"
     },
     "faction_mobei": {
@@ -315,7 +315,7 @@
         { "name": "部落内斗", "effect": "朝堂稳定度每月-2", "type": "court" }
       ],
       "ai_logic": { "expansion": 0.7, "consolidation": 0.2, "diplomacy": 0.2, "military": 0.8, "economy": 0.2 },
-      "image": "/assets/factions/5812a954fbc9e83b11ddaa4cc2b7a88a.jpg",
+      "image": "/assets/factions/ruler_tatar.jpg",
       "voice": "草原雄鹰，驰骋万里。漠北诸部，铁骑所至，皆为牧场。卿若随我，纵横大漠，逐鹿中原。"
     }
   },

@@ -1326,15 +1326,28 @@ class RoyalAdvancedEngine:
                         break
 
             if not exiled:
-                # 无处流亡，灭亡
-                faction.is_alive = False
-                faction.realm_stability = 0
-                self.world.events_log.append({
-                    "round": self.world.current_round,
-                    "event_type": "faction_destroyed",
-                    "severity": "critical",
-                    "narrative": f"{faction.name}流亡朝廷无依无靠，最终消散于历史长河。",
-                })
+                # Bug #18修复: 玩家势力流亡失败不灭亡，给予困守喘息机会
+                if faction_id == self.world.player_faction_id:
+                    faction.treasury += 500
+                    faction.realm_stability = max(faction.realm_stability, 10)
+                    self.world.events_log.append({
+                        "round": self.world.current_round,
+                        "event_type": "exile_court_player",
+                        "severity": "critical",
+                        "narrative": (f"{faction.name}流亡朝廷无处可去，但天无绝人之路——"
+                                      f"仅存的家臣拼死护主，在荒野中寻得一处隐蔽据点。"
+                                      f"获得500两应急资金，重整旗鼓犹未为晚。"),
+                    })
+                else:
+                    # 无处流亡，灭亡
+                    faction.is_alive = False
+                    faction.realm_stability = 0
+                    self.world.events_log.append({
+                        "round": self.world.current_round,
+                        "event_type": "faction_destroyed",
+                        "severity": "critical",
+                        "narrative": f"{faction.name}流亡朝廷无依无靠，最终消散于历史长河。",
+                    })
 
             return {"success": True, "exiled": exiled,
                     "maintenance_paid": maintenance,

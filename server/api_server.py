@@ -43,7 +43,7 @@ if sys.platform == 'win32':
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
 # 确保日志目录存在
@@ -917,10 +917,28 @@ async def init_game(request: dict):
         # 3.1: 返回模式信息
         mode_info = mode_mgr.get_mode_info()
 
+        # 2026-07-15 修复: 充实 player_faction 数据，包含领地列表
+        player_dict = player.model_dump() if player else None
+        if player_dict and _world_state:
+            # 优先从 factions.json 的 initial_territory 获取命名格式的领地ID
+            # （避免回退到 map_final.json 时返回坐标格式的 ID）
+            faction_cfg = _factions_config.get("factions", {}).get(player.faction_id, {})
+            named_territory = faction_cfg.get("initial_territory", [])
+            player_tiles = _world_state.get_faction_tiles(player.faction_id)
+            player_dict["controlled_tiles"] = named_territory if named_territory else [t.tile_id for t in player_tiles]
+            player_dict["controlled_tile_count"] = len(named_territory) if named_territory else len(player_tiles)
+            # 补充兵力/粮草汇总
+            if player_tiles:
+                player_dict["field_troops"] = sum(getattr(t, 'troops', 0) for t in player_tiles)
+                player_dict["field_grain"] = sum(getattr(t, 'grain', 0) for t in player_tiles)
+            else:
+                player_dict["field_troops"] = 0
+                player_dict["field_grain"] = 0
+
         # P3: 复用 world_dict 中的 factions/tiles/relations 避免重复 model_dump
         return ApiResponse.success({
             "world_state": world_dict,
-            "player_faction": player.model_dump() if player else None,
+            "player_faction": player_dict,
             "player_faction_id": _world_state.player_faction_id,  # 核心规则：玩家操控势力ID
             "factions": world_dict.get("factions", {}),
             "tiles": world_dict.get("tiles", {}),
@@ -1009,6 +1027,8 @@ async def get_game_status():
     player_fid = _world_state.player_faction_id
     if player_fid and player_fid in _world_state.factions:
         pf = _world_state.factions[player_fid]
+        # Bug #21修复: 补充 controlled_tiles 领地列表（TileState 用 faction_id 字段）
+        player_tiles = [tid for tid, t in _world_state.tiles.items() if getattr(t, 'faction_id', None) == player_fid]
         player_faction_data = {
             "faction_id": pf.faction_id,
             "name": pf.name,
@@ -1029,6 +1049,8 @@ async def get_game_status():
             "court_stability": pf.court_stability,
             "realm_stability": pf.realm_stability,
             "tile_count": pf.tile_count,
+            "controlled_tiles": player_tiles,
+            "controlled_tile_count": len(player_tiles),
             "color": pf.color,
             "ruler_name": pf.ruler_name,
         }
@@ -1105,6 +1127,40 @@ async def submit_command(request: dict):
     faction_id = request.get("faction_id", "")
     action = clean.get("action", "")
     params = clean.get("params", {})
+
+    # 2026-07-15 修复: 中文别名翻译移到安全校验之前，避免中文指令被 agent_guard 拦截
+    # action 中文别名映射（玩家可用中文下达政令）
+    _action_aliases = {
+        "内政": "develop", "发展农业": "develop", "农业": "develop",
+        "军事": "march", "行军": "march", "出征": "march",
+        "外交": "diplomacy", "通商": "trade", "贸易": "trade",
+        "征兵": "recruit", "募兵": "recruit", "招兵": "recruit",
+        "间谍": "spy", "细作": "spy", "谍报": "spy", "派遣细作": "spy",
+        "筑城": "fortify", "城防": "fortify", "加固": "fortify", "修筑城防": "fortify",
+        "赈灾": "relief", "救济": "relief", "救灾": "relief",
+        "税政": "tax", "征税": "tax", "税收": "tax",
+        "建造": "build", "修建": "build",
+        "分封": "enfeoff", "赦免": "amnesty", "大赦": "amnesty",
+        "买马": "buy_horses", "训练": "train_troops", "练兵": "train_troops",
+        "律令": "law", "法令": "law",
+        "侦查": "scout", "斥候": "scout",
+        "肃清": "purge", "清洗": "purge",
+        # 2026-07-15 补充中文别名（与 agent_guard.py 同步）
+        "耕作": "farm", "屯田": "farm", "种田": "farm",
+        "任命": "appoint", "任免": "appoint",
+        "罢免": "dismiss", "革职": "dismiss",
+        "处决": "execute", "斩首": "execute",
+        "俘虏处置": "prisoner_action", "战俘": "prisoner_action",
+        "朝堂裁决": "court_settlement", "廷议": "court_settlement",
+        "补给": "supply", "后勤": "supply", "粮草": "supply",
+        "增援": "reinforce", "支援": "reinforce",
+        "撤退": "retreat", "退兵": "retreat",
+        "国策": "policy_unlock", "政策": "policy_unlock",
+        "圣旨": "decree", "诏令": "decree", "edict": "decree", "发布诏令": "decree",
+    }
+    if action in _action_aliases:
+        action = _action_aliases[action]
+
     ok, reason, risk = guard.validate_player_action(faction_id, action, params)
     if not ok:
         logger.warning(f"[Security] Agent行为拦截: faction={faction_id} action={action} risk={risk:.0f} reason={reason}")
@@ -1131,30 +1187,8 @@ async def submit_command(request: dict):
             f"无权操控其他势力！你只能对己方势力「{player.name}」下达政令"
         )
 
-    # 注意: params 和 action 已在安全校验阶段从 clean dict 提取（见上方 ~L851-852），
-    # 不要用 request.get() 再次覆盖清洗后的值，否则安全校验失效。
     if not action:
         return ApiResponse.bad_request("缺少 action 字段")
-
-    # action 中文别名映射（玩家可用中文下达政令）
-    _action_aliases = {
-        "内政": "develop", "发展农业": "develop", "农业": "develop",
-        "军事": "march", "行军": "march", "出征": "march",
-        "外交": "diplomacy", "通商": "trade", "贸易": "trade",
-        "征兵": "recruit", "募兵": "recruit", "招兵": "recruit",
-        "间谍": "spy", "细作": "spy", "谍报": "spy",
-        "筑城": "fortify", "城防": "fortify", "加固": "fortify",
-        "赈灾": "relief", "救济": "relief", "救灾": "relief",
-        "税政": "tax", "征税": "tax", "税收": "tax",
-        "建造": "build", "修建": "build",
-        "分封": "enfeoff", "赦免": "amnesty", "大赦": "amnesty",
-        "买马": "buy_horses", "训练": "train_troops", "练兵": "train_troops",
-        "律令": "law", "法令": "law",
-        "侦查": "scout", "斥候": "scout",
-        "肃清": "purge", "清洗": "purge",
-    }
-    if action in _action_aliases:
-        action = _action_aliases[action]
 
     # 参数校验（基础）
     valid_actions = [
@@ -1170,6 +1204,10 @@ async def submit_command(request: dict):
         "marriage", "tribute", "pledge", "vassal",
         "counter_spy", "sabotage", "bribe", "assassinate",
         "survey", "move_capital", "decree", "conscript",
+        # 2026-07-15 第二次同步: 补齐 agent_guard.py 独有但 document 使用的指令
+        "farm", "appoint", "dismiss", "execute",
+        "prisoner_action", "court_settlement",
+        "supply", "reinforce", "retreat", "policy_unlock",
     ]
     if action not in valid_actions:
         return ApiResponse.bad_request(f"未知指令类型: {action}，支持: {valid_actions}")
@@ -1467,6 +1505,8 @@ async def advance_turn(request: dict = None):
             "pending_commands_cleared": True,
             "snapshot": snapshot,
             "ending": ending,
+            # Bug #19修复: advance-turn 响应补全 player_faction_id
+            "player_faction_id": _world_state.player_faction_id,
             # 3.1 新增
             "mode_info": mode_info,
             "locked_actions": locked_actions,
@@ -1554,8 +1594,8 @@ def _auto_save_world(payload: dict = None):
                 all_legions = _world_state.__dict__.get("_legions", {})
                 for fid, legs in all_legions.items():
                     legions_save[fid] = [l.model_dump() if hasattr(l, 'model_dump') else l for l in legs]
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"归档武将/军团数据失败: {e}")
 
         save_data = {
             "slot": -1,
@@ -1573,6 +1613,8 @@ def _auto_save_world(payload: dict = None):
             "version": "3.2",
             "_generals": generals_save,
             "_legions": legions_save,
+            "_round_snapshots": _round_snapshots,
+            "_pending_commands": _pending_commands,
         }
         filename = f"auto_round{current_round}.json"
 
@@ -1602,8 +1644,8 @@ def _auto_save_world(payload: dict = None):
         if temp_path and temp_path.exists():
             try:
                 temp_path.unlink()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"清理临时文件失败: {e}")
 
 
 # ============================================================
@@ -1855,8 +1897,8 @@ async def execute_edict(request: dict):
                 intent=ai_analysis.get("intent_analysis", ""),
                 summary=ai_analysis.get("summary", ""),
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"记录圣旨上下文失败: {e}")
 
     # ============================================================
     # 全局推演：圣旨颁布后，推演天下各势力的反应
@@ -2065,8 +2107,8 @@ async def nl_process_edict(request: dict):
                 intent=result.get("ai_analysis", {}).get("intent_analysis", ""),
                 summary=result.get("ai_analysis", {}).get("summary", ""),
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"V2记录圣旨上下文失败: {e}")
 
     # 未直接执行的指令入队
     if not direct_execute and result.get("commands"):
@@ -2268,8 +2310,8 @@ async def update_edict_llm_config(request: dict):
             runtime = LLMRuntimeConfig.from_env()
             _llm_available = bool(runtime.advisor.api_key or runtime.edict.api_key
                                   if hasattr(runtime, 'edict') else runtime.advisor.api_key)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"LLM客户端热更新失败: {e}")
 
         return ApiResponse.success(existing["edict"], "圣旨解析模型配置已热更新，即时生效。")
     except Exception as e:
@@ -3368,6 +3410,8 @@ async def save_game(request: dict):
                 "version": "3.2",
                 "_generals": generals_save,
                 "_legions": legions_save,
+                "_round_snapshots": _round_snapshots,
+                "_pending_commands": _pending_commands,
             }
             current_round = _world_state.current_round
             # P2: 防路径穿越 — 仅取文件名部分
@@ -3500,8 +3544,8 @@ async def load_game(request: dict):
 
             _round_engine = RoundEngine(_world_state, _factions_config)
             _round_engine.set_llm_clients(_llm_clients, available=_llm_available)
-            _pending_commands = []
-            _round_snapshots = []
+            _pending_commands = save_data.get("_pending_commands", [])  # 3.3: 恢复待执行指令
+            _round_snapshots = save_data.get("_round_snapshots", [])     # 3.3: 恢复回放快照
 
             # 恢复军团和武将数据
             from server.models.generals import General, Legion
@@ -3755,8 +3799,8 @@ async def quick_save(request: dict):
                 try:
                     with open(f, "r", encoding="utf-8") as fh:
                         existing_slots.add(json.load(fh).get("slot", -1))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"读取存档槽位信息失败 {f.name}: {e}")
             auto_slot = next((i for i in range(10) if i not in existing_slots), 0)
             if auto_slot in existing_slots:
                 auto_slot = 0  # 全部占满则覆盖槽0
@@ -3778,6 +3822,8 @@ async def quick_save(request: dict):
                 "version": "3.2",
                 "_generals": generals_save,
                 "_legions": legions_save,
+                "_round_snapshots": _round_snapshots,
+                "_pending_commands": _pending_commands,
             }
 
             filename = f"save_slot{auto_slot}_round{current_round}.json"
@@ -3785,8 +3831,8 @@ async def quick_save(request: dict):
             for old in SAVE_DIR.glob(f"save_slot{auto_slot}_*.json"):
                 try:
                     old.unlink()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"删除旧存档失败 {old.name}: {e}")
 
         # P3: 原子写入 — 先写 .tmp 再 rename，防止崩溃损坏存档
         SAVE_DIR.mkdir(parents=True, exist_ok=True)
@@ -3810,8 +3856,8 @@ async def quick_save(request: dict):
         if temp_path and temp_path.exists():
             try:
                 temp_path.unlink()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"快速存档清理临时文件失败: {e}")
         return ApiResponse.server_error(f"快速存档失败: {str(e)}")
 
 
@@ -7947,8 +7993,14 @@ async def get_agents_status():
 # 根路径
 # ============================================================
 
+_frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+
 @app.get("/")
 async def root():
+    """当 dist 存在时返回前端页面，否则返回 API 信息"""
+    index_html = _frontend_dist / "index.html"
+    if index_html.exists():
+        return FileResponse(str(index_html))
     return ApiResponse.success({
         "name": "元末逐鹿 3.0 API",
         "version": "3.0.0",
@@ -7957,13 +8009,27 @@ async def root():
     })
 
 
-# ---- 前端静态资源托管（CloudStudio 单端口部署） ----
-_frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+# ---- 前端静态资源 + SPA 兜底（模块级别，所有 API 路由之后） ----
+# 策略：用单个 catch-all route 智能分发——
+#   - 若请求路径对应 dist/ 中真实文件 → 直接返回该文件
+#   - 否则 → 返回 index.html（让前端 Vue Router 处理）
+# 避开 app.mount("/") 会干扰 FastAPI route 匹配的坑。
 if _frontend_dist.exists():
-    app.mount("/", StaticFiles(directory=str(_frontend_dist), html=True), name="frontend")
-    logger.info(f"前端静态资源已挂载: {_frontend_dist}")
-else:
-    logger.warning(f"前端目录不存在: {_frontend_dist}，将仅提供 API 服务")
+    @app.get("/{path:path}")
+    async def serve_frontend(path: str):
+        # 安全：拒绝路径穿越
+        if ".." in path or path.startswith("/"):
+            raise HTTPException(status_code=404, detail="Not Found")
+        # 若对应真实静态文件，直接返回
+        file_path = _frontend_dist / path
+        if file_path.is_file():
+            return FileResponse(str(file_path))
+        # 否则 SPA fallback
+        index_html = _frontend_dist / "index.html"
+        if index_html.exists():
+            return FileResponse(str(index_html))
+        raise HTTPException(status_code=404, detail="Not Found")
+
 
 # ============================================================
 # 启动入口

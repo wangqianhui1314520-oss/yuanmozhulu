@@ -244,7 +244,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed, nextTick } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGameStore } from '@/stores/gameStore'
 import { healthCheck, getRuntimeConfig, updateRuntimeConfig, getDefaultConfig, testLLMConnection, exportSaveFile, importSaveFile, clearAllSaves as apiClearAll, listSaves, getEdictLLMConfig, updateEdictLLMConfig } from '@/services/api'
@@ -616,13 +616,11 @@ async function clearAllSaves() {
   }
 }
 
-function resetGame() {
+async function resetGame() {
   if (confirm('确认重置当前对局？未存档的进度将丢失。')) {
-    store.resetGame()
+    await store.resetGame()
+    router.push({ name: 'home' }).catch(() => {})
     emit('close')
-    nextTick(() => {
-      router.push({ name: 'home' }).catch(() => {})
-    })
   }
 }
 
@@ -634,13 +632,11 @@ function goHome() {
   }
   // 游戏中：提示进度丢失
   if (store.currentRound > 1 && !confirm('返回首页将丢失当前进度，是否继续？')) return
-  // 先关闭设置面板，再导航到首页（避免路由跳转前残留的 DOM）
-  emit('close')
-  nextTick(() => {
-    router.push({ name: 'home' }).catch(() => {
-      // NavigationDuplicated 等已由 Vue Router 内部处理
-    })
+  // 先导航到首页（组件存活时执行），再关闭设置面板
+  router.push({ name: 'home' }).catch(() => {
+    // NavigationDuplicated 等已由 Vue Router 内部处理
   })
+  emit('close')
 }
 </script>
 

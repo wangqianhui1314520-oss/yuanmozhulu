@@ -13,6 +13,13 @@
       />
     </div>
 
+    <!-- 战火辉光层：边缘脉冲光效 -->
+    <div class="bg-war-glow">
+      <div class="glow-top-left"></div>
+      <div class="glow-top-right"></div>
+      <div class="glow-bottom"></div>
+    </div>
+
     <!-- 全局色调与明暗遮罩 -->
     <div class="bg-overlay"></div>
     <div class="bg-vignette"></div>
@@ -134,9 +141,9 @@ function onResize() {
 }
 
 function initParticles() {
-  const emberCount = props.quality === 'low' ? 15 : props.quality === 'medium' ? 30 : 50
-  const dustCount = props.quality === 'low' ? 20 : props.quality === 'medium' ? 45 : 70
-  const smokeCount = props.quality === 'low' ? 3 : props.quality === 'medium' ? 6 : 10
+  const emberCount = props.quality === 'low' ? 20 : props.quality === 'medium' ? 45 : 70
+  const dustCount = props.quality === 'low' ? 30 : props.quality === 'medium' ? 60 : 100
+  const smokeCount = props.quality === 'low' ? 4 : props.quality === 'medium' ? 8 : 14
 
   embers = []
   for (let i = 0; i < emberCount; i++) embers.push(createEmber(true))
@@ -152,13 +159,13 @@ function createEmber(randomPos: boolean): Ember {
   return {
     x: randomPos ? Math.random() * W : W * 0.3 + Math.random() * W * 0.4,
     y: randomPos ? Math.random() * H : H + 10,
-    vx: (Math.random() - 0.5) * 0.8,
-    vy: -0.5 - Math.random() * 1.5,
-    size: 1 + Math.random() * 2.5,
+    vx: (Math.random() - 0.5) * 1.2,
+    vy: -0.8 - Math.random() * 2.0,
+    size: 1.5 + Math.random() * 3.5,
     alpha: 0,
     life: 0,
-    maxLife: 180 + Math.random() * 360,
-    hue: 10 + Math.random() * 50, // 橙红到金黄
+    maxLife: 140 + Math.random() * 280,
+    hue: 8 + Math.random() * 55, // 橙红到金黄
   }
 }
 
@@ -166,10 +173,10 @@ function createDust(randomPos: boolean): Dust {
   return {
     x: randomPos ? Math.random() * W : -20,
     y: randomPos ? Math.random() * H : H * 0.65 + Math.random() * H * 0.35,
-    vx: 0.3 + Math.random() * 1.2,
-    vy: (Math.random() - 0.5) * 0.3,
-    size: 1 + Math.random() * 3,
-    alpha: 0.1 + Math.random() * 0.25,
+    vx: 0.5 + Math.random() * 1.5,
+    vy: (Math.random() - 0.5) * 0.5,
+    size: 1.5 + Math.random() * 4,
+    alpha: 0.12 + Math.random() * 0.28,
   }
 }
 
@@ -332,7 +339,7 @@ onUnmounted(() => {
 
 .image-dynamic-bg.loaded .bg-image-wrapper {
   opacity: 1;
-  animation: kenBurns 40s ease-in-out infinite alternate;
+  animation: kenBurns 30s ease-in-out infinite alternate;
 }
 
 .bg-image {
@@ -344,9 +351,64 @@ onUnmounted(() => {
 }
 
 @keyframes kenBurns {
-  0% { transform: translate(var(--px, 0), var(--py, 0)) scale(1.05) translate(0, 0); }
-  50% { transform: translate(var(--px, 0), var(--py, 0)) scale(1.12) translate(-1.2%, -1%); }
-  100% { transform: translate(var(--px, 0), var(--py, 0)) scale(1.05) translate(0, 0); }
+  0% { transform: translate(var(--px, 0), var(--py, 0)) scale(1.05) translate(-0.5%, -0.3%); }
+  25% { transform: translate(var(--px, 0), var(--py, 0)) scale(1.14) translate(-1.8%, -1.2%); }
+  50% { transform: translate(var(--px, 0), var(--py, 0)) scale(1.10) translate(0.5%, 0.8%); }
+  75% { transform: translate(var(--px, 0), var(--py, 0)) scale(1.15) translate(1.2%, -0.5%); }
+  100% { transform: translate(var(--px, 0), var(--py, 0)) scale(1.05) translate(-0.5%, -0.3%); }
+}
+
+/* ===== 战火辉光层 ===== */
+.bg-war-glow {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.glow-top-left {
+  position: absolute;
+  top: -10%;
+  left: -5%;
+  width: 50%;
+  height: 45%;
+  background: radial-gradient(ellipse at 30% 40%, rgba(200, 80, 30, 0.08), rgba(180, 60, 20, 0.03) 40%, transparent 70%);
+  animation: glowPulse1 6s ease-in-out infinite alternate;
+}
+
+.glow-top-right {
+  position: absolute;
+  top: -8%;
+  right: -5%;
+  width: 45%;
+  height: 40%;
+  background: radial-gradient(ellipse at 60% 35%, rgba(220, 140, 40, 0.06), rgba(180, 100, 30, 0.02) 45%, transparent 70%);
+  animation: glowPulse2 8s ease-in-out infinite alternate;
+}
+
+.glow-bottom {
+  position: absolute;
+  bottom: -15%;
+  left: 10%;
+  width: 80%;
+  height: 50%;
+  background: radial-gradient(ellipse at 50% 30%, rgba(200, 70, 25, 0.12), rgba(150, 50, 15, 0.05) 35%, transparent 65%);
+  animation: glowPulse3 7s ease-in-out infinite alternate;
+}
+
+@keyframes glowPulse1 {
+  0% { opacity: 0.4; transform: scale(1.0); }
+  100% { opacity: 1.0; transform: scale(1.08); }
+}
+
+@keyframes glowPulse2 {
+  0% { opacity: 0.6; transform: scale(1.05); }
+  100% { opacity: 1.0; transform: scale(0.95); }
+}
+
+@keyframes glowPulse3 {
+  0% { opacity: 0.3; transform: scale(1.0) translateY(0); }
+  100% { opacity: 1.0; transform: scale(1.06) translateY(-2%); }
 }
 
 /* 全局暖褐色调遮罩 */

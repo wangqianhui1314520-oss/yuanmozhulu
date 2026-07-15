@@ -67,11 +67,6 @@
           <span class="btn-label">展卷读档</span>
           <span class="btn-sub">读取存档</span>
         </button>
-        <button v-audio class="btn btn-secondary" @click="$router.push('/faction-gallery')">
-          <span class="btn-label">势力图鉴</span>
-          <span class="btn-sub">九大势力·群雄列传</span>
-        </button>
-
       </div>
     </main>
 
@@ -109,38 +104,6 @@
       <span class="dibao-text">联网智能体模式 · 九大势力 · 东亚全图·逐鹿天下</span>
       <span class="dibao-date">至正十一年(1351) — 洪武元年(1368)</span>
     </div>
-
-    <!-- 势力图鉴弹窗 -->
-    <Teleport to="body">
-      <div v-if="showFactionBrief" class="modal-overlay" @click.self="showFactionBrief = false">
-        <div class="modal-dialog faction-dialog">
-          <div class="modal-header">
-            <h2>◆ 天下群雄 ◆</h2>
-            <button class="modal-close" @click="showFactionBrief = false">✕</button>
-          </div>
-          <div class="faction-grid">
-            <div
-              v-for="f in builtinFactions"
-              :key="f.id"
-              class="faction-card"
-              :style="{ '--accent': f.color }"
-              @click="selectFactionFromBrief(f)"
-            >
-              <div class="card-accent"></div>
-              <div class="card-info">
-                <h3>{{ f.name }}</h3>
-                <p class="card-title">{{ f.title }}</p>
-                <p class="card-diff" :class="'diff-' + diffClass(f.difficulty)">{{ f.difficulty }}</p>
-                <div class="card-tags">
-                  <span v-for="tag in f.personality_tags.slice(0, 2)" :key="tag">{{ tag }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <p class="modal-hint">点击势力可前往选择</p>
-        </div>
-      </div>
-    </Teleport>
 
     <!-- 人物生平事迹卷轴弹窗（点击底部走马灯） -->
     <Teleport to="body">
@@ -219,7 +182,6 @@ const aiAvailable = ref(false)
 const hasContinue = ref(false)
 const continueInfo = ref('')
 const showSettings = ref(false)
-const showFactionBrief = ref(false)
 const previewFactionData = ref<BriefFaction | null>(null)
 const muted = ref(false)
 const { isFullscreen, toggleFullscreen } = useFullscreen()
@@ -313,11 +275,6 @@ function previewFaction(f: BriefFaction) {
   previewFactionData.value = f
 }
 
-function selectFactionFromBrief(f: BriefFaction) {
-  localStorage.setItem('yuanmo_player_faction', f.id)
-  router.push(`/sandbox-intro?faction=${f.id}`)
-}
-
 function startNew() {
   localStorage.removeItem('yuanmo_preview_faction')
   router.push('/faction-select')
@@ -400,17 +357,7 @@ onMounted(async () => {
     audioManager.playBgm('main_menu', 1.5)
   }
 
-  // 监听全屏变化
-  document.addEventListener('fullscreenchange', onFullscreenChange)
 })
-
-onUnmounted(() => {
-  document.removeEventListener('fullscreenchange', onFullscreenChange)
-})
-
-function onFullscreenChange() {
-  isFullscreen.value = !!document.fullscreenElement
-}
 </script>
 
 <style scoped>
@@ -942,94 +889,6 @@ function onFullscreenChange() {
 
 .modal-close:hover { color: var(--danger, #c43a3a); }
 
-/* 势力图鉴网格 */
-.faction-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 12px;
-  padding: 18px;
-  overflow-y: auto;
-}
-
-.faction-card {
-  position: relative;
-  background: rgba(30, 26, 20, 0.7);
-  border: 1px solid rgba(184, 150, 62, 0.15);
-  border-radius: 3px;
-  padding: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-  overflow: hidden;
-}
-
-.faction-card:hover {
-  background: rgba(40, 34, 26, 0.85);
-  transform: translateY(-3px);
-  border-color: var(--accent, rgba(184, 150, 62, 0.5));
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
-}
-
-.card-accent {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--accent, #c9a848);
-  box-shadow: 0 0 8px var(--accent, #c9a848);
-}
-
-.card-info h3 {
-  font-size: 17px;
-  color: var(--text-main, #e8e0d0);
-  margin: 0 0 4px;
-  letter-spacing: 2px;
-}
-
-.card-title {
-  font-size: 11px;
-  color: var(--text-dim, #a09078);
-  margin-bottom: 8px;
-  letter-spacing: 1px;
-}
-
-.card-diff {
-  display: inline-block;
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 2px;
-  margin-bottom: 8px;
-  letter-spacing: 1px;
-}
-
-.card-diff.diff-easy { color: #5b8c5a; background: rgba(91, 140, 90, 0.12); }
-.card-diff.diff-normal { color: #b8a070; background: rgba(184, 160, 112, 0.12); }
-.card-diff.diff-medium { color: #d9a050; background: rgba(217, 160, 80, 0.12); }
-.card-diff.diff-hard { color: #c44b3c; background: rgba(196, 75, 60, 0.12); }
-
-.card-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.card-tags span {
-  font-size: 10px;
-  padding: 2px 6px;
-  background: rgba(184, 150, 62, 0.08);
-  border: 1px solid rgba(184, 150, 62, 0.15);
-  color: var(--text-dim, #a09078);
-  border-radius: 2px;
-}
-
-.modal-hint {
-  text-align: center;
-  font-size: 12px;
-  color: var(--text-dim, #a09078);
-  padding: 8px 18px 14px;
-  letter-spacing: 2px;
-}
-
 /* ===== 生平事迹卷轴弹窗 ===== */
 .bio-scroll-wrapper {
   display: flex;
@@ -1299,6 +1158,5 @@ function onFullscreenChange() {
   .game-title { font-size: 38px; }
   .action-grid { grid-template-columns: 1fr; }
   .home-dibao { flex-direction: column; gap: 4px; padding: 8px 14px; }
-  .faction-grid { grid-template-columns: repeat(2, 1fr); }
 }
 </style>

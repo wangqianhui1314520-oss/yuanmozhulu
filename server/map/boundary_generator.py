@@ -1,11 +1,11 @@
 """
-行政区划边界线生成器 v4.0 - 两级边界 (行省 + 路)
+行政区划边界线生成器 v4.1 - 两级边界 (行省 + 路) + 势力边界
 
-v4.0 变更:
-- 从三级边界(行省/路/府州)精简为两级(行省/路)
+按沙盘地图系统文档 v3.0 重构:
+- 行省界 + 路界 + 势力边界三级边界系统
 - 府州级边界 = 六边形格线本身, 无需单独渲染
-- 仍然生成势力边界和自然边界
-- 适配府州级网格 (28×36)
+- 适配府州级网格 (32行×42列)
+- 边界线在前端按缩放级别切换显示
 """
 
 from __future__ import annotations
@@ -174,7 +174,7 @@ def export_boundary_json(
     faction_count = len(boundaries.get("faction_boundaries", []))
 
     output = {
-        "version": "4.0",
+        "version": "4.1",
         "levels": ["province", "circuit"],  # 两级边界
         "meta": {
             "province_border_points": province_count,

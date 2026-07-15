@@ -102,7 +102,7 @@ const pageRef = ref<HTMLDivElement>()
 const selectedFaction = ref<FactionConfig | null>(null)
 const selectedFactionId = ref('')
 const isMuted = ref(false)
-const isFullscreen = ref(false)
+const { isFullscreen, toggleFullscreen } = useFullscreen()
 
 // 动画状态
 const showFactionBar = ref(false)
@@ -260,8 +260,6 @@ function toggleMute() {
   isMuted.value = audioManager.toggleMute()
 }
 
-// 全屏由 useFullscreen composable 统一管理
-
 // ===== 工具函数 =====
 function formatNum(n: number): string {
   if (n >= 10000) return (n / 10000).toFixed(1) + '万'
@@ -284,7 +282,7 @@ function getBuiltinFaction(factionId: string): FactionConfig {
       capital_tile: 'tile_dadu', initial_territory: [], initial_treasury: 20000,
       initial_grain: 8000, initial_arms: 300, initial_horses: 200, initial_troops: 6000,
       initial_reputation: 60, personality_tags: ['蒙古铁骑', '正统名分', '勋贵侵蚀', '民族隔阂'],
-      difficulty: '地狱', playable: true, image: '/assets/factions/a6f30b6324fce83790efa49f2d0929fd.jpg',
+      difficulty: '地狱', playable: true, image: '/assets/factions/ruler_yuan.jpg',
       voice: '朕承大元社稷，君临天下。卿既来辅朕，当重整河山，中兴大元。', buffs: [], debuffs: [],
       ai_logic: { expansion: 0.2, consolidation: 0.6, diplomacy: 0.3, military: 0.5, economy: 0.2 }
     },
@@ -293,7 +291,7 @@ function getBuiltinFaction(factionId: string): FactionConfig {
       capital_tile: 'tile_yingtian', initial_territory: [], initial_treasury: 8000,
       initial_grain: 4000, initial_arms: 80, initial_horses: 30, initial_troops: 3000,
       initial_reputation: 40, personality_tags: ['深谋远虑', '严刑峻法', '知人善任'],
-      difficulty: '普通', playable: true, image: '/assets/factions/b47057828607bd36e92aa37417631bf9.jpg',
+      difficulty: '普通', playable: true, image: '/assets/factions/ruler_zhuyuan.jpg',
       voice: '孤起于淮右，布衣提三尺剑。高筑墙，广积粮，缓称王。', buffs: [], debuffs: [],
       ai_logic: { expansion: 0.6, consolidation: 0.4, diplomacy: 0.4, military: 0.6, economy: 0.5 }
     },
@@ -302,7 +300,7 @@ function getBuiltinFaction(factionId: string): FactionConfig {
       capital_tile: 'tile_wuchang', initial_territory: [], initial_treasury: 12000,
       initial_grain: 6000, initial_arms: 150, initial_horses: 50, initial_troops: 5000,
       initial_reputation: 35, personality_tags: ['野心勃勃', '猜忌多疑', '水战精通'],
-      difficulty: '困难', playable: true, image: '/assets/factions/a1838ce68653600728081332905c0fd1.jpg',
+      difficulty: '困难', playable: true, image: '/assets/factions/ruler_chen.jpg',
       voice: '朕据荆楚，拥水师之利。朱元璋、张士诚皆不足惧。', buffs: [], debuffs: [],
       ai_logic: { expansion: 0.7, consolidation: 0.2, diplomacy: 0.2, military: 0.8, economy: 0.3 }
     },
@@ -311,7 +309,7 @@ function getBuiltinFaction(factionId: string): FactionConfig {
       capital_tile: 'tile_pingjiang', initial_territory: [], initial_treasury: 15000,
       initial_grain: 7000, initial_arms: 100, initial_horses: 40, initial_troops: 3500,
       initial_reputation: 45, personality_tags: ['偏安一隅', '富甲一方', '优柔寡断'],
-      difficulty: '简单', playable: true, image: '/assets/factions/649817e3158b0df1c68ab2e2a2a0e4f7.jpg',
+      difficulty: '简单', playable: true, image: '/assets/factions/ruler_zhang.jpg',
       voice: '吾据江南膏腴之地。愿与卿共治吴越，以成霸业。', buffs: [], debuffs: [],
       ai_logic: { expansion: 0.2, consolidation: 0.7, diplomacy: 0.5, military: 0.3, economy: 0.8 }
     },
@@ -320,7 +318,7 @@ function getBuiltinFaction(factionId: string): FactionConfig {
       capital_tile: 'tile_qingyuan', initial_territory: [], initial_treasury: 6000,
       initial_grain: 3000, initial_arms: 60, initial_horses: 20, initial_troops: 2000,
       initial_reputation: 30, personality_tags: ['海上枭雄', '投机善变', '重利轻义'],
-      difficulty: '中等', playable: true, image: '/assets/factions/0f3acb15948b699fbbd2a780dea693b8.jpg',
+      difficulty: '中等', playable: true, image: '/assets/factions/ruler_fang.jpg',
       voice: '海上有舟，舟山有兵。卿若随我，纵横浙东。', buffs: [], debuffs: [],
       ai_logic: { expansion: 0.3, consolidation: 0.5, diplomacy: 0.6, military: 0.3, economy: 0.7 }
     },
@@ -329,7 +327,7 @@ function getBuiltinFaction(factionId: string): FactionConfig {
       capital_tile: 'tile_xiangyang', initial_territory: [], initial_treasury: 6000,
       initial_grain: 4000, initial_arms: 90, initial_horses: 40, initial_troops: 3500,
       initial_reputation: 35, personality_tags: ['弥勒信徒', '红巾领袖', '仁厚之主'],
-      difficulty: '困难', playable: true, image: '/assets/factions/7a6ae9a077f4d6178e55be82b7039c7a.jpg',
+      difficulty: '困难', playable: true, image: '/assets/factions/ruler_xushou.jpg',
       voice: '弥勒降世，明王出世。卿来辅我，当共复光明世界。', buffs: [], debuffs: [],
       ai_logic: { expansion: 0.5, consolidation: 0.3, diplomacy: 0.3, military: 0.6, economy: 0.3 }
     },
@@ -338,16 +336,16 @@ function getBuiltinFaction(factionId: string): FactionConfig {
       capital_tile: 'tile_chongqing', initial_territory: [], initial_treasury: 6500,
       initial_grain: 5000, initial_arms: 90, initial_horses: 30, initial_troops: 3000,
       initial_reputation: 40, personality_tags: ['仁厚之主', '蜀道自守', '偏安一隅'],
-      difficulty: '简单', playable: true, image: '/assets/factions/649817e3158b0df1c68ab2e2a2a0e4f7.jpg',
+      difficulty: '简单', playable: true, image: '/assets/factions/ruler_ming.jpg',
       voice: '孤据蜀道天险，守大夏之土。卿来辅我，共保西陲。', buffs: [], debuffs: [],
       ai_logic: { expansion: 0.2, consolidation: 0.7, diplomacy: 0.4, military: 0.3, economy: 0.6 }
     },
-    faction_wangbaobao: {
+      faction_wangbaobao: {
       id: 'faction_wangbaobao', name: '王保保', title: '河南王', color: '#666699',
       capital_tile: 'tile_taiyuan', initial_territory: [], initial_treasury: 8000,
       initial_grain: 5000, initial_arms: 120, initial_horses: 150, initial_troops: 4000,
       initial_reputation: 45, personality_tags: ['忠勇无双', '骑兵统帅', '元廷柱石'],
-      difficulty: '中等', playable: true, image: '/assets/factions/a1838ce68653600728081332905c0fd1.jpg',
+      difficulty: '中等', playable: true, image: '/assets/factions/ruler_wang.jpg',
       voice: '吾乃扩廓帖木儿，大元最后的名将。铁骑所向，天下莫敢当。', buffs: [], debuffs: [],
       ai_logic: { expansion: 0.5, consolidation: 0.4, diplomacy: 0.3, military: 0.8, economy: 0.3 }
     },
@@ -356,7 +354,7 @@ function getBuiltinFaction(factionId: string): FactionConfig {
       capital_tile: 'tile_helin', initial_territory: [], initial_treasury: 5000,
       initial_grain: 2000, initial_arms: 80, initial_horses: 200, initial_troops: 4500,
       initial_reputation: 25, personality_tags: ['游牧骑射', '劫掠为生', '草原雄风'],
-      difficulty: '困难', playable: true, image: '/assets/factions/5812a954fbc9e83b11ddaa4cc2b7a88a.jpg',
+      difficulty: '困难', playable: true, image: '/assets/factions/ruler_tatar.jpg',
       voice: '草原雄鹰，驰骋万里。铁骑所至，皆为牧场。', buffs: [], debuffs: [],
       ai_logic: { expansion: 0.7, consolidation: 0.2, diplomacy: 0.2, military: 0.8, economy: 0.2 }
     },

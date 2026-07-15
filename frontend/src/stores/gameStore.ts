@@ -20,7 +20,6 @@ export const useGameStore = defineStore('game', () => {
   const currentSeason = ref('春')
   const gameMode = ref<'player_turn' | 'ai_watch'>('player_turn')
   const isProcessing = ref(false)
-  const isPaused = ref(false)
   const isGameStarted = ref(false)
   const isGameActive = ref(false)
 
@@ -31,11 +30,9 @@ export const useGameStore = defineStore('game', () => {
 
   // ===== 外交 =====
   const relations = ref<Record<string, any>>({})
-  const treaties = ref<any[]>([])
 
   // ===== 事件 =====
   const events = ref<GameEvent[]>([])
-  const battleReports = ref<any[]>([])
   const decrees = ref<any[]>([])
 
   // ===== 地盘变更 =====
@@ -65,6 +62,14 @@ export const useGameStore = defineStore('game', () => {
   const tradeRoutes = ref<any[]>([])
   const vassalRelations = ref<Record<string, string>>({})
   const allianceTreaties = ref<any[]>([])
+  /** 2026-07-15: 展开的外交关系数组（来自 game/status 顶层 diplomatic_relations） */
+  const diplomaticRelations = ref<Array<{
+    target_faction_id: string
+    target_name: string
+    stance: string
+    attitude: number
+    relation_key: string
+  }>>([])
 
   // ===== 权责追踪 =====
   const responsibilityStats = ref<any>(null)
@@ -172,6 +177,11 @@ export const useGameStore = defineStore('game', () => {
     return '?'
   }
 
+  /** 2026-07-15: 玩家控制的领地ID列表（来自 init_game 的 controlled_tiles） */
+  const controlledTiles = ref<string[]>([])
+  /** 2026-07-15: 玩家领地数量（来自 init_game 的 controlled_tile_count） */
+  const controlledTileCount = ref(0)
+
   const playerTiles = computed(() => {
     return Object.values(tiles.value).filter(t => t.faction_id === playerFactionId.value)
   })
@@ -223,6 +233,11 @@ export const useGameStore = defineStore('game', () => {
         modeInfo.value = result.mode_info
       }
 
+      // 2026-07-15: 合并 player_faction 顶层的额外字段（controlled_tiles 等）
+      if (result.player_faction && playerFactionId.value) {
+        _mergePlayerFactionFields(result.player_faction, playerFactionId.value)
+      }
+
       // 后台检查 AI 状态
       checkAIStatus()
     } finally {
@@ -246,6 +261,15 @@ export const useGameStore = defineStore('game', () => {
         _applyWorldState(result.world_state)
       }
 
+      // 2026-07-15: advance-turn 可能也在顶层返回 player_faction（如果有的话）
+      if ((result as any).player_faction && playerFactionId.value) {
+        _mergePlayerFactionFields((result as any).player_faction, playerFactionId.value)
+      }
+      // 2026-07-15: 同步外交关系
+      if ((result as any).diplomatic_relations) {
+        diplomaticRelations.value = (result as any).diplomatic_relations
+      }
+
       // 新事件：仅当 world_state 中未包含时追加（兼容旧版后端）
       if (result.new_events && !result.world_state?.events_log) {
         for (const evt of result.new_events) {
@@ -264,6 +288,15 @@ export const useGameStore = defineStore('game', () => {
         tileChangesThisRound.value = result.tile_changes
       } else {
         tileChangesThisRound.value = []
+      }
+
+      // 2026-07-15: 同步 controlled_tiles（回合结算后领土可能变化）
+      if (playerFactionId.value && result.world_state?.factions) {
+        const pf = (result.world_state.factions as any)[playerFactionId.value]
+        if (pf?.controlled_tiles !== undefined) {
+          controlledTiles.value = pf.controlled_tiles
+          controlledTileCount.value = pf.controlled_tile_count ?? pf.controlled_tiles.length
+        }
       }
 
       // 3.1: 同步操作锁状态
@@ -323,6 +356,14 @@ export const useGameStore = defineStore('game', () => {
       if (status?.game_active !== undefined) {
         isGameActive.value = status.game_active
       }
+      // 2026-07-15: 合并 player_faction 顶层字段（修复面板数据不全问题）
+      if (status?.player_faction && playerFactionId.value) {
+        _mergePlayerFactionFields(status.player_faction, playerFactionId.value)
+      }
+      // 2026-07-15: 同步外交关系数组（供前端面板直接使用）
+      if (status?.diplomatic_relations) {
+        diplomaticRelations.value = status.diplomatic_relations
+      }
     } catch (err) {
       console.warn('刷新世界状态失败:', err)
     }
@@ -331,13 +372,70 @@ export const useGameStore = defineStore('game', () => {
   /**
    * 应用 WorldState 到 Store（内部方法）
    */
+  /**
+   * 2026-07-15: 将后端 game/status 或 game/init 返回的顶层 player_faction 字段
+   * 合并到 factions[fid] 中，补全 panels 所需字段（troops/morale/authority 等）
+   */
+  function _mergePlayerFactionFields(pfData: Record<string, any>, fid: string) {
+    if (!factions.value[fid]) return
+    const mergeFields: Record<string, string | undefined> = {
+      troops: 'total_troops',
+      total_troops: 'total_troops',
+      morale: 'realm_stability',
+      authority: 'court_stability',
+      controlled_tiles: undefined,
+      controlled_tile_count: undefined,
+      field_troops: undefined,
+      field_grain: undefined,
+    }
+    // 合并数值字段（仅当源值 >= 0 时更新，避免 -1 污染）
+    for (const [srcKey, dstKey] of Object.entries(mergeFields)) {
+      if (pfData[srcKey] !== undefined) {
+        const val = Number(pfData[srcKey])
+        if (dstKey && val >= 0) {
+          (factions.value[fid] as any)[dstKey] = val
+        } else if (!dstKey) {
+          // 无映射的字段直接存到 faction 对象上
+          (factions.value[fid] as any)[srcKey] = val
+        }
+      }
+    }
+    // 同步 controlled_tiles 到 store 顶级 ref
+    if (pfData.controlled_tiles !== undefined) {
+      controlledTiles.value = pfData.controlled_tiles
+      controlledTileCount.value = pfData.controlled_tile_count ?? pfData.controlled_tiles.length
+    }
+    // 同步 ruler_name（宗室面板等需要）
+    if (pfData.ruler_name && !(factions.value[fid] as any).ruler_name) {
+      (factions.value[fid] as any).ruler_name = pfData.ruler_name
+    }
+  }
+
   function _applyWorldState(state: WorldState) {
     if (state.current_round !== undefined) currentRound.value = state.current_round
     if (state.current_year !== undefined) currentYear.value = state.current_year
     if (state.current_month !== undefined) currentMonth.value = state.current_month
     if (state.current_season !== undefined) currentSeason.value = state.current_season
     if (state.game_mode) gameMode.value = state.game_mode as any
-    if (state.factions) factions.value = state.factions as Record<string, FactionState>
+    if (state.factions) {
+      // 2026-07-15: 净化负值资源（避免前端显示 -1）
+      const cleanFactions = state.factions as Record<string, FactionState>
+      for (const fid of Object.keys(cleanFactions)) {
+        const f = cleanFactions[fid] as any
+        for (const field of ['treasury', 'grain', 'arms', 'horses', 'reputation', 'total_troops', 'total_population', 'court_stability', 'realm_stability']) {
+          if (typeof f[field] === 'number' && f[field] < 0) {
+            f[field] = 0
+          }
+        }
+        // clamp 0-100 范围
+        for (const field of ['court_stability', 'realm_stability', 'reputation']) {
+          if (typeof f[field] === 'number') {
+            f[field] = Math.max(0, Math.min(100, f[field]))
+          }
+        }
+      }
+      factions.value = cleanFactions
+    }
     if (state.tiles) tiles.value = state.tiles as Record<string, TileState>
     if (state.relations) relations.value = state.relations
     // 合并 events_log：保留本地独有事件（如 AI 思考），追加后端新事件
@@ -1261,9 +1359,7 @@ export const useGameStore = defineStore('game', () => {
     factions.value = {}
     tiles.value = {}
     relations.value = {}
-    treaties.value = []
     events.value = []
-    battleReports.value = []
     decrees.value = []
     tileChanges.value = []
     tileChangesThisRound.value = []
@@ -1314,13 +1410,13 @@ export const useGameStore = defineStore('game', () => {
   return {
     // 核心状态
     currentRound, currentYear, currentMonth, currentSeason,
-    gameMode, isProcessing, isPaused, isGameStarted, isGameActive,
+    gameMode, isProcessing, isGameStarted, isGameActive,
     // 势力与地块
     playerFactionId, factions, tiles,
     // 外交
-    relations, treaties, coalitions, tradeRoutes, vassalRelations, allianceTreaties,
+    relations, coalitions, tradeRoutes, vassalRelations, allianceTreaties,
     // 事件
-    events, battleReports, decrees,
+    events, decrees,
     // 地盘变更
     tileChanges, tileChangesThisRound,
     // 朝堂

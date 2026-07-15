@@ -225,17 +225,17 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         self._anonymizer = get_anonymizer()
         self._audit = get_audit_logger()
 
-        # 全局速率限制：60次/分钟
+        # 全局速率限制：360次/分钟
         self._global_limiter = RateLimiter(
-            max_requests=60,
+            max_requests=360,
             window_seconds=60,
             burst_multiplier=2.0,
         )
-        # AI调用速率限制：10次/分钟
+        # AI调用速率限制：180次/分钟
         self._ai_limiter = RateLimiter(
-            max_requests=10,
+            max_requests=180,
             window_seconds=60,
-            burst_multiplier=1.5,
+            burst_multiplier=2.0,
         )
 
         # P3: 定期清理过期 IP 条目，防止 DDoS/爬虫导致内存泄漏

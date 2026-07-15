@@ -354,6 +354,16 @@ export async function getGameStatus(): Promise<{
   world_state?: WorldState
   pending_commands?: number
   snapshots_count?: number
+  player_faction_id?: string
+  player_faction?: Record<string, any>
+  diplomatic_relations?: Array<{
+    target_faction_id: string
+    target_name: string
+    stance: string
+    attitude: number
+    relation_key: string
+  }>
+  mode_info?: any
 }> {
   const { data } = await api.get('/game/status')
   return data.data

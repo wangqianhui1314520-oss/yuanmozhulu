@@ -1,5 +1,5 @@
 """
-邻接表生成器 v4.0 - 府州级六向邻接关系
+邻接表生成器 v4.1 - 府州级六向邻接关系
 
 为每个格子预计算完整的邻居列表，输出标准化邻接表 JSON。
 """
@@ -94,7 +94,7 @@ def export_adjacency_json(
             "stagger_index": "Odd",
             "hex_orientation": "Flat-Top",
             "coordinate_system": "Offset (col, row)",
-            "hex_size": 64,
+            "hex_size": 72,
             "description": "文明6风格六边形网格邻接表 - 府州级东亚全域",
         },
         "adjacency": adj,

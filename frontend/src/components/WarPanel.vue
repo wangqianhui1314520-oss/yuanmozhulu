@@ -1,5 +1,10 @@
 <template>
-  <div v-if="visible" class="war-panel-overlay" @click.self="$emit('close')">
+  <div
+    v-if="visible"
+    class="war-panel-overlay"
+    :style="overlayStyle"
+    @click.self="$emit('close')"
+  >
     <div class="war-panel glass-card">
       <!-- 头部 -->
       <div class="panel-header">
@@ -184,6 +189,36 @@ function advantageText(war: any): string {
   }
   return map[advantage] || advantage
 }
+
+// 战场图映射：4张AI生成的战场场景用于面板背景
+const BATTLEFIELD_BG_MAP: Record<string, string> = {
+  plain: '/assets/factions/ai_generated/ai_battle_plain.png',
+  naval: '/assets/factions/ai_generated/ai_battle_naval.png',
+  siege: '/assets/factions/ai_generated/ai_battle_siege.png',
+  pass: '/assets/factions/ai_generated/ai_battle_pass.png',
+}
+const BATTLEFIELD_KEYS = Object.keys(BATTLEFIELD_BG_MAP)
+
+function battlefieldBgForWar(war: any): string {
+  const type = war?.battlefield_type || war?.terrain || ''
+  if (type === 'naval' || type === 'water' || type === 'coastal') return BATTLEFIELD_BG_MAP.naval
+  if (type === 'siege' || type === 'fortress' || war?.is_siege) return BATTLEFIELD_BG_MAP.siege
+  if (type === 'pass' || type === 'mountain') return BATTLEFIELD_BG_MAP.pass
+  const hash = (war?.war_id || '').split('').reduce((s: number, c: string) => s + c.charCodeAt(0), 0)
+  return BATTLEFIELD_BG_MAP[BATTLEFIELD_KEYS[hash % BATTLEFIELD_KEYS.length]]
+}
+
+const battlefieldBg = computed(() => {
+  const war = wars.value.find((w: any) => w._expanded) || wars.value[0]
+  return war ? battlefieldBgForWar(war) : BATTLEFIELD_BG_MAP.plain
+})
+
+const overlayStyle = computed(() => ({
+  backgroundImage: `url(${battlefieldBg.value})`,
+  backgroundSize: 'cover',
+  backgroundPosition: 'center',
+  backgroundBlendMode: 'overlay' as const,
+}))
 </script>
 
 <style scoped>

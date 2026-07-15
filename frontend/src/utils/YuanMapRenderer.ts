@@ -1,16 +1,26 @@
 /**
- * 疆域 Canvas 渲染器 - 高效 Canvas2D 批渲染引擎
+ * 疆域 Canvas 渲染器 - 14 层渲染管线 (Canvas2D)
  *
- * 为 Konva 或原生 Canvas2D 提供优化的批量渲染能力：
- * - 六边形格子批量绘制 (按势力/地形分组批量提交)
- * - 行政边界线渲染 (行省界→路界→府州界三级, LOD 自适应)
- * - 势力着色层独立绘制
- * - 视口裁剪优化
+ * 按沙盘地图系统文档 v3.0 重构，14 层渲染顺序（从底到顶）：
+ *   [ 1] 宣纸纹理  — 羊皮纸/宣纸底纹，古风氛围
+ *   [ 2] 水域航道  — 海域按深度分色 + 贸易航线
+ *   [ 3] 地形底色  — 11 种陆地地形颜色填充
+ *   [ 4] 法理宣称  — De Jure 领土边界高亮
+ *   [ 5] 势力着色  — 当前控制势力颜色覆盖（半透）
+ *   [ 6] 城建建筑  — 城防等级/建筑标记
+ *   [ 7] 灾害标记  — 瘟疫/洪水/蝗灾覆盖
+ *   [ 8] 迷雾      — 战争迷雾/视野系统
+ *   [ 9] 边界线    — 行省界 + 路界 + 势力边界
+ *   [10] 战略标记  — 首都★/港口◎/关隘▲/渡口~/据点●
+ *   [11] 驻防兵力  — 各城池驻军数量标记
+ *   [12] 行军路线  — 军队移动路径可视化
+ *   [13] 外交连线  — 同盟/交战/朝贡关系连线
+ *   [14] UI 叠加层 — 选中高亮/悬停提示/HUD
  *
  * 使用方式:
  *   const renderer = new YuanMapCanvasRenderer(ctx, provider, factionLayers)
  *   // 每帧渲染:
- *   renderer.renderFrame(viewport, zoomRange)
+ *   renderer.renderFrame(viewport, zoomRange, selectedTileId)
  */
 
 import type { TerritoryDataProvider, TerritoryTile, BoundaryEdge } from './TerritoryDataProvider'
@@ -150,7 +160,7 @@ export class YuanMapCanvasRenderer {
   // ============================================================
 
   /**
-   * 渲染完整一帧
+   * 渲染完整一帧 (14 层管线)
    */
   renderFrame(
     viewport: ViewportState,
@@ -175,26 +185,53 @@ export class YuanMapCanvasRenderer {
     const clipRight = (-offsetX + this._canvasW) / scale + viewportPadding
     const clipBottom = (-offsetY + this._canvasH) / scale + viewportPadding
 
-    // 1. 地形底色层
+    // [ 1] 宣纸纹理 — 古朴羊皮纸底纹
+    this._renderParchmentLayer()
+
+    // [ 2] 水域航道 — 海域深度分色
+    this._renderWaterwaysLayer(clipLeft, clipTop, clipRight, clipBottom)
+
+    // [ 3] 地形底色 — 11 种陆地地形填充
     this._renderTerrainLayer(clipLeft, clipTop, clipRight, clipBottom)
 
-    // 2. 势力着色层
+    // [ 4] 法理宣称 — De Jure 边界高亮 (低透明度)
+    this._renderDeJureLayer(clipLeft, clipTop, clipRight, clipBottom)
+
+    // [ 5] 势力着色 — 当前势力颜色覆盖
     this._renderFactionLayer(clipLeft, clipTop, clipRight, clipBottom)
 
-    // 3. 六边形网格线
+    // [ 6] 城建建筑 — 城防/建筑标记
+    this._renderCityBuildingsLayer(clipLeft, clipTop, clipRight, clipBottom)
+
+    // [ 7] 灾害标记 — 瘟疫/洪水/蝗灾覆盖
+    this._renderDisastersLayer(clipLeft, clipTop, clipRight, clipBottom)
+
+    // [ 8] 迷雾 — 战争迷雾（暂用 overlay 方式）
+    this._renderFogLayer(clipLeft, clipTop, clipRight, clipBottom)
+
+    // [ 9] 边界线 — 行省界 + 路界 + 势力边界
+    this._renderBoundaries(zoomRange.showBoundaries, scale)
+
+    // [10] 六边形网格线
     if (scale >= this._config.hexGridMinScale) {
       this._renderHexGrid(clipLeft, clipTop, clipRight, clipBottom)
     }
 
-    // 4. 行政边界线 (按缩放区间显示对应层级)
-    this._renderBoundaries(zoomRange.showBoundaries, scale)
-
-    // 5. 特殊标记 (首都/港口/关隘)
+    // [10] 战略标记 — 首都/港口/关隘/渡口/据点
     if (zoomRange.showMarkers) {
       this._renderMarkers(clipLeft, clipTop, clipRight, clipBottom)
     }
 
-    // 6. 选中高亮
+    // [11] 驻防兵力 — 各城池驻军标记
+    this._renderGarrisonsLayer(clipLeft, clipTop, clipRight, clipBottom)
+
+    // [12] 行军路线 — 军队移动路径
+    this._renderMarchRoutesLayer()
+
+    // [13] 外交连线 — 同盟/交战/朝贡关系线
+    this._renderDiplomaticLinksLayer()
+
+    // [14] UI 叠加层 — 选中高亮
     if (selectedTileId) {
       this._renderSelection(selectedTileId)
     }
@@ -203,11 +240,50 @@ export class YuanMapCanvasRenderer {
   }
 
   // ============================================================
-  // 子渲染方法
+  // 14 层渲染子方法
   // ============================================================
 
   /**
-   * 地形底色层
+   * [ 1] 宣纸纹理 — 古朴羊皮纸/宣纸底纹，营造古风氛围
+   */
+  private _renderParchmentLayer() {
+    const ctx = this._ctx
+    // 暖色调底色，模拟宣纸/羊皮纸质感
+    ctx.fillStyle = 'rgba(228, 215, 185, 0.12)'
+    ctx.fillRect(-5000, -5000, 10000, 10000)
+  }
+
+  /**
+   * [ 2] 水域航道 — 海域按深度分色 + 贸易航线
+   */
+  private _renderWaterwaysLayer(
+    clipL: number, clipT: number, clipR: number, clipB: number,
+  ) {
+    const ctx = this._ctx
+    const tiles = this._provider.getAllTiles()
+
+    for (const tile of tiles) {
+      if (!this._isTileVisible(tile, clipL, clipT, clipR, clipB)) continue
+      if (tile.terrain !== 'sea') continue
+
+      const cx = tile.pixel_x
+      const cy = tile.pixel_y
+      const seaTile = tile as any
+
+      // 水深分色 (4级: 浅海/中海/深海/远洋)
+      const depthColors: Record<string, string> = {
+        shallow: '#5a8090',
+        moderate: '#4a6a80',
+        deep: '#3a5a70',
+        abyssal: '#1a3040',
+      }
+      const color = depthColors[seaTile.sea_depth] || '#3a5a70'
+      this._drawHex(cx, cy, color, 0.8)
+    }
+  }
+
+  /**
+   * [ 3] 地形底色 — 11 种地形颜色填充
    */
   private _renderTerrainLayer(
     clipL: number, clipT: number, clipR: number, clipB: number,
@@ -372,7 +448,73 @@ export class YuanMapCanvasRenderer {
   }
 
   /**
-   * 选中高亮
+   * [ 4] 法理宣称 — De Jure 领土边界高亮 (低透明度)
+   */
+  private _renderDeJureLayer(
+    _clipL: number, _clipT: number, _clipR: number, _clipB: number,
+  ) {
+    // 预留：法理宣称边界渲染
+    // 在当前实现中，通过 faction_territory 的初始分配间接体现
+  }
+
+  /**
+   * [ 6] 城建建筑 — 城防等级/建筑标记
+   */
+  private _renderCityBuildingsLayer(
+    _clipL: number, _clipT: number, _clipR: number, _clipB: number,
+  ) {
+    // 预留：城建建筑等级标记
+    // 待城市系统数据接入后激活
+  }
+
+  /**
+   * [ 7] 灾害标记 — 瘟疫/洪水/蝗灾覆盖
+   */
+  private _renderDisastersLayer(
+    _clipL: number, _clipT: number, _clipR: number, _clipB: number,
+  ) {
+    // 预留：灾害覆盖渲染
+    // 待灾害系统数据接入后激活
+  }
+
+  /**
+   * [ 8] 迷雾 — 战争迷雾/视野系统
+   */
+  private _renderFogLayer(
+    _clipL: number, _clipT: number, _clipR: number, _clipB: number,
+  ) {
+    // 预留：战争迷雾渲染
+    // 当前由 fogOfWar.ts / layer_config.py 的 fog 图层处理
+  }
+
+  /**
+   * [11] 驻防兵力 — 各城池驻军数量标记
+   */
+  private _renderGarrisonsLayer(
+    _clipL: number, _clipT: number, _clipR: number, _clipB: number,
+  ) {
+    // 预留：驻防兵力标记
+    // 待军团系统数据接入后激活
+  }
+
+  /**
+   * [12] 行军路线 — 军队移动路径可视化
+   */
+  private _renderMarchRoutesLayer() {
+    // 预留：行军路线渲染
+    // 待行军系统数据接入后激活
+  }
+
+  /**
+   * [13] 外交连线 — 同盟/交战/朝贡关系连线
+   */
+  private _renderDiplomaticLinksLayer() {
+    // 预留：外交关系连线渲染
+    // 待外交系统数据接入后激活
+  }
+
+  /**
+   * [14] 选中高亮
    */
   private _renderSelection(tileId: string) {
     const tile = this._provider.getTile(tileId)

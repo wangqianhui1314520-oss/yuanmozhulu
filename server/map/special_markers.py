@@ -1,7 +1,7 @@
 """
-特殊地块标记生成器 v4.0 - 府州级
+特殊地块标记生成器 v4.1 - 府州级
 
-v4.0 变更:
+v4.1 变更:
 - 标记坐标重新适配府州级网格 (32×42)
 - 保留: 首都、港口、关隘、渡口、战略据点
 - 新增: 东亚扩展区域的标记 (朝鲜/日本/中南半岛)
@@ -242,7 +242,7 @@ def export_special_markers_json(
     strategic_count = sum(1 for m in markers.values() if m["is_strategic"])
 
     output = {
-        "version": "4.0",
+        "version": "4.1",
         "level": "prefecture",
         "meta": {
             "capitals": capital_count,

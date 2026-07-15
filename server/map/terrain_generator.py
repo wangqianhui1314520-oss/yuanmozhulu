@@ -12,7 +12,8 @@
 
 地形种类: 12 种 (flatland/mountain/hill/forest/water/wetland/desert/coastal/steppe/taiga/oasis/sea)
 生成流程: 6 遍扫描
-  第1遍: 89 个 GEO_REGIONS 按地理区域分配基础地形
+  第1遍: 90 个 GEO_REGIONS 按地理区域分配基础地形
+  （漠北草原→西域→吐蕃→满洲→朝鲜→华北→黄土高原→中原→四川→云南→长江中下游→华南→湖广）
   第2遍: 填充完整地形数值 (movement_cost/defense_bonus/combat_modifiers/supply_yield)
   第3遍: 9 条河流河道覆盖
   第4遍: 10 个湖泊覆盖 (radius=1 扩展)
@@ -111,7 +112,7 @@ TERRAIN_TYPES = {
 
 
 # ============================================================
-# 地理区域定义 - 覆盖元朝全盛疆域 (共 89 个地理区域 + 2 条主要水道)
+# 地理区域定义 - 覆盖元朝全盛疆域 (共 90 个地理区域 + 2 条主要水道)
 # 网格映射: 经度55°E~140°E → col 0~55, 纬度15°N~60°N → row 35~0
 # ============================================================
 
@@ -230,6 +231,7 @@ GEO_REGIONS = [
     ("桂北山地", 28, 32, 12, 18, "mountain", False),
     ("桂中丘陵", 30, 34, 12, 18, "hill", False),
     ("海南岛", 32, 35, 22, 26, "hill", True),
+    ("粤东沿海丘陵", 26, 30, 30, 34, "hill", True),  # 潮汕/惠潮沿海丘陵
 
     # ============ 主要水道 (后处理精确覆盖) ============
     ("黄河干流", 6, 16, 14, 40, "water", False),
@@ -482,7 +484,7 @@ def export_terrain_json(output_path, terrain_map=None):
 
     data = {
         "meta": {
-            "version": "3.0",
+            "version": "4.1",
             "total_tiles": len(terrain_map),
             "terrain_types": {
                 k: {"name": v["name"], "description": v["description"]}

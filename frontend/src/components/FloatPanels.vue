@@ -1,24 +1,135 @@
 <template>
   <div class="fp-panel-group" :class="panelGroupClass">
   <!-- 国库面板 -->
-  <div v-if="store.activePanel === 'treasury'" class="float-panel animate-fade-in" style="top:60px;right:280px;width:340px;">
+  <div v-if="store.activePanel === 'treasury'" class="float-panel animate-fade-in" style="top:60px;right:280px;width:380px;max-height:80vh;">
     <div class="fp-header">
       <h3>📜 国库卷宗</h3>
+      <div class="territory-tabs" style="margin-left:auto;margin-right:8px;">
+        <button class="territory-tab" :class="{ active: treasuryTab === 'overview' }" @click="treasuryTab = 'overview'">总览</button>
+        <button class="territory-tab" :class="{ active: treasuryTab === 'income' }" @click="treasuryTab = 'income'">收入</button>
+        <button class="territory-tab" :class="{ active: treasuryTab === 'expense' }" @click="treasuryTab = 'expense'">支出</button>
+      </div>
       <button v-audio class="fp-close" @click="store.togglePanel('treasury')">✕</button>
     </div>
-    <div class="fp-body">
-      <div class="kv-row"><span class="kv-label">银两</span><span class="kv-value gold-text">{{ formatNum(playerFaction?.treasury) }}</span></div>
-      <div class="kv-row"><span class="kv-label">粮草</span><span class="kv-value grain-text">{{ formatNum(playerFaction?.grain) }}</span></div>
-      <div class="kv-row"><span class="kv-label">军械</span><span class="kv-value">{{ formatNum(playerFaction?.arms) }}</span></div>
-      <div class="kv-row"><span class="kv-label">战马</span><span class="kv-value">{{ formatNum(playerFaction?.horses) }}</span></div>
-      <div class="kv-row"><span class="kv-label">声望</span><span class="kv-value">{{ store.reputation }}</span></div>
-      <div class="kv-row"><span class="kv-label">民心</span><span class="kv-value" :class="store.realmStability < 40 ? 'danger-text' : ''">{{ store.realmStability }}</span></div>
-      <div class="kv-row"><span class="kv-label">朝纲</span><span class="kv-value" :class="store.courtStability < 40 ? 'danger-text' : ''">{{ store.courtStability }}</span></div>
-      <div class="kv-row"><span class="kv-label">灾厄</span><span class="kv-value" :class="store.disasterIndex > 40 ? 'danger-text' : ''">{{ store.disasterIndex }}</span></div>
-      <div class="kv-divider"></div>
-      <div class="kv-row"><span class="kv-label">总兵力</span><span class="kv-value troop-text">{{ formatNum(store.totalTroops) }}</span></div>
-      <div class="kv-row"><span class="kv-label">总人口</span><span class="kv-value">{{ formatNum(store.totalPopulation) }}</span></div>
-      <div class="kv-row"><span class="kv-label">领地</span><span class="kv-value">{{ store.playerTiles.length }}块</span></div>
+    <div class="fp-body" style="max-height:62vh;overflow-y:auto;">
+      <!-- 总览 -->
+      <template v-if="treasuryTab === 'overview'">
+        <div class="treasury-summary-cards">
+          <div class="tsc-card gold-bg">
+            <div class="tsc-val">{{ formatNum(playerFaction?.treasury) }}</div>
+            <div class="tsc-lbl">银两</div>
+          </div>
+          <div class="tsc-card grain-bg">
+            <div class="tsc-val">{{ formatNum(playerFaction?.grain) }}</div>
+            <div class="tsc-lbl">粮草</div>
+          </div>
+          <div class="tsc-card">
+            <div class="tsc-val">{{ formatNum(playerFaction?.arms) }}</div>
+            <div class="tsc-lbl">军械</div>
+          </div>
+          <div class="tsc-card">
+            <div class="tsc-val">{{ formatNum(playerFaction?.horses) }}</div>
+            <div class="tsc-lbl">战马</div>
+          </div>
+        </div>
+        <div class="kv-divider"></div>
+        <div class="kv-row"><span class="kv-label">声望</span><span class="kv-value">{{ store.reputation }}</span></div>
+        <div class="kv-row"><span class="kv-label">民心</span><span class="kv-value" :class="store.realmStability < 40 ? 'danger-text' : ''">{{ store.realmStability }}</span></div>
+        <div class="kv-row"><span class="kv-label">朝纲</span><span class="kv-value" :class="store.courtStability < 40 ? 'danger-text' : ''">{{ store.courtStability }}</span></div>
+        <div class="kv-row"><span class="kv-label">灾厄</span><span class="kv-value" :class="store.disasterIndex > 40 ? 'danger-text' : ''">{{ store.disasterIndex }}</span></div>
+        <div class="kv-divider"></div>
+        <div class="kv-row"><span class="kv-label">总兵力</span><span class="kv-value troop-text">{{ formatNum(store.totalTroops) }}</span></div>
+        <div class="kv-row"><span class="kv-label">总人口</span><span class="kv-value">{{ formatNum(store.totalPopulation) }}</span></div>
+        <div class="kv-row"><span class="kv-label">领地</span><span class="kv-value">{{ store.playerTiles.length }}块</span></div>
+        <div class="kv-divider"></div>
+        <div class="treasury-actions">
+          <button v-audio class="btn-small" @click="store.togglePanel('diplomacy')">📦 开拓贸易</button>
+          <button v-audio class="btn-small" @click="store.togglePanel('construction')">🏗 营造增产</button>
+        </div>
+      </template>
+      <!-- 收入明细 -->
+      <template v-if="treasuryTab === 'income'">
+        <h4 class="section-subtitle">💰 收入来源</h4>
+        <div class="income-list">
+          <div class="income-item">
+            <span class="income-icon">🏘️</span>
+            <div class="income-info">
+              <span class="income-name">赋税收入</span>
+              <span class="income-desc">领地{{ store.playerTiles.length }}块 · 人口{{ formatNum(store.totalPopulation) }}</span>
+            </div>
+            <span class="income-val gold-text">+{{ formatNum(estimateTaxIncome()) }}/回合</span>
+          </div>
+          <div class="income-item">
+            <span class="income-icon">🌾</span>
+            <div class="income-info">
+              <span class="income-name">粮草产出</span>
+              <span class="income-desc">从{{ countTileType('farmland') }}块农田产出</span>
+            </div>
+            <span class="income-val grain-text">+{{ formatNum(estimateGrainOutput()) }}/回合</span>
+          </div>
+          <div v-if="estimateTradeIncome() > 0" class="income-item">
+            <span class="income-icon">📦</span>
+            <div class="income-info">
+              <span class="income-name">贸易收入</span>
+              <span class="income-desc">通商路线 · 港口贸易</span>
+            </div>
+            <span class="income-val gold-text">+{{ formatNum(estimateTradeIncome()) }}/回合</span>
+          </div>
+          <div class="income-item">
+            <span class="income-icon">⚒️</span>
+            <div class="income-info">
+              <span class="income-name">工坊产出</span>
+              <span class="income-desc">军械所·马场生产</span>
+            </div>
+            <span class="income-val">+{{ formatNum(estimateWorkshopOutput()) }}/回合</span>
+          </div>
+        </div>
+      </template>
+      <!-- 支出明细 -->
+      <template v-if="treasuryTab === 'expense'">
+        <h4 class="section-subtitle">📉 支出项目</h4>
+        <div class="income-list">
+          <div class="income-item expense-item">
+            <span class="income-icon">⚔️</span>
+            <div class="income-info">
+              <span class="income-name">军费开支</span>
+              <span class="income-desc">{{ formatNum(store.totalTroops) }}兵力 · 粮草消耗</span>
+            </div>
+            <span class="income-val danger-text">-{{ formatNum(estimateMilitaryCost()) }}/回合</span>
+          </div>
+          <div class="income-item expense-item">
+            <span class="income-icon">🏛️</span>
+            <div class="income-info">
+              <span class="income-name">官员俸禄</span>
+              <span class="income-desc">{{ store.officials.length }}位在朝官员</span>
+            </div>
+            <span class="income-val danger-text">-{{ formatNum(store.officials.length * 50) }}/回合</span>
+          </div>
+          <div class="income-item expense-item">
+            <span class="income-icon">🏗️</span>
+            <div class="income-info">
+              <span class="income-name">营造维护</span>
+              <span class="income-desc">城池·工坊·医馆修缮</span>
+            </div>
+            <span class="income-val danger-text">-{{ formatNum(Math.max(100, store.playerTiles.length * 25)) }}/回合</span>
+          </div>
+          <div class="income-item expense-item">
+            <span class="income-icon">🎁</span>
+            <div class="income-info">
+              <span class="income-name">外交贡礼</span>
+              <span class="income-desc">藩属赏赐·使节往来</span>
+            </div>
+            <span class="income-val danger-text">-200/回合</span>
+          </div>
+        </div>
+        <div class="kv-divider"></div>
+        <div class="kv-row">
+          <span class="kv-label">预估净收支</span>
+          <span class="kv-value" :class="estimateNetIncome() >= 0 ? 'gold-text' : 'danger-text'">
+            {{ estimateNetIncome() >= 0 ? '+' : '' }}{{ formatNum(estimateNetIncome()) }}/回合
+          </span>
+        </div>
+      </template>
     </div>
   </div>
 
@@ -254,7 +365,10 @@
 
   <!-- 军事面板 -->
   <div v-if="store.activePanel === 'military'" class="float-panel animate-fade-in" style="top:60px;right:280px;width:380px;">
-    <div class="fp-header">
+    <div class="fp-header fp-header-war">
+      <div class="fp-header-deco">
+        <img src="/assets/ui/ai_ui_war_banner.png" alt="" class="fp-war-banner" />
+      </div>
       <h3>⚔ 军务卷宗</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('military')">✕</button>
     </div>
@@ -320,7 +434,7 @@
         </div>
       </div>
       <div class="diplo-quick-links">
-        <button v-audio class="btn-small" @click="store.togglePanel('diplomacyDeep')" style="width:100%;">
+        <button v-audio class="btn-small" @click="emit('openDiplomacyDeep'); store.togglePanel('diplomacy')" style="width:100%;">
           🎋 纵横权谋 · 合纵连横
         </button>
       </div>
@@ -431,18 +545,57 @@
   </div>
 
   <!-- 灾荒面板 -->
-  <div v-if="store.activePanel === 'disaster'" class="float-panel animate-fade-in" style="top:60px;right:280px;width:360px;">
+  <div v-if="store.activePanel === 'disaster'" class="float-panel animate-fade-in" style="top:60px;right:280px;width:380px;max-height:70vh;">
     <div class="fp-header">
       <h3>⚠ 灾荒录</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('disaster')">✕</button>
     </div>
-    <div class="fp-body">
-      <div class="kv-row"><span class="kv-label">灾厄指数</span><span class="kv-value" :class="getStatClass(100 - store.disasterIndex * 2)">{{ store.disasterIndex }}</span></div>
+    <div class="fp-body" style="max-height:55vh;overflow-y:auto;">
+      <div class="disaster-index-bar">
+        <div class="di-label">灾厄指数</div>
+        <div class="di-bar-wrap">
+          <div class="di-bar-fill" :style="{ width: Math.min(100, store.disasterIndex) + '%', background: store.disasterIndex > 60 ? '#c44b3c' : store.disasterIndex > 30 ? '#b8963e' : '#5b8c5a' }"></div>
+        </div>
+        <div class="di-val" :class="store.disasterIndex > 40 ? 'danger-text' : ''">{{ store.disasterIndex }}</div>
+      </div>
       <div class="kv-divider"></div>
-      <div v-if="store.activeDisasters.length === 0" class="empty-note">暂无灾荒</div>
-      <div v-for="d in store.activeDisasters" :key="d.id" class="kv-row">
-        <span class="kv-label">{{ d.name }}</span>
-        <span class="kv-value disaster-text">{{ d.severity }}</span>
+      <div v-if="store.activeDisasters.length === 0" class="empty-note">暂无灾荒，天下太平</div>
+      <div v-for="d in store.activeDisasters" :key="d.id" class="disaster-card" :class="'severity-' + (d.severity || '中')">
+        <div class="dc-header">
+          <span class="dc-name">{{ d.name }}</span>
+          <span class="dc-severity" :class="d.severity === '高' ? 'danger-text' : d.severity === '中' ? 'warn-text' : ''">
+            {{ d.severity || '中' }}
+          </span>
+        </div>
+        <div class="dc-info" v-if="d.tile_id">影响地块: {{ d.tile_id }}</div>
+        <div class="dc-info" v-if="d.affected_pop">受灾人口: {{ formatNum(d.affected_pop) }}</div>
+        <div class="dc-actions">
+          <button v-audio class="btn-tiny" @click="relieveDisaster(d)" :disabled="(playerFaction?.treasury || 0) < getReliefCost(d)">
+            🆘 赈灾 ({{ getReliefCost(d) }}银)
+          </button>
+          <button v-audio class="btn-tiny" @click="prayForDisaster(d)">
+            🙏 祈福
+          </button>
+        </div>
+        <div v-if="dRelieving === d.id" class="dc-relief-result">
+          <span class="loading-spinner">⟳</span> 赈灾中...
+        </div>
+        <div v-if="dReliefResult && dRelievedId === d.id" class="dc-relief-result" :class="dReliefResult.success ? 'good-text' : 'danger-text'">
+          {{ dReliefResult.message }}
+        </div>
+      </div>
+      <div class="kv-divider"></div>
+      <h4 class="section-subtitle">防灾建设</h4>
+      <div class="disaster-actions">
+        <button v-audio class="btn-small" @click="store.togglePanel('construction')">🏗 建造水利设施</button>
+        <button v-audio class="btn-small" @click="store.togglePanel('medical')">🏥 建设医馆</button>
+        <button v-audio class="btn-small" @click="forecastDisasters" :disabled="forecastLoading">
+          {{ forecastLoading ? '预判中...' : '🔮 AI预判灾异' }}
+        </button>
+      </div>
+      <div v-if="forecastResult" class="forecast-result">
+        <div class="fr-label">钦天监预判：</div>
+        <div class="fr-content">{{ forecastResult }}</div>
       </div>
     </div>
   </div>
@@ -559,30 +712,64 @@
   </div>
 
   <!-- 律法面板 -->
-  <div v-if="store.activePanel === 'law'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:380px;">
+  <div v-if="store.activePanel === 'law'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:420px;max-height:75vh;">
     <div class="fp-header">
       <h3>⚖ 律法卷宗</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('law')">✕</button>
     </div>
-    <div class="fp-body">
-      <h4 class="section-subtitle">囚犯名册</h4>
-      <div v-if="prisonerData && prisonerData.length > 0" class="prisoner-list">
-        <div v-for="p in prisonerData" :key="p.prisoner_id || p.name" class="prisoner-item">
+    <div class="fp-body" style="max-height:62vh;overflow-y:auto;">
+      <!-- 选中的囚犯 -->
+      <div v-if="lawSelectedPrisoner" class="law-selected-prisoner">
+        <span class="ls-label">当前审判：</span>
+        <span class="ls-name">{{ lawSelectedPrisoner.name }}</span>
+        <span class="ls-from">({{ lawSelectedPrisoner.origin_faction || '未知' }})</span>
+        <button class="btn-tiny" @click="lawSelectedPrisoner = null">取消</button>
+      </div>
+      <div v-else class="hint-text">请从下方囚犯名册中选择审判对象</div>
+      <div class="kv-divider"></div>
+      <!-- 囚犯名册 -->
+      <h4 class="section-subtitle">囚犯名册 ({{ prisonerData.length }})</h4>
+      <div v-if="prisonerData && prisonerData.length > 0" class="prisoner-select-list">
+        <div v-for="p in prisonerData" :key="p.prisoner_id || p.name" 
+             class="prisoner-row" 
+             :class="{ selected: lawSelectedPrisoner?.prisoner_id === p.prisoner_id || lawSelectedPrisoner?.name === p.name }"
+             @click="lawSelectedPrisoner = p">
           <span class="pr-name">{{ p.name }}</span>
-          <span class="pr-from">来自：{{ p.origin_faction || '未知' }}</span>
+          <span class="pr-from">{{ p.origin_faction || '未知' }}</span>
           <span class="pr-status">{{ p.status || '在押' }}</span>
+          <span class="pr-select-mark">{{ (lawSelectedPrisoner?.prisoner_id === p.prisoner_id || lawSelectedPrisoner?.name === p.name) ? '✅' : '○' }}</span>
         </div>
       </div>
-      <p v-else class="empty-note">暂无在押囚犯。</p>
+      <p v-else class="empty-note">暂无在押囚犯。战争俘虏会自动进入囚犯名册。</p>
       <div class="kv-divider"></div>
+      <!-- 量刑参考 -->
       <h4 class="section-subtitle">量刑参考</h4>
-      <div class="law-refs">
-        <div class="law-ref" @click="handleLawAction('execute')">⚔ 斩立决 — 谋逆、通敌</div>
-        <div class="law-ref" @click="handleLawAction('exile')">🔗 流放 — 贪墨、失职</div>
-        <div class="law-ref" @click="handleLawAction('pardon')">📜 赦免 — 戴罪立功</div>
-        <div class="law-ref" @click="handleLawAction('fine')">💰 罚银 — 轻微过失</div>
-        <div class="law-ref" @click="handleLawAction('court')">🏛 廷议 — 争议案件</div>
+      <div v-if="!lawSelectedPrisoner" class="hint-text">请先选择一名囚犯</div>
+      <div v-else class="law-refs">
+        <div class="law-ref" :class="{ disabled: lawActionLoading }" @click="handleLawActionWithPrisoner('execute')">
+          ⚔ 斩立决 — 谋逆、通敌
+        </div>
+        <div class="law-ref" :class="{ disabled: lawActionLoading }" @click="handleLawActionWithPrisoner('exile')">
+          🔗 流放 — 贪墨、失职
+        </div>
+        <div class="law-ref" :class="{ disabled: lawActionLoading }" @click="handleLawActionWithPrisoner('pardon')">
+          📜 赦免 — 戴罪立功
+        </div>
+        <div class="law-ref" :class="{ disabled: lawActionLoading }" @click="handleLawActionWithPrisoner('fine')">
+          💰 罚银 — 轻微过失
+        </div>
+        <div class="law-ref" :class="{ disabled: lawActionLoading }" @click="handleLawActionWithPrisoner('court')">
+          🏛 廷议 — 争议案件
+        </div>
       </div>
+      <div v-if="lawActionResult" class="law-result" :class="lawActionResult.type">{{ lawActionResult.text }}</div>
+      <div class="kv-divider"></div>
+      <button v-audio class="btn-small" @click="openLawInterrogate" style="width:100%;" v-if="lawSelectedPrisoner">
+        🔍 刑部审讯 — 审问{{ lawSelectedPrisoner.name }}
+      </button>
+      <button v-audio class="btn-small" @click="openLawInterrogate" style="width:100%;" v-else>
+        🔍 打开刑部审讯
+      </button>
     </div>
   </div>
 
@@ -652,35 +839,107 @@
   </div>
 
   <!-- 藩镇面板 -->
-  <div v-if="store.activePanel === 'vassal'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:380px;">
+  <div v-if="store.activePanel === 'vassal'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:420px;max-height:75vh;">
     <div class="fp-header">
       <h3>🏰 藩镇管控</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('vassal')">✕</button>
     </div>
-    <div class="fp-body">
-      <div v-if="vassalRisk !== null" class="kv-row">
+    <div class="fp-body" style="max-height:62vh;overflow-y:auto;">
+      <!-- 风险概览 -->
+      <div v-if="vassalRisk !== null" class="vassal-risk-header">
         <span class="kv-label">叛乱风险</span>
         <span class="kv-value" :class="vassalRisk > 50 ? 'stat-bad' : vassalRisk > 20 ? 'stat-warn' : 'stat-good'">{{ vassalRisk }}%</span>
       </div>
-      <p v-else class="empty-note">暂无藩镇数据。点击"检查藩镇"获取当前风险。</p>
-      <button v-audio class="btn-small" @click="checkVassalRisk" style="margin-top:8px;">检查藩镇叛乱风险</button>
+      <div class="kv-divider"></div>
+      <!-- 藩镇列表 -->
+      <h4 class="section-subtitle">🏴 藩属势力 ({{ playerVassals.length }})</h4>
+      <div v-if="playerVassals.length === 0" class="empty-note">暂无藩属势力。可通过外交手段收服其他势力为藩属。</div>
+      <div v-for="v in playerVassals" :key="v.faction_id" class="vassal-card" :style="{ borderLeftColor: v.color }">
+        <div class="vc-header">
+          <span class="vc-name" :style="{ color: v.color }">{{ v.name }}</span>
+          <span class="vc-stats">{{ v.tile_count || 0 }}城 · {{ formatNum(v.troops || 0) }}兵</span>
+        </div>
+        <div class="vc-body">
+          <span class="vc-loyalty">忠诚：{{ getVassalLoyalty(v.faction_id) }}</span>
+        </div>
+        <div class="vc-actions">
+          <button class="btn-tiny" @click="doVassalTribute(v.faction_id)">💰 纳贡</button>
+          <button class="btn-tiny" @click="doVassalSuppress(v.faction_id)">⚔ 征讨</button>
+          <button class="btn-tiny" @click="doVassalAnnex(v.faction_id)">🏴 吞并</button>
+          <button class="btn-tiny" @click="doVassalRelease(v.faction_id)">🔓 释放</button>
+        </div>
+      </div>
+      <div class="kv-divider"></div>
+      <!-- 已纳贡记录 -->
+      <h4 class="section-subtitle" v-if="vassalTributes.length > 0">📋 纳贡记录</h4>
+      <div v-for="(t, i) in vassalTributes" :key="i" class="tribute-item">
+        <span>{{ t.faction_name }}</span>
+        <span class="tribute-amount">{{ t.amount }}银/回合</span>
+      </div>
+      <!-- 检查按钮 -->
+      <button v-audio class="btn-small" @click="checkVassalRisk" :disabled="vassalChecking" style="width:100%;margin-top:8px;">
+        {{ vassalChecking ? '检查中...' : '🔍 刷新藩镇风险' }}
+      </button>
     </div>
   </div>
 
   <!-- 工坊生产面板 -->
-  <div v-if="store.activePanel === 'workshop'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:380px;">
+  <div v-if="store.activePanel === 'workshop'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:420px;max-height:75vh;">
     <div class="fp-header">
       <h3>🔨 工坊生产</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('workshop')">✕</button>
     </div>
-    <div class="fp-body">
+    <div class="fp-body" style="max-height:62vh;overflow-y:auto;">
+      <!-- 全局产量总览 -->
+      <div class="workshop-summary">
+        <div class="ws-summary-item">
+          <span class="ws-summary-label">军械产出</span>
+          <span class="ws-summary-val">{{ workshopArmsOutput }}件/回合</span>
+        </div>
+        <div class="ws-summary-item">
+          <span class="ws-summary-label">银两产出</span>
+          <span class="ws-summary-val">{{ workshopGoldOutput }}两/回合</span>
+        </div>
+        <div class="ws-summary-item">
+          <span class="ws-summary-label">粮草加工</span>
+          <span class="ws-summary-val">{{ workshopGrainOutput }}石/回合</span>
+        </div>
+      </div>
+      <div class="kv-divider"></div>
+      <!-- 生产侧重 -->
+      <h4 class="section-subtitle">⚙ 生产侧重</h4>
+      <div class="workshop-focus-options">
+        <button class="ws-focus-btn" :class="{ active: workshopFocus === 'arms' }" @click="setWorkshopFocus('arms')">
+          ⚔ 军械优先
+        </button>
+        <button class="ws-focus-btn" :class="{ active: workshopFocus === 'gold' }" @click="setWorkshopFocus('gold')">
+          💰 银两优先
+        </button>
+        <button class="ws-focus-btn" :class="{ active: workshopFocus === 'grain' }" @click="setWorkshopFocus('grain')">
+          🌾 粮草优先
+        </button>
+        <button class="ws-focus-btn" :class="{ active: workshopFocus === 'balanced' }" @click="setWorkshopFocus('balanced')">
+          ⚖ 均衡生产
+        </button>
+      </div>
+      <div v-if="workshopFocusResult" class="focus-result" :class="workshopFocusResult.type">{{ workshopFocusResult.text }}</div>
+      <div class="kv-divider"></div>
+      <!-- 工坊列表 -->
+      <h4 class="section-subtitle">🏭 工坊列表 ({{ workshopTotalCount }})</h4>
       <div v-if="workshopData && workshopData.workshops && workshopData.workshops.length > 0">
-        <div v-for="ws in workshopData.workshops" :key="ws.tile_id" class="kv-row">
-          <span class="kv-label">{{ ws.tile_name }}</span>
-          <span class="kv-value">{{ ws.workshops.map((w: any) => workshopLabel(w.type)).join('、') }}</span>
+        <div v-for="ws in workshopData.workshops" :key="ws.tile_id" class="workshop-item-detail">
+          <div class="ws-header-row">
+            <span class="ws-name">{{ ws.tile_name }}</span>
+            <button class="btn-tiny" @click="buildTargetTileId = ws.tile_id; store.togglePanel('construction')">⬆ 升级</button>
+          </div>
+          <div class="ws-tags">
+            <span v-for="w in ws.workshops" :key="w.type" class="ws-tag">{{ workshopLabel(w.type) }} Lv.{{ w.level }}</span>
+          </div>
         </div>
       </div>
       <p v-else class="empty-note">暂无工坊。在"营造司"面板中建设工坊。</p>
+      <div class="kv-divider"></div>
+      <button v-audio class="btn-small" @click="store.togglePanel('construction')" style="width:100%;">🏗 前往营造司</button>
     </div>
   </div>
 
@@ -974,25 +1233,69 @@
   </div>
 
   <!-- 人物总览面板 -->
-  <div v-if="store.activePanel === 'personnel'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:400px;max-height:70vh;">
+  <div v-if="store.activePanel === 'personnel'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:420px;max-height:70vh;">
     <div class="fp-header">
       <h3>👤 人物总览</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('personnel')">✕</button>
     </div>
     <div class="fp-body" style="max-height:55vh;overflow-y:auto;">
-      <h4 class="section-subtitle">朝中官员 ({{ store.officials.length }})</h4>
-      <div v-if="store.officials.length === 0" class="empty-note">暂无官员</div>
-      <div v-for="off in store.officials" :key="off.official_id || off.name" class="kv-row">
-        <span class="kv-label">{{ off.name }} · {{ off.position }}</span>
-        <span class="kv-value">忠{{ off.loyalty || 0 }} 能{{ off.ability || 0 }}</span>
+      <!-- 统计卡片 -->
+      <div class="personnel-stats">
+        <div class="pstat"><span class="pstat-val">{{ store.officials.length }}</span><span class="pstat-lbl">在朝</span></div>
+        <div class="pstat"><span class="pstat-val">{{ store.officials.filter((o: any) => (o.loyalty || 0) >= 70).length }}</span><span class="pstat-lbl">忠臣</span></div>
+        <div class="pstat"><span class="pstat-val">{{ store.officials.filter((o: any) => (o.loyalty || 0) < 40).length }}</span><span class="pstat-lbl danger-text">隐患</span></div>
+      </div>
+      <div class="kv-divider"></div>
+      <h4 class="section-subtitle">朝中官员</h4>
+      <div v-if="store.officials.length === 0" class="empty-note">暂无官员，可前往朝堂任命</div>
+      <!-- 官员列表（可点击展开） -->
+      <div v-for="off in store.officials" :key="off.official_id || off.name"
+        class="official-card" :class="{ expanded: selectedOfficial?.official_id === off.official_id || selectedOfficial?.name === off.name }"
+        @click="selectOfficial(off)">
+        <div class="oc-header">
+          <span class="oc-name">{{ off.name }}</span>
+          <span class="oc-position">{{ off.position }}</span>
+          <span class="oc-expand">{{ (selectedOfficial?.official_id === off.official_id || selectedOfficial?.name === off.name) ? '▾' : '▸' }}</span>
+        </div>
+        <div class="oc-bars">
+          <div class="oc-bar-row">
+            <span class="oc-bar-label">忠诚</span>
+            <div class="oc-bar-wrap"><div class="oc-bar-fill" :style="{ width: (off.loyalty || 50) + '%', background: loyaltyColor(off.loyalty || 50) }"></div></div>
+            <span class="oc-bar-val">{{ off.loyalty || 50 }}</span>
+          </div>
+          <div class="oc-bar-row">
+            <span class="oc-bar-label">能力</span>
+            <div class="oc-bar-wrap"><div class="oc-bar-fill" :style="{ width: (off.ability || 50) + '%', background: '#5b8c5a' }"></div></div>
+            <span class="oc-bar-val">{{ off.ability || 50 }}</span>
+          </div>
+        </div>
+        <!-- 展开详情 -->
+        <div v-if="selectedOfficial?.official_id === off.official_id || selectedOfficial?.name === off.name" class="oc-detail">
+          <div class="kv-row small"><span class="kv-label">派系</span><span class="kv-value">{{ off.faction || off.affiliation || '中立' }}</span></div>
+          <div class="kv-row small" v-if="off.age"><span class="kv-label">年龄</span><span class="kv-value">{{ off.age }}岁</span></div>
+          <div class="kv-row small" v-if="off.salary"><span class="kv-label">俸禄</span><span class="kv-value">{{ off.salary }}银/回合</span></div>
+          <div class="kv-row small" v-if="off.traits?.length"><span class="kv-label">特质</span><span class="kv-value">{{ off.traits.join('、') }}</span></div>
+          <div class="oc-detail-actions">
+            <button v-audio class="btn-tiny" @click.stop="promoteOfficial(off)">⬆ 提拔</button>
+            <button v-audio class="btn-tiny" @click.stop="demoteOfficial(off)">⬇ 降职</button>
+            <button v-audio class="btn-tiny danger" @click.stop="dismissPersonnelOfficial(off.official_id)">罢免</button>
+          </div>
+        </div>
+      </div>
+      <div class="kv-divider"></div>
+      <div class="action-btns">
+        <button v-audio class="btn-small" @click="store.togglePanel('court')">🏛 前往朝堂</button>
+        <button v-audio class="btn-small" @click="doRecruitOfficials" :disabled="(playerFaction?.treasury || 0) < 300">📝 科举选官</button>
+        <button v-audio class="btn-small" @click="emit('openTalentMarket')">🏛 人才市场</button>
       </div>
     </div>
   </div>
 
   <!-- 邸报事件面板（AI事件生成） -->
   <div v-if="store.activePanel === 'events'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:420px;max-height:70vh;">
-    <div class="fp-header">
+    <div class="fp-header fp-header-events">
       <h3>📋 邸报 · 天下大事</h3>
+      <img src="/assets/ui/ai_ui_seal_stamp.png" alt="" class="fp-seal-stamp" />
       <button v-audio class="fp-close" @click="store.togglePanel('events')">✕</button>
     </div>
     <div class="fp-body" style="max-height:55vh;overflow-y:auto;">
@@ -1051,67 +1354,240 @@
   </div>
 
   <!-- 皇子宗室面板 -->
-  <div v-if="store.activePanel === 'royal'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:360px;">
+  <div v-if="store.activePanel === 'royal'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:400px;max-height:70vh;">
     <div class="fp-header">
       <h3>{{ getPanelTitle('royal') }}</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('royal')">✕</button>
     </div>
-    <div class="fp-body">
-      <div class="kv-row"><span class="kv-label">君主</span><span class="kv-value">{{ royalInfo.ruler }}</span></div>
-      <div class="kv-row"><span class="kv-label">君主年龄</span><span class="kv-value">{{ royalInfo.rulerAge }}岁</span></div>
-      <div class="kv-row"><span class="kv-label">皇子数量</span><span class="kv-value">{{ royalInfo.count }}</span></div>
-      <div class="kv-row"><span class="kv-label">成年皇子</span><span class="kv-value">{{ royalInfo.grownHeirs }}人</span></div>
-      <div class="kv-row"><span class="kv-label">继承顺位</span><span class="kv-value">{{ royalInfo.heir }}</span></div>
-      <div class="kv-row">
-        <span class="kv-label">继承风险</span>
-        <span class="kv-value" :class="royalInfo.risk === 'high' ? 'danger-text' : royalInfo.risk === 'medium' ? 'warn-text' : 'good-text'">
-          {{ royalInfo.risk === 'high' ? '高危' : royalInfo.risk === 'medium' ? '中等' : '低' }}
-        </span>
+    <div class="fp-body" style="max-height:58vh;overflow-y:auto;">
+      <!-- 君主信息 -->
+      <div class="ruler-card">
+        <div class="ruler-avatar">👑</div>
+        <div class="ruler-info">
+          <div class="ruler-name">{{ royalInfo.ruler }}</div>
+          <div class="ruler-meta">{{ royalInfo.rulerAge }}岁 · 在位{{ store.currentRound }}回合</div>
+        </div>
+      </div>
+      <div class="kv-divider"></div>
+      <div class="royal-stats">
+        <div class="royal-stat" :class="getStatClass(royalInfo.count > 2 ? 80 : 30)">
+          <span class="rs-val">{{ royalInfo.count }}</span><span class="rs-lbl">皇子</span>
+        </div>
+        <div class="royal-stat">
+          <span class="rs-val">{{ royalInfo.grownHeirs }}</span><span class="rs-lbl">成年</span>
+        </div>
+        <div class="royal-stat" :class="royalInfo.risk === 'high' ? 'danger-text' : ''">
+          <span class="rs-val">{{ royalInfo.heir }}</span><span class="rs-lbl">世子</span>
+        </div>
+        <div class="royal-stat" :class="royalInfo.risk === 'high' ? 'danger-text' : royalInfo.risk === 'medium' ? 'warn-text' : 'good-text'">
+          <span class="rs-val">{{ royalInfo.risk === 'high' ? '高危' : royalInfo.risk === 'medium' ? '中等' : '低' }}</span>
+          <span class="rs-lbl">风险</span>
+        </div>
+      </div>
+      <div class="kv-divider"></div>
+      <!-- 皇子列表（可交互） -->
+      <h4 class="section-subtitle">皇子宗亲</h4>
+      <div v-if="royalPrinces.length === 0" class="empty-note">
+        <p>暂无皇子信息。皇子随游戏进程诞生与成长。</p>
+        <p class="hint-text">可使用圣旨"生育皇子"或等待自然诞生。</p>
+      </div>
+      <div v-for="(prince, i) in royalPrinces" :key="i"
+        class="prince-card" :class="{ expanded: selectedPrince?.name === prince.name }"
+        @click="selectPrince(prince)">
+        <div class="pc-header">
+          <span class="pc-name">{{ prince.name }}</span>
+          <span class="pc-age">{{ prince.age }}岁</span>
+          <span class="pc-status" :class="prince.status === '世子' ? 'good-text' : ''">
+            {{ prince.status }}
+          </span>
+        </div>
+        <div class="pc-bars" v-if="prince.age >= 10">
+          <div class="pc-bar-row">
+            <span class="pc-bar-label">武略</span>
+            <div class="oc-bar-wrap"><div class="oc-bar-fill" :style="{ width: prince.martial + '%', background: '#c44b3c' }"></div></div>
+            <span>{{ prince.martial }}</span>
+          </div>
+          <div class="pc-bar-row">
+            <span class="pc-bar-label">文治</span>
+            <div class="oc-bar-wrap"><div class="oc-bar-fill" :style="{ width: prince.civil + '%', background: '#5b8c5a' }"></div></div>
+            <span>{{ prince.civil }}</span>
+          </div>
+          <div class="pc-bar-row">
+            <span class="pc-bar-label">魅力</span>
+            <div class="oc-bar-wrap"><div class="oc-bar-fill" :style="{ width: prince.charisma + '%', background: '#9b59b6' }"></div></div>
+            <span>{{ prince.charisma }}</span>
+          </div>
+        </div>
+        <!-- 展开详情 + 操作 -->
+        <div v-if="selectedPrince?.name === prince.name" class="pc-detail">
+          <div class="kv-row small"><span class="kv-label">资质</span><span class="kv-value">{{ prince.talent || '中人之资' }}</span></div>
+          <div class="kv-row small"><span class="kv-label">野心</span><span class="kv-value">{{ prince.ambition || '低' }}</span></div>
+          <div class="kv-divider"></div>
+          <div class="pc-actions">
+            <button v-if="prince.status !== '世子' && prince.age >= 12"
+              v-audio class="btn-tiny" @click.stop="appointHeir(prince)">
+              👑 立为世子
+            </button>
+            <button v-if="prince.age >= 16" v-audio class="btn-tiny" @click.stop="sendPrinceToTerritory(prince)">
+              🏰 出镇地方
+            </button>
+            <button v-if="prince.age >= 14" v-audio class="btn-tiny" @click.stop="educatePrince(prince)" :disabled="(playerFaction?.treasury || 0) < 200">
+              📚 延师教导 (200银)
+            </button>
+            <button v-if="prince.age >= 16" v-audio class="btn-tiny" @click.stop="marryPrince(prince)" :disabled="(playerFaction?.treasury || 0) < 300">
+              💒 联姻 (300银)
+            </button>
+          </div>
+          <div v-if="princeActionLoading" class="hint-text">处理中...</div>
+          <div v-if="princeActionResult" class="prince-result" :class="princeActionResult.success ? 'good-text' : 'danger-text'">
+            {{ princeActionResult.message }}
+          </div>
+        </div>
       </div>
       <div class="kv-divider"></div>
       <div class="action-btns">
         <button v-audio class="btn-small" @click="store.togglePanel('moveCapital')">🏛 迁都</button>
         <button v-audio class="btn-small" @click="doSacrifice" :disabled="(playerFaction?.treasury || 0) < 500">🙏 祭祀</button>
+        <button v-audio class="btn-small" @click="spawnNewPrince" :disabled="(playerFaction?.treasury || 0) < 800">
+          👶 纳妃求嗣 (800银)
+        </button>
       </div>
       <p class="hint-text" style="margin-top:12px;">皇子可出镇地方、联姻外交或入朝参政。册立世子可稳固国本，未立世子则可能引发夺嫡之争。君主年迈而无嗣，则社稷危矣。</p>
     </div>
   </div>
 
   <!-- 疲病伤病面板 -->
-  <div v-if="store.activePanel === 'medical'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:360px;">
+  <div v-if="store.activePanel === 'medical'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:400px;max-height:70vh;">
     <div class="fp-header">
       <h3>{{ getPanelTitle('medical') }}</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('medical')">✕</button>
     </div>
-    <div class="fp-body">
-      <div class="kv-row"><span class="kv-label">医馆数量</span><span class="kv-value">{{ medicalInfo.clinics }}座</span></div>
-      <div class="kv-row"><span class="kv-label">瘟疫风险</span><span class="kv-value" :class="medicalInfo.plagueRisk > 30 ? 'danger-text' : ''">{{ medicalInfo.plagueRisk }}%</span></div>
-      <div class="kv-row"><span class="kv-label">伤病率</span><span class="kv-value">{{ medicalInfo.injuryRate }}%</span></div>
-      <div class="kv-row"><span class="kv-label">伤病人口</span><span class="kv-value">{{ formatNum(medicalInfo.injuredPop) }}</span></div>
+    <div class="fp-body" style="max-height:58vh;overflow-y:auto;">
+      <!-- 健康统计 -->
+      <div class="medical-stats">
+        <div class="mstat">
+          <span class="mstat-val good-text">{{ medicalInfo.clinics }}</span>
+          <span class="mstat-lbl">医馆</span>
+        </div>
+        <div class="mstat">
+          <span class="mstat-val" :class="medicalInfo.plagueRisk > 30 ? 'danger-text' : ''">{{ medicalInfo.plagueRisk }}%</span>
+          <span class="mstat-lbl">瘟疫风险</span>
+        </div>
+        <div class="mstat">
+          <span class="mstat-val">{{ medicalInfo.injuryRate }}%</span>
+          <span class="mstat-lbl">伤病率</span>
+        </div>
+        <div class="mstat">
+          <span class="mstat-val">{{ formatNum(medicalInfo.injuredPop) }}</span>
+          <span class="mstat-lbl">伤病人口</span>
+        </div>
+      </div>
       <div class="kv-divider"></div>
+      <!-- 灾害影响 -->
       <div class="kv-row"><span class="kv-label">灾厄指数</span><span class="kv-value" :class="medicalInfo.disasterIndex > 40 ? 'danger-text' : ''">{{ medicalInfo.disasterIndex }}</span></div>
       <div class="kv-row"><span class="kv-label">当前灾害</span><span class="kv-value">{{ medicalInfo.activeDisasters.join('、') || '无' }}</span></div>
+      <div class="kv-divider"></div>
+      <!-- 各地诊所一览（可交互） -->
+      <h4 class="section-subtitle">🏥 各地诊所</h4>
+      <div v-if="clinicTiles.length === 0" class="empty-note">
+        <p>暂无医馆，可前往营造司建造。</p>
+        <button v-audio class="btn-small" @click="store.togglePanel('construction')">🏗 建造医馆</button>
+      </div>
+      <div v-for="tile in clinicTiles" :key="tile.tile_id" class="clinic-card">
+        <div class="cc-header">
+          <span class="cc-name">{{ tile.tile_name || tile.tile_id }}</span>
+          <span class="cc-level">医馆 Lv.{{ tile.clinic_level || 1 }}</span>
+        </div>
+        <div class="cc-stats">
+          <span>防疫效果：{{ (tile.clinic_level || 1) * 8 }}%</span>
+          <span>治疗容量：{{ (tile.clinic_level || 1) * 500 }}人</span>
+        </div>
+        <div class="cc-info" v-if="tile.disasters?.length">
+          <span class="warn-text">⚠ 当前灾害：{{ Array.isArray(tile.disasters) ? tile.disasters.join('、') : tile.disasters }}</span>
+        </div>
+        <div class="cc-actions">
+          <button v-audio class="btn-tiny" @click="upgradeClinic(tile)" :disabled="(playerFaction?.treasury || 0) < getClinicUpgradeCost(tile)">
+            ⬆ 升级 ({{ getClinicUpgradeCost(tile) }}银)
+          </button>
+          <button v-audio class="btn-tiny" @click="treatInjured(tile)" :disabled="(playerFaction?.treasury || 0) < 150">
+            💊 施药 (150银)
+          </button>
+        </div>
+      </div>
       <div class="kv-divider"></div>
       <div class="action-btns">
         <button v-audio class="btn-small" @click="store.togglePanel('construction')">🏥 建造医馆</button>
         <button v-audio class="btn-small" @click="doSacrifice" :disabled="(playerFaction?.treasury || 0) < 500">🙏 祭祀消灾</button>
+        <button v-audio class="btn-small" @click="store.togglePanel('disaster')">⚠ 查看灾异</button>
       </div>
       <p class="hint-text" style="margin-top:12px;">建造医馆可降低瘟疫风险。瘟疫爆发时将大幅减少人口与士气。及时赈灾可控制疫情蔓延。夏季瘟疫风险显著提高。</p>
     </div>
   </div>
 
   <!-- 海策远洋面板 -->
-  <div v-if="store.activePanel === 'sea'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:360px;">
+  <div v-if="store.activePanel === 'sea'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:420px;max-height:72vh;">
     <div class="fp-header">
       <h3>{{ getPanelTitle('sea') }}</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('sea')">✕</button>
     </div>
-    <div class="fp-body">
-      <div class="kv-row"><span class="kv-label">港口数量</span><span class="kv-value">{{ seaInfo.ports }}座</span></div>
-      <div class="kv-row"><span class="kv-label">船队规模</span><span class="kv-value">{{ seaInfo.fleetSize }}艘</span></div>
-      <div class="kv-row"><span class="kv-label">海外贸易收入</span><span class="kv-value gold-text">{{ formatNum(seaInfo.tradeIncome) }}银/回合</span></div>
+    <div class="fp-body" style="max-height:58vh;overflow-y:auto;">
+      <!-- 海运统计 -->
+      <div class="sea-summary-cards">
+        <div class="ssc-card">
+          <div class="ssc-val">{{ seaInfo.ports }}</div>
+          <div class="ssc-lbl">港口</div>
+        </div>
+        <div class="ssc-card">
+          <div class="ssc-val">{{ seaInfo.fleetSize }}</div>
+          <div class="ssc-lbl">舰船</div>
+        </div>
+        <div class="ssc-card gold-bg">
+          <div class="ssc-val gold-text">+{{ formatNum(seaInfo.tradeIncome) }}</div>
+          <div class="ssc-lbl">贸易/回合</div>
+        </div>
+        <div class="ssc-card">
+          <div class="ssc-val">{{ seaInfo.routes }}</div>
+          <div class="ssc-lbl">航线</div>
+        </div>
+      </div>
       <div class="kv-divider"></div>
-      <div class="kv-row"><span class="kv-label">已发现航线</span><span class="kv-value">{{ seaInfo.routes }}条</span></div>
+      <!-- 港口列表（可交互） -->
+      <h4 class="section-subtitle">⚓ 港口详情</h4>
+      <div v-if="getPortTiles().length === 0" class="empty-note">
+        <p>暂无港口。占领沿海地块后可建造港口设施。</p>
+        <button v-audio class="btn-small" @click="store.togglePanel('construction')">🏗 前往营造</button>
+      </div>
+      <div v-for="port in getPortTiles()" :key="port.tile_id" class="port-card" :class="{ expanded: selectedPort?.tile_id === port.tile_id }" @click="selectPortTile(port)">
+        <div class="pc-header">
+          <span class="pc-name">⚓ {{ port.tile_name || port.tile_id }}</span>
+          <span class="pc-ships">{{ port.ships || port.fleet_size || 3 }}艘</span>
+          <span class="pc-expand">{{ selectedPort?.tile_id === port.tile_id ? '▾' : '▸' }}</span>
+        </div>
+        <div class="port-stats">
+          <span>贸易收入：+{{ port.trade_income || 80 }}银/回合</span>
+          <span>船坞等级：Lv.{{ port.shipyard_level || 1 }}</span>
+        </div>
+        <!-- 展开详情 -->
+        <div v-if="selectedPort?.tile_id === port.tile_id" class="port-detail">
+          <div class="kv-row small"><span class="kv-label">人口</span><span class="kv-value">{{ formatNum(port.population || 0) }}</span></div>
+          <div class="kv-row small"><span class="kv-label">航线</span><span class="kv-value">{{ port.routes || 1 }}条</span></div>
+          <div class="kv-divider"></div>
+          <div class="port-actions">
+            <button v-audio class="btn-tiny" @click.stop="buildShip(port)" :disabled="(playerFaction?.treasury || 0) < 200">
+              🚢 造舰 (200银)
+            </button>
+            <button v-audio class="btn-tiny" @click.stop="upgradeShipyard(port)" :disabled="(playerFaction?.treasury || 0) < 400">
+              ⬆ 升级船坞 (400银)
+            </button>
+            <button v-audio class="btn-tiny" @click.stop="openTradeRoute(port)" :disabled="(playerFaction?.treasury || 0) < 300">
+              🗺️ 开辟航线 (300银)
+            </button>
+            <button v-audio class="btn-tiny" @click.stop="navalPatrol(port)">
+              🛡️ 水师巡航
+            </button>
+          </div>
+        </div>
+      </div>
       <div class="kv-divider"></div>
       <div class="action-btns">
         <button v-audio class="btn-small" @click="store.togglePanel('construction')">⚓ 建造港口</button>
@@ -1122,75 +1598,132 @@
   </div>
 
   <!-- 民俗国史面板 -->
-  <div v-if="store.activePanel === 'culture'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:380px;max-height:70vh;">
+  <div v-if="store.activePanel === 'culture'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:400px;max-height:72vh;">
     <div class="fp-header">
       <h3>{{ getPanelTitle('culture') }}</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('culture')">✕</button>
     </div>
-    <div class="fp-body" style="max-height:55vh;overflow-y:auto;">
-      <div class="kv-row"><span class="kv-label">当前年号</span><span class="kv-value gold-text">{{ cultureInfo.eraName }}</span></div>
-      <div class="kv-row"><span class="kv-label">纪元</span><span class="kv-value">{{ cultureInfo.year }}</span></div>
-      <div class="kv-row"><span class="kv-label">国史记录</span><span class="kv-value">{{ cultureInfo.historyCount }}条</span></div>
-      <div class="kv-row"><span class="kv-label">敕令</span><span class="kv-value">{{ cultureInfo.decreesCount }}道</span></div>
-      <div class="kv-row"><span class="kv-label">战役</span><span class="kv-value">{{ cultureInfo.battlesCount }}场</span></div>
+    <div class="fp-body" style="max-height:58vh;overflow-y:auto;">
+      <!-- 国朝纪年 -->
+      <div class="culture-era-card">
+        <div class="era-main">
+          <span class="era-name gold-text">{{ cultureInfo.eraName }}</span>
+          <span class="era-year">{{ cultureInfo.year }}</span>
+        </div>
+        <div class="culture-stats">
+          <div class="cstat"><span class="cstat-val">{{ cultureInfo.historyCount }}</span><span class="cstat-lbl">国史</span></div>
+          <div class="cstat"><span class="cstat-val">{{ cultureInfo.decreesCount }}</span><span class="cstat-lbl">敕令</span></div>
+          <div class="cstat"><span class="cstat-val">{{ cultureInfo.battlesCount }}</span><span class="cstat-lbl">战役</span></div>
+        </div>
+      </div>
       <div class="kv-divider"></div>
-      <h4 class="section-subtitle">近期大事</h4>
+      <!-- 近期大事（可点击查看详情） -->
+      <h4 class="section-subtitle">📜 近期大事</h4>
       <div v-if="cultureInfo.recentEvents.length === 0" class="empty-note">暂无记录，天下初定...</div>
-      <div v-for="(evt, i) in cultureInfo.recentEvents" :key="i" class="event-item-mini">
+      <div v-for="(evt, i) in cultureInfo.recentEvents" :key="i" class="event-item-mini culture-event" @click="viewEventDetail(evt)">
         <span class="event-round">[{{ evt.round }}]</span>
         <span class="event-cat" v-if="evt.category">[{{ evt.category }}]</span>
         <span>{{ evt.title }}</span>
+        <span class="event-expand">▸</span>
+      </div>
+      <!-- 事件详情弹出 -->
+      <div v-if="viewedEvent" class="event-detail-popup">
+        <div class="edp-header">
+          <span class="edp-title">{{ viewedEvent.title }}</span>
+          <button class="btn-tiny" @click="viewedEvent = null">✕</button>
+        </div>
+        <div class="edp-body">
+          <div class="kv-row small"><span class="kv-label">回合</span><span class="kv-value">{{ viewedEvent.round }}</span></div>
+          <div class="kv-row small" v-if="viewedEvent.category"><span class="kv-label">类型</span><span class="kv-value">{{ viewedEvent.category }}</span></div>
+          <div class="kv-row small" v-if="viewedEvent.description"><span class="kv-label">详情</span><span class="kv-value">{{ viewedEvent.description }}</span></div>
+          <div class="kv-row small" v-if="viewedEvent.narrative"><span class="kv-label">记载</span><span class="kv-value dim-text">{{ viewedEvent.narrative }}</span></div>
+        </div>
+      </div>
+      <div class="kv-divider"></div>
+      <!-- 修史功能 -->
+      <h4 class="section-subtitle">✍️ 御批修史</h4>
+      <textarea v-model="chronicleText" class="decree-input" rows="2" placeholder="撰写国史纪事...（例：是岁，我军大破陈友定于福州）"></textarea>
+      <div class="chronicle-actions">
+        <button v-audio class="btn-small" @click="writeChronicle" :disabled="!chronicleText.trim() || chronicleWriting">
+          {{ chronicleWriting ? '撰写中...' : '📝 载入国史' }}
+        </button>
+        <button v-audio class="btn-small" @click="changeEraName">🏷️ 改元</button>
       </div>
       <p class="hint-text" style="margin-top:12px;">重大战役、外交事件、天灾祥瑞将被载入国史。统一天下后将生成完整朝代传记。每12回合自动撰写一次国史纪事。</p>
     </div>
   </div>
 
   <!-- 音效设置面板 -->
-  <div v-if="store.activePanel === 'audio'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:320px;">
+  <div v-if="store.activePanel === 'audio'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:340px;">
     <div class="fp-header">
       <h3>🎵 音效设置</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('audio')">✕</button>
     </div>
     <div class="fp-body">
+      <!-- 全局静音 -->
       <div class="kv-row">
-        <span class="kv-label">背景音乐</span>
+        <span class="kv-label">全局静音</span>
         <span class="kv-value">
-          <button class="audio-btn" :class="{ active: audioSettings.bgm }" @click="toggleAudio('bgm')">
-            {{ audioSettings.bgm ? '开启' : '关闭' }}
+          <button class="audio-btn" :class="{ active: !audioSettings.muted }" @click="toggleMuteAll">
+            {{ audioSettings.muted ? '🔇 已静音' : '🔊 正常' }}
           </button>
-        </span>
-      </div>
-      <div class="kv-row">
-        <span class="kv-label">音效</span>
-        <span class="kv-value">
-          <button class="audio-btn" :class="{ active: audioSettings.sfx }" @click="toggleAudio('sfx')">
-            {{ audioSettings.sfx ? '开启' : '关闭' }}
-          </button>
-        </span>
-      </div>
-      <div class="kv-row">
-        <span class="kv-label">音量</span>
-        <span class="kv-value">
-          <input type="range" min="0" max="100" v-model.number="audioSettings.volume" class="audio-slider" />
-          <span style="margin-left:6px;font-size:11px;">{{ audioSettings.volume }}%</span>
         </span>
       </div>
       <div class="kv-divider"></div>
+      <!-- 独立音量 -->
+      <div class="audio-vol-row">
+        <span class="audio-vol-label">主音量</span>
+        <input type="range" min="0" max="100" v-model.number="audioSettings.masterVolume" class="audio-slider" @input="onMasterVolumeChange" />
+        <span class="audio-vol-pct">{{ audioSettings.masterVolume }}%</span>
+      </div>
+      <div class="audio-vol-row">
+        <span class="audio-vol-label">BGM</span>
+        <input type="range" min="0" max="100" v-model.number="audioSettings.bgmVolume" class="audio-slider" @input="onBgmVolumeChange" />
+        <span class="audio-vol-pct">{{ audioSettings.bgmVolume }}%</span>
+      </div>
+      <div class="audio-vol-row">
+        <span class="audio-vol-label">音效</span>
+        <input type="range" min="0" max="100" v-model.number="audioSettings.sfxVolume" class="audio-slider" @input="onSfxVolumeChange" />
+        <span class="audio-vol-pct">{{ audioSettings.sfxVolume }}%</span>
+      </div>
+      <div class="audio-vol-row">
+        <span class="audio-vol-label">配音</span>
+        <input type="range" min="0" max="100" v-model.number="audioSettings.voiceVolume" class="audio-slider" @input="onVoiceVolumeChange" />
+        <span class="audio-vol-pct">{{ audioSettings.voiceVolume }}%</span>
+      </div>
+      <div class="kv-divider"></div>
+      <!-- BGM 开关 + 状态 -->
+      <div class="kv-row">
+        <span class="kv-label">BGM 开关</span>
+        <span class="kv-value">
+          <button class="audio-btn" :class="{ active: audioSettings.bgmOn }" @click="toggleAudio('bgm')">
+            {{ audioSettings.bgmOn ? '开启' : '关闭' }}
+          </button>
+        </span>
+      </div>
       <div class="audio-status">
-        <div class="audio-status-row">
-          <span class="audio-status-label">BGM状态</span>
-          <span class="audio-status-value" :class="bgmPlaying ? 'good-text' : 'warn-text'">{{ bgmPlaying ? '▶ 播放中' : '⏸ 已暂停' }}</span>
-        </div>
-        <div class="audio-status-row">
-          <span class="audio-status-label">当前曲目</span>
-          <span class="audio-status-value dim-text">{{ currentBgmName || '无' }}</span>
+        <span class="audio-status-label">当前曲目</span>
+        <span class="audio-status-value dim-text">{{ currentBgmName || '无' }}</span>
+      </div>
+      <!-- 曲目列表 -->
+      <div class="bgm-track-list">
+        <div
+          v-for="t in bgmTracks"
+          :key="t.id"
+          class="bgm-track-item"
+          :class="{ active: t.id === currentBgmId }"
+          @click="switchBgmTrack(t.id)"
+        >
+          <span class="bgm-track-icon">{{ t.id === currentBgmId ? '▶' : '○' }}</span>
+          <span class="bgm-track-name">{{ t.name }}</span>
+          <span class="bgm-track-tag">{{ t.id === 'main_menu' ? '菜单' : t.id === 'gameplay' ? '对局' : t.id === 'war_drums' ? '战斗' : t.id === 'court_music' ? '朝堂' : '通用' }}</span>
         </div>
       </div>
+      <!-- 播放控制 -->
       <div class="audio-controls">
-        <button v-audio class="btn-small" @click="playNextBgm" title="下一曲">⏭ 切歌</button>
-        <button v-audio class="btn-small" @click="toggleBgmPlay" title="播放/暂停">{{ bgmPlaying ? '⏸ 暂停' : '▶ 播放' }}</button>
+        <button v-audio class="btn-small" @click="toggleBgmPlay">{{ audioSettings.bgmOn ? '⏸ 暂停' : '▶ 播放' }}</button>
+        <button v-audio class="btn-small" @click="playNextBgm">⏭ 随机</button>
       </div>
-      <p class="hint-text" style="margin-top:6px;">古琴、战鼓等古风音效 —— 需将音频文件放入 public/data/map/bgm/</p>
     </div>
   </div>
 
@@ -1462,6 +1995,10 @@ import FactionNetworkPanel from '@/components/FactionNetworkPanel.vue'
 const props = defineProps<{
   panelSide?: string
 }>()
+const emit = defineEmits<{
+  (e: 'openDiplomacyDeep'): void
+  (e: 'openTalentMarket'): void
+}>()
 
 const panelGroupClass = computed(() => {
   const side = props.panelSide || 'left'
@@ -1591,9 +2128,42 @@ const aiResult = ref<any>(null)
 const workshopData = ref<any>(null)
 const prisonerData = ref<any[]>([])
 const vassalRisk = ref<number | null>(null)
+const vassalChecking = ref(false)
+const vassalTributes = ref<Array<{faction_name: string; amount: number}>>([])
 const rebelData = ref<any[]>([])
 const suppressTroops = ref<Record<string, number>>({})
 const suppressing = ref('')
+// 工坊交互
+const workshopFocus = ref<'arms' | 'gold' | 'grain' | 'balanced'>('balanced')
+const workshopFocusResult = ref<{text: string; type: string} | null>(null)
+// 律法交互
+const lawSelectedPrisoner = ref<any>(null)
+const lawActionLoading = ref(false)
+const lawActionResult = ref<{text: string; type: string} | null>(null)
+
+// ---- 增强面板交互状态 ----
+// 国库：收支明细展开
+const treasuryTab = ref<'overview' | 'income' | 'expense'>('overview')
+// 人物：选中的官员
+const selectedOfficial = ref<any>(null)
+// 皇族：皇子列表展开
+const royalPrinces = ref<any[]>([])
+const selectedPrince = ref<any>(null)
+const princeActionLoading = ref(false)
+const princeActionResult = ref<any>(null)
+// 疾医：地块诊所列表
+const clinicTiles = ref<any[]>([])
+// 海策：港口详情展开
+const selectedPort = ref<any>(null)
+// 灾荒：赈灾/预判
+const dRelieving = ref('')
+const dReliefResult = ref<any>(null)
+const dRelievedId = ref('')
+const forecastLoading = ref(false)
+const forecastResult = ref('')
+// 民俗：修史输入
+const chronicleText = ref('')
+const chronicleWriting = ref(false)
 
 // P1 高级功能状态
 const ambushTarget = ref('')
@@ -1814,12 +2384,17 @@ const cultureData = ref<any>(null)
 const weatherData = ref<any>(null)
 
 // 音效设置
+const AUDIO_STORAGE_KEY = 'yuanmo_audio_panel'
 const audioSettings = ref({
-  bgm: true,
-  sfx: true,
-  volume: 70,
+  muted: false,
+  masterVolume: 70,
+  bgmVolume: 50,
+  sfxVolume: 60,
+  voiceVolume: 80,
+  bgmOn: true,
 })
-const bgmPlaying = ref(false)
+const bgmTracks = ref<{ id: string; name: string; src: string }[]>([])
+const currentBgmId = ref<string | null>(null)
 const currentBgmName = ref('')
 
 // AI智能体监控
@@ -1838,50 +2413,126 @@ async function refreshAgentDashboard() {
   }
 }
 
+// ─── 音频：加载持久化设置 ───
+function loadAudioSettings() {
+  try {
+    const saved = localStorage.getItem(AUDIO_STORAGE_KEY)
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      Object.assign(audioSettings.value, parsed)
+    }
+  } catch {}
+}
+
+function saveAudioSettings() {
+  try {
+    localStorage.setItem(AUDIO_STORAGE_KEY, JSON.stringify(audioSettings.value))
+  } catch {}
+}
+
+function applyAllAudioSettings() {
+  audioManager.setMuted(audioSettings.value.muted)
+  audioManager.setMasterVolume(audioSettings.value.masterVolume / 100)
+  audioManager.setBgmVolume(audioSettings.value.bgmVolume / 100)
+  audioManager.setSfxVolume(audioSettings.value.sfxVolume / 100)
+  audioManager.setVoiceVolume(audioSettings.value.voiceVolume / 100)
+  audioManager.setSfxMuted(!audioSettings.value.muted ? false : audioSettings.value.muted)
+  if (audioSettings.value.bgmOn) {
+    audioManager.resumeBgm()
+  } else {
+    audioManager.pauseBgm()
+  }
+}
+
+function syncBgmState() {
+  currentBgmId.value = audioManager.getCurrentBgmId()
+  currentBgmName.value = audioManager.getCurrentBgmName()
+  bgmTracks.value = audioManager.getBgmTracks().map(t => ({ id: t.id, name: t.name, src: t.src }))
+}
+
 // 音频初始化
 onMounted(() => {
-  // 同步音频管理器初始状态
-  bgmPlaying.value = audioManager.isBgmPlaying()
-  if (audioSettings.value.volume !== 70) {
-    audioManager.setMasterVolume(audioSettings.value.volume / 100)
+  loadAudioSettings()
+  applyAllAudioSettings()
+  syncBgmState()
+})
+
+// 面板打开时刷新状态
+watch(() => store.activePanel, (panel) => {
+  if (panel === 'audio') {
+    syncBgmState()
   }
 })
 
-function toggleAudio(key: 'bgm' | 'sfx') {
-  audioSettings.value[key] = !audioSettings.value[key]
+// ─── 音频操作 ───
+
+function toggleMuteAll() {
+  audioSettings.value.muted = !audioSettings.value.muted
+  audioManager.setMuted(audioSettings.value.muted)
+  saveAudioSettings()
+}
+
+function toggleAudio(key: 'bgm') {
   if (key === 'bgm') {
-    if (audioSettings.value.bgm) {
+    audioSettings.value.bgmOn = !audioSettings.value.bgmOn
+    if (audioSettings.value.bgmOn) {
       audioManager.resumeBgm()
     } else {
       audioManager.pauseBgm()
     }
-    bgmPlaying.value = audioSettings.value.bgm
+    saveAudioSettings()
   }
-  if (key === 'sfx') {
-    // 音效通过 audioManager 的 sfx 开关控制
+}
+
+function onMasterVolumeChange() {
+  audioManager.setMasterVolume(audioSettings.value.masterVolume / 100)
+  saveAudioSettings()
+}
+
+function onBgmVolumeChange() {
+  audioManager.setBgmVolume(audioSettings.value.bgmVolume / 100)
+  saveAudioSettings()
+}
+
+function onSfxVolumeChange() {
+  audioManager.setSfxVolume(audioSettings.value.sfxVolume / 100)
+  saveAudioSettings()
+}
+
+function onVoiceVolumeChange() {
+  audioManager.setVoiceVolume(audioSettings.value.voiceVolume / 100)
+  saveAudioSettings()
+}
+
+function switchBgmTrack(id: string) {
+  audioManager.playBgm(id, 1.0)
+  syncBgmState()
+  if (!audioSettings.value.bgmOn) {
+    audioSettings.value.bgmOn = true
+    saveAudioSettings()
   }
 }
 
 function playNextBgm() {
   audioManager.playRandomBgm()
-  bgmPlaying.value = true
-  currentBgmName.value = audioManager.getCurrentBgmName() || ''
+  syncBgmState()
 }
 
 function toggleBgmPlay() {
-  if (bgmPlaying.value) {
+  if (audioManager.isBgmPlaying()) {
     audioManager.pauseBgm()
-    bgmPlaying.value = false
+    audioSettings.value.bgmOn = false
   } else {
-    audioManager.resumeBgm()
-    bgmPlaying.value = true
+    if (currentBgmId.value) {
+      audioManager.playBgm(currentBgmId.value, 1.0)
+    } else {
+      audioManager.playBgm('gameplay', 1.0)
+    }
+    audioSettings.value.bgmOn = true
   }
+  syncBgmState()
+  saveAudioSettings()
 }
-
-// 监听音量变化
-watch(() => audioSettings.value.volume, (vol) => {
-  audioManager.setMasterVolume(vol / 100)
-})
 
 // 外交操作反馈
 const diploFeedback = ref<{ text: string; type: string }>({ text: '', type: '' })
@@ -1925,6 +2576,34 @@ const horseRatio = computed(() => {
   const horses = playerFaction.value?.horses || 0
   const troops = store.totalTroops || 1
   return Math.min(100, Math.round((horses / troops) * 100))
+})
+
+// 藩镇：玩家麾下的藩属列表
+const playerVassals = computed(() => {
+  const myId = store.playerFactionId
+  if (!myId) return []
+  const vassalIds = Object.entries(store.vassalRelations || {})
+    .filter(([vassalId, suzerainId]) => suzerainId === myId)
+    .map(([vassalId]) => vassalId)
+  return store.livingFactions.filter(f => vassalIds.includes(f.faction_id))
+})
+
+// 工坊产量计算
+const workshopTotalCount = computed(() => {
+  if (!workshopData.value?.workshops) return 0
+  return workshopData.value.workshops.reduce((sum: number, ws: any) => sum + (ws.workshops?.length || 0), 0)
+})
+const workshopArmsOutput = computed(() => {
+  const base = workshopTotalCount.value * 15
+  return workshopFocus.value === 'arms' ? Math.floor(base * 1.5) : Math.floor(base)
+})
+const workshopGoldOutput = computed(() => {
+  const base = workshopTotalCount.value * 40
+  return workshopFocus.value === 'gold' ? Math.floor(base * 1.5) : Math.floor(base)
+})
+const workshopGrainOutput = computed(() => {
+  const base = workshopTotalCount.value * 30
+  return workshopFocus.value === 'grain' ? Math.floor(base * 1.5) : Math.floor(base)
 })
 
 // ===== 朝堂面板状态 =====
@@ -2000,9 +2679,11 @@ watch(() => store.activePanel, async (panel) => {
   }
   if (panel === 'royal') {
     await loadRoyalData()
+    if (royalPrinces.value.length === 0) initRoyalPrinces()
   }
   if (panel === 'medical') {
     await loadMedicalData()
+    clinicTiles.value = getClinicTiles()
   }
   if (panel === 'sea') {
     await loadSeaData()
@@ -2019,6 +2700,13 @@ watch(() => store.activePanel, async (panel) => {
   if (panel === 'vassal') {
     // 藩镇面板打开时自动检查叛乱风险
     await checkVassalRisk()
+    await loadVassalTributes()
+  }
+  if (panel === 'workshop') {
+    await loadWorkshops()
+  }
+  if (panel === 'law') {
+    await loadPrisoners()
   }
 })
 
@@ -2098,6 +2786,138 @@ async function checkVassalRisk() {
       vassalRisk.value = Math.floor(Math.random() * 15)  // 无叛乱则低风险
     }
   } catch { console.warn('加载藩镇风险数据失败') }
+}
+
+// 藩镇：获取忠诚度描述
+function getVassalLoyalty(factionId: string): string {
+  const f = store.factions[factionId]
+  if (!f) return '未知'
+  // 基于好感度估算忠诚
+  const rel = store.relations?.[`${store.playerFactionId}|${factionId}`]
+  const attitude = rel?.attitude || 0
+  if (attitude > 60) return '忠心'
+  if (attitude > 20) return '顺从'
+  if (attitude > -20) return '摇摆'
+  if (attitude > -60) return '不满'
+  return '谋叛'
+}
+
+// 藩镇：加载纳贡记录
+async function loadVassalTributes() {
+  try {
+    const result = await API.getTributes?.(store.playerFactionId)
+    vassalTributes.value = result?.tributes || []
+  } catch { vassalTributes.value = [] }
+}
+
+// 藩镇：纳贡
+async function doVassalTribute(vassalId: string) {
+  try {
+    const amount = prompt('输入索贡银两数额：', '500')
+    if (!amount || isNaN(Number(amount))) return
+    const result = await API.requestTribute({ 
+      suzerain_faction: store.playerFactionId, 
+      vassal_faction: vassalId, 
+      amount: parseInt(amount) 
+    })
+    const data = result?.data || result
+    showToast(data?.message || `已向藩属索贡${amount}银`, 'success')
+    await store.refreshWorldState()
+  } catch { showToast('纳贡操作失败', 'error') }
+}
+
+// 藩镇：征讨
+function doVassalSuppress(vassalId: string) {
+  const name = store.factions[vassalId]?.name || vassalId
+  store.submitCommand('suppress_vassal', { vassal_id: vassalId, vassal_name: name })
+  showToast(`已下令征讨藩镇「${name}」`)
+}
+
+// 藩镇：吞并
+async function doVassalAnnex(vassalId: string) {
+  const name = store.factions[vassalId]?.name || vassalId
+  if (!confirm(`确定吞并「${name}」？此举可能导致其他藩镇叛乱！`)) return
+  try {
+    const result = await API.annexVassal(store.playerFactionId, vassalId)
+    const data = result?.data || result
+    showToast(data?.message || `已吞并「${name}」`, 'success')
+    await store.refreshWorldState()
+  } catch { showToast('吞并失败', 'error') }
+}
+
+// 藩镇：释放（解除宗藩）
+async function doVassalRelease(vassalId: string) {
+  const name = store.factions[vassalId]?.name || vassalId
+  if (!confirm(`确定解除与「${name}」的宗藩关系？该势力将获得独立。`)) return
+  try {
+    const result = await API.cancelVassal({ suzerain_faction: store.playerFactionId, vassal_faction: vassalId })
+    const data = result?.data || result
+    showToast(data?.message || `已解除与「${name}」的宗藩关系`, 'success')
+    await store.refreshWorldState()
+  } catch { showToast('释放失败', 'error') }
+}
+
+// 工坊：设置生产侧重
+function setWorkshopFocus(focus: 'arms' | 'gold' | 'grain' | 'balanced') {
+  workshopFocus.value = focus
+  const labels: Record<string, string> = {
+    arms: '军械优先 — 全力锻造兵器甲胄',
+    gold: '银两优先 — 专注商贸铸造',
+    grain: '粮草优先 — 加工储备粮秣',
+    balanced: '均衡生产 — 按需分配产出',
+  }
+  workshopFocusResult.value = { text: `已设置：${labels[focus]}`, type: 'success' }
+  // 提交到后端
+  store.submitCommand('workshop_focus', { focus })
+  setTimeout(() => { workshopFocusResult.value = null }, 3000)
+}
+
+// 律法：量刑（需选择囚犯）
+async function handleLawActionWithPrisoner(action: string) {
+  if (!lawSelectedPrisoner.value) {
+    showToast('请先选择一名囚犯', 'error')
+    return
+  }
+  const pid = lawSelectedPrisoner.value.prisoner_id || lawSelectedPrisoner.value.name
+  if (!pid) {
+    showToast('囚犯数据异常，请刷新重试', 'error')
+    return
+  }
+  lawActionLoading.value = true
+  lawActionResult.value = null
+  try {
+    const result = await API.handlePrisoner({ prisoner_id: pid, action })
+    const data = result?.data || result
+    if (data?.success) {
+      const actionLabels: Record<string, string> = {
+        execute: '已处决',
+        exile: '已流放',
+        pardon: '已赦免',
+        fine: '已罚银',
+        court: '已提交廷议',
+      }
+      lawActionResult.value = { 
+        text: `${actionLabels[action] || '操作完成'}：${lawSelectedPrisoner.value.name}`, 
+        type: 'success' 
+      }
+      lawSelectedPrisoner.value = null
+      await loadPrisoners()
+      await store.refreshWorldState()
+    } else {
+      lawActionResult.value = { text: data?.message || data?.msg || '操作失败', type: 'error' }
+    }
+  } catch {
+    lawActionResult.value = { text: '执法失败，请稍后重试', type: 'error' }
+  } finally {
+    lawActionLoading.value = false
+    setTimeout(() => { lawActionResult.value = null }, 4000)
+  }
+}
+
+// 律法：打开刑部审讯
+function openLawInterrogate() {
+  store.togglePanel('law')
+  store.togglePanel('law-interrogate')
 }
 
 const buildTargetTileId = ref('')
@@ -2581,6 +3401,515 @@ function getPanelTitle(id: string): string {
 }
 
 // formatNum is imported from useFormat composable above
+
+// ===== 国库收支预估函数 =====
+function countTileType(type: string): number {
+  return store.playerTiles.filter(t => t.tile_type === type).length
+}
+function estimateTaxIncome(): number {
+  const tiles = store.playerTiles.length
+  const pop = store.totalPopulation
+  const dev = playerFaction.value?.development_level || 20
+  return Math.floor(tiles * 40 + pop * 0.02 + dev * 15 + (playerFaction.value?.tax_efficiency || 100) * 0.3)
+}
+function estimateGrainOutput(): number {
+  const farmland = countTileType('farmland')
+  const dev = playerFaction.value?.development_level || 20
+  return Math.floor(farmland * 120 + (playerFaction.value?.grain_output_bonus || 0) * 5 + dev * 8)
+}
+function estimateTradeIncome(): number {
+  const ports = store.playerTiles.filter(t => t.is_port).length
+  const workshops = store.playerTiles.reduce((sum, t) => sum + (t.workshops || 0) + (t.markets || 0), 0)
+  return ports * 80 + workshops * 30
+}
+function estimateWorkshopOutput(): number {
+  const armories = store.playerTiles.reduce((sum, t) => sum + (t.armory || 0), 0)
+  const stables = store.playerTiles.reduce((sum, t) => sum + (t.stable || 0), 0)
+  return armories * 25 + stables * 15
+}
+function estimateMilitaryCost(): number {
+  return Math.floor(store.totalTroops * 0.08 + 50)
+}
+function estimateNetIncome(): number {
+  return estimateTaxIncome() + estimateTradeIncome() - estimateMilitaryCost() - store.officials.length * 50 - Math.max(100, store.playerTiles.length * 25) - 200
+}
+
+// ===== 灾荒面板函数 =====
+function getReliefCost(d: any): number {
+  const base = 300
+  if (d.severity === '高') return base * 2
+  if (d.severity === '中') return base
+  return Math.floor(base * 0.5)
+}
+async function relieveDisaster(d: any) {
+  if ((playerFaction.value?.treasury || 0) < getReliefCost(d)) return
+  dRelieving.value = d.id
+  dReliefResult.value = null
+  try {
+    await API.submitCommand({
+      action: 'relief',
+      params: { disaster_id: d.id, tile_id: d.tile_id, cost: getReliefCost(d), type: 'relieve' },
+      faction_id: store.playerFactionId,
+    })
+    dRelievedId.value = d.id
+    // 即时扣银
+    if (playerFaction.value) playerFaction.value.treasury -= getReliefCost(d)
+    dReliefResult.value = { success: true, message: `已拨银${getReliefCost(d)}两赈济「${d.name}」，灾情缓解！` }
+    // 刷新状态
+    setTimeout(() => store.syncFullState(), 2000)
+  } catch {
+    dRelievedId.value = d.id
+    dReliefResult.value = { success: false, message: '赈灾失败，请重试' }
+  } finally {
+    dRelieving.value = ''
+  }
+}
+async function prayForDisaster(d: any) {
+  dRelieving.value = d.id
+  dReliefResult.value = null
+  try {
+    await API.submitCommand({
+      action: 'relief',
+      params: { tile_id: d.tile_id, type: 'pray', disaster_name: d.name },
+      faction_id: store.playerFactionId,
+    })
+    store.realmStability = Math.min(100, store.realmStability + 2)
+    store.addEvent({
+      event_id: `pray_${Date.now()}`,
+      event_type: 'ritual',
+      severity: 'minor',
+      round: store.currentRound,
+      title: '祈福消灾',
+      description: `君主为「${d.name}」祈福，祈求上天息灾。民心+2。`,
+      faction_id: store.playerFactionId,
+      tile_id: d.tile_id || '',
+      effects: { realm_stability: 2 },
+      narrative: `天子亲率百官祭祀，祈求「${d.name}」平息。民心稍安。`,
+    })
+    dRelievedId.value = d.id
+    dReliefResult.value = { success: true, message: `已为「${d.name}」祈福，民心+2！` }
+  } catch {
+    dRelievedId.value = d.id
+    dReliefResult.value = { success: false, message: '祈福失败，请重试' }
+  } finally {
+    dRelieving.value = ''
+  }
+}
+async function forecastDisasters() {
+  forecastLoading.value = true
+  forecastResult.value = ''
+  try {
+    const result = await store.forecastDisaster()
+    forecastResult.value = result?.forecast || result?.summary || '钦天监禀报：近期天象平和，无明显灾异。'
+  } catch {
+    forecastResult.value = '钦天监预判失败（AI服务未就绪）。'
+  } finally {
+    forecastLoading.value = false
+  }
+}
+
+// ===== 人物面板函数 =====
+function selectOfficial(off: any) {
+  const id = off.official_id || off.name
+  const curId = selectedOfficial.value?.official_id || selectedOfficial.value?.name
+  selectedOfficial.value = curId === id ? null : off
+}
+async function promoteOfficial(off: any) {
+  try {
+    await API.submitCommand({
+      action: 'appoint',
+      params: { official_id: off.official_id || off.name, name: off.name, type: 'promote' },
+      faction_id: store.playerFactionId,
+    })
+    store.addEvent({
+      event_id: `promote_${Date.now()}`, event_type: 'personnel', severity: 'minor',
+      round: store.currentRound, title: `提拔${off.name}`,
+      description: `${off.name}因功绩被提拔。`, faction_id: store.playerFactionId,
+      tile_id: '', effects: {}, narrative: `朝廷提拔${off.name}以示嘉奖。`,
+    })
+    showToast(`已提拔${off.name}`, 'success')
+  } catch { showToast('提拔失败', 'error') }
+}
+async function demoteOfficial(off: any) {
+  try {
+    await API.submitCommand({
+      action: 'dismiss',
+      params: { official_id: off.official_id || off.name, name: off.name, type: 'demote' },
+      faction_id: store.playerFactionId,
+    })
+    showToast(`已降职${off.name}`, 'success')
+  } catch { showToast('降职失败', 'error') }
+}
+async function dismissPersonnelOfficial(officialId: string) {
+  try {
+    await apiDismissOfficial(officialId)
+    await loadCourtData()
+    selectedOfficial.value = null
+    showToast('已罢免官员', 'success')
+  } catch { showToast('罢免失败', 'error') }
+}
+
+// ===== 皇族面板函数 =====
+function generatePrinces(): any[] {
+  const count = royalInfo.value.count
+  const grown = royalInfo.value.grownHeirs
+  const rulerName = playerFaction.value?.name || '君主'
+  const princes: any[] = []
+  const surnames = ['朱', '李', '刘', '陈', '张', '王']
+  const givenNames = ['标', '樉', '棡', '棣', '橚', '桢', '榑', '梓', '杞', '檀',
+    '基', '标', '桓', '楷', '桂', '植', '楹', '柷', '枋', '榕']
+  for (let i = 0; i < count; i++) {
+    const age = i < grown ? 14 + i * 4 : 2 + (i - grown) * 3
+    princes.push({
+      name: (i === 0 && royalInfo.value.heir !== '未立') ? royalInfo.value.heir.replace('世子', '') : `${surnames[i % surnames.length]}${givenNames[i % givenNames.length]}`,
+      age: Math.min(age, 35),
+      status: i === 0 && royalInfo.value.heir !== '未立' ? '世子' : (age >= 16 ? '成年' : '幼年'),
+      martial: 20 + Math.floor(Math.random() * 60),
+      civil: 20 + Math.floor(Math.random() * 60),
+      charisma: 25 + Math.floor(Math.random() * 55),
+      talent: ['天资聪颖', '中人之资', '文武双全', '骁勇善战', '足智多谋', '平庸无奇'][Math.floor(Math.random() * 6)],
+      ambition: ['低', '低', '中', '中', '高'][Math.floor(Math.random() * 5)],
+    })
+  }
+  return princes
+}
+function initRoyalPrinces() {
+  royalPrinces.value = generatePrinces()
+}
+function selectPrince(prince: any) {
+  selectedPrince.value = selectedPrince.value?.name === prince.name ? null : prince
+  princeActionResult.value = null
+}
+async function appointHeir(prince: any) {
+  princeActionLoading.value = true
+  princeActionResult.value = null
+  try {
+    await API.submitCommand({
+      action: 'decree',
+      params: { content: `册立${prince.name}为世子`, decree_type: 'heir', prince_name: prince.name },
+      faction_id: store.playerFactionId,
+    })
+    // 更新所有皇子状态
+    royalPrinces.value.forEach(p => { p.status = p.name === prince.name ? '世子' : (p.age >= 16 ? '成年' : '幼年') })
+    store.courtStability = Math.min(100, store.courtStability + 5)
+    store.addEvent({
+      event_id: `heir_${Date.now()}`, event_type: 'royal', severity: 'major',
+      round: store.currentRound, title: `册立世子`,
+      description: `册立${prince.name}为世子，以固国本。朝纲+5。`,
+      faction_id: store.playerFactionId, tile_id: '', effects: { court_stability: 5 },
+      narrative: `天子册立${prince.name}为世子，昭告天下。`,
+    })
+    princeActionResult.value = { success: true, message: `已册立${prince.name}为世子！朝纲+5。` }
+    showToast(`已册立${prince.name}为世子`, 'success')
+  } catch {
+    princeActionResult.value = { success: false, message: '册立世子失败，请重试' }
+    showToast('册立世子失败', 'error')
+  } finally {
+    princeActionLoading.value = false
+  }
+}
+async function sendPrinceToTerritory(prince: any) {
+  princeActionLoading.value = true
+  princeActionResult.value = null
+  try {
+    await API.submitCommand({
+      action: 'enfeoff',
+      params: { prince_name: prince.name, type: 'territory' },
+      faction_id: store.playerFactionId,
+    })
+    store.courtStability = Math.max(0, store.courtStability - 2)
+    store.addEvent({
+      event_id: `territory_${Date.now()}`, event_type: 'royal', severity: 'minor',
+      round: store.currentRound, title: `${prince.name}出镇地方`,
+      description: `${prince.name}受命出镇地方，督抚一方。朝纲-2。`,
+      faction_id: store.playerFactionId, tile_id: '', effects: { court_stability: -2 },
+      narrative: `${prince.name}离京赴任，镇守边疆。`,
+    })
+    princeActionResult.value = { success: true, message: `${prince.name}已出镇地方。` }
+    showToast(`${prince.name}已出镇地方`, 'success')
+  } catch {
+    princeActionResult.value = { success: false, message: '出镇失败，请重试' }
+    showToast('出镇失败', 'error')
+  } finally {
+    princeActionLoading.value = false
+  }
+}
+async function educatePrince(prince: any) {
+  if ((playerFaction.value?.treasury || 0) < 200) {
+    showToast('银两不足（需要200两）', 'error')
+    return
+  }
+  princeActionLoading.value = true
+  princeActionResult.value = null
+  try {
+    await API.submitCommand({
+      action: 'decree',
+      params: { content: `延师教导皇子${prince.name}`, decree_type: 'education', prince_name: prince.name, cost: 200 },
+      faction_id: store.playerFactionId,
+    })
+    // 即时扣银
+    if (playerFaction.value) playerFaction.value.treasury -= 200
+    // 即时提升能力
+    prince.martial = Math.min(95, prince.martial + Math.floor(Math.random() * 10))
+    prince.civil = Math.min(95, prince.civil + Math.floor(Math.random() * 10))
+    prince.charisma = Math.min(95, prince.charisma + Math.floor(Math.random() * 8))
+    store.addEvent({
+      event_id: `educate_${Date.now()}`, event_type: 'royal', severity: 'minor',
+      round: store.currentRound, title: `延师教导${prince.name}`,
+      description: `花费200银为${prince.name}延请名师教导。武略/文治/魅力提升。`,
+      faction_id: store.playerFactionId, tile_id: '', effects: { treasury: -200 },
+      narrative: `朝廷花银200两为${prince.name}延师，望其成才。`,
+    })
+    princeActionResult.value = { success: true, message: `${prince.name}已完成学业，才略增长！花费200银。` }
+  } catch {
+    princeActionResult.value = { success: false, message: '教导失败，请重试' }
+    showToast('教导失败', 'error')
+  } finally {
+    princeActionLoading.value = false
+  }
+}
+async function marryPrince(prince: any) {
+  if ((playerFaction.value?.treasury || 0) < 300) {
+    showToast('银两不足（需要300两）', 'error')
+    return
+  }
+  princeActionLoading.value = true
+  princeActionResult.value = null
+  try {
+    await API.submitCommand({
+      action: 'marriage',
+      params: { prince_name: prince.name, cost: 300 },
+      faction_id: store.playerFactionId,
+    })
+    // 即时扣银 + 加声望
+    if (playerFaction.value) playerFaction.value.treasury -= 300
+    store.reputation = Math.min(100, store.reputation + 3)
+    store.addEvent({
+      event_id: `marry_${Date.now()}`, event_type: 'royal', severity: 'minor',
+      round: store.currentRound, title: `${prince.name}成婚`,
+      description: `花费300银为${prince.name}举办大婚。声望+3。`,
+      faction_id: store.playerFactionId, tile_id: '', effects: { reputation: 3, treasury: -300 },
+      narrative: `${prince.name}大婚礼成，各方势力前来道贺，声望+3。`,
+    })
+    princeActionResult.value = { success: true, message: `${prince.name}已完成大婚，声望+3！花费300银。` }
+  } catch {
+    princeActionResult.value = { success: false, message: '联姻失败，请重试' }
+    showToast('联姻失败', 'error')
+  } finally {
+    princeActionLoading.value = false
+  }
+}
+async function spawnNewPrince() {
+  if ((playerFaction.value?.treasury || 0) < 800) {
+    showToast('银两不足（需要800两）', 'error')
+    return
+  }
+  const surnames = ['朱', '李', '刘', '陈', '张', '王']
+  const givenNames = ['标', '樉', '棡', '棣', '橚', '桢', '榑', '梓', '杞', '檀']
+  const newPrince = {
+    name: `${surnames[royalPrinces.value.length % surnames.length]}${givenNames[royalPrinces.value.length % givenNames.length]}`,
+    age: 0, status: '新生', martial: 5, civil: 5, charisma: 10,
+    talent: '尚待观察', ambition: '低',
+  }
+  try {
+    await API.submitCommand({
+      action: 'decree',
+      params: { content: '纳妃求嗣', decree_type: 'birth', cost: 800, prince_name: newPrince.name },
+      faction_id: store.playerFactionId,
+    })
+    // 即时扣银 + 加民心
+    if (playerFaction.value) playerFaction.value.treasury -= 800
+    store.realmStability = Math.min(100, store.realmStability + 3)
+    royalPrinces.value.push(newPrince)
+    store.addEvent({
+      event_id: `birth_${Date.now()}`, event_type: 'royal', severity: 'major',
+      round: store.currentRound, title: '皇子降生',
+      description: `新皇子${newPrince.name}降生，举国欢庆。民心+3。花费800银。`,
+      faction_id: store.playerFactionId, tile_id: '', effects: { realm_stability: 3, treasury: -800 },
+      narrative: `皇宫喜诞麟儿，赐名${newPrince.name}。民心+3。`,
+    })
+    showToast(`新皇子${newPrince.name}降生！`, 'success')
+  } catch {
+    showToast('纳妃求嗣失败', 'error')
+  }
+}
+
+// ===== 疾医面板函数 =====
+function getClinicTiles(): any[] {
+  return store.playerTiles.filter(t => (t.clinic || t.clinic_level || t.hospital) !== undefined && (t.clinic || t.clinic_level || t.hospital) > 0)
+    .map(t => ({ ...t, clinic_level: t.clinic_level || t.clinic || t.hospital || 1 }))
+}
+function getClinicUpgradeCost(tile: any): number {
+  return (tile.clinic_level || 1) * 200
+}
+async function upgradeClinic(tile: any) {
+  const cost = getClinicUpgradeCost(tile)
+  if ((playerFaction.value?.treasury || 0) < cost) return
+  try {
+    await API.submitCommand({
+      action: 'build',
+      params: { tile_id: tile.tile_id, building: 'clinic', cost },
+      faction_id: store.playerFactionId,
+    })
+    // 即时扣银
+    if (playerFaction.value) playerFaction.value.treasury -= cost
+    store.addEvent({
+      event_id: `clinic_up_${Date.now()}`, event_type: 'construction', severity: 'minor',
+      round: store.currentRound, title: `升级${tile.tile_name || tile.tile_id}医馆`,
+      description: `花费${cost}银将医馆升级至Lv.${(tile.clinic_level || 1) + 1}。`,
+      faction_id: store.playerFactionId, tile_id: tile.tile_id, effects: {}, narrative: `朝廷拨款${cost}银升级${tile.tile_name || tile.tile_id}医馆。`,
+    })
+    showToast(`${tile.tile_name || tile.tile_id}医馆已升级`, 'success')
+  } catch { showToast('升级失败', 'error') }
+}
+async function treatInjured(tile: any) {
+  if ((playerFaction.value?.treasury || 0) < 150) return
+  try {
+    await API.submitCommand({
+      action: 'relief',
+      params: { tile_id: tile.tile_id, type: 'treat_injured', cost: 150 },
+      faction_id: store.playerFactionId,
+    })
+    // 即时扣银
+    if (playerFaction.value) playerFaction.value.treasury -= 150
+    showToast(`已向${tile.tile_name || tile.tile_id}派遣医官施药`, 'success')
+  } catch { showToast('施药失败', 'error') }
+}
+
+// ===== 海策面板函数 =====
+function getPortTiles(): any[] {
+  return store.playerTiles.filter(t => t.is_port || t.port_level || t.shipyard_level || t.harbor)
+    .map(t => ({
+      ...t,
+      ships: t.ships || t.fleet_size || (t.shipyard_level || t.port_level || 1) * 3,
+      shipyard_level: t.shipyard_level || t.port_level || 1,
+      trade_income: t.trade_income || (t.is_port ? 80 : 0),
+    }))
+}
+function selectPortTile(port: any) {
+  selectedPort.value = selectedPort.value?.tile_id === port.tile_id ? null : port
+}
+async function buildShip(port: any) {
+  if ((playerFaction.value?.treasury || 0) < 200) return
+  try {
+    await API.submitCommand({
+      action: 'build',
+      params: { tile_id: port.tile_id, building: 'ship', cost: 200 },
+      faction_id: store.playerFactionId,
+    })
+    // 即时扣银
+    if (playerFaction.value) playerFaction.value.treasury -= 200
+    store.addEvent({
+      event_id: `ship_${Date.now()}`, event_type: 'military', severity: 'minor',
+      round: store.currentRound, title: `在${port.tile_name || port.tile_id}建造舰船`,
+      description: `花费200银建造一艘战船。`, faction_id: store.playerFactionId,
+      tile_id: port.tile_id, effects: {}, narrative: `${port.tile_name || port.tile_id}船坞新造一艘战船下水。`,
+    })
+    showToast(`已在${port.tile_name || port.tile_id}建造一艘舰船`, 'success')
+  } catch { showToast('造舰失败', 'error') }
+}
+async function upgradeShipyard(port: any) {
+  if ((playerFaction.value?.treasury || 0) < 400) return
+  try {
+    await API.submitCommand({
+      action: 'build',
+      params: { tile_id: port.tile_id, building: 'shipyard', cost: 400 },
+      faction_id: store.playerFactionId,
+    })
+    // 即时扣银
+    if (playerFaction.value) playerFaction.value.treasury -= 400
+    showToast(`${port.tile_name || port.tile_id}船坞已升级`, 'success')
+  } catch { showToast('升级失败', 'error') }
+}
+async function openTradeRoute(port: any) {
+  if ((playerFaction.value?.treasury || 0) < 300) return
+  try {
+    await API.submitCommand({
+      action: 'trade',
+      params: { tile_id: port.tile_id, type: 'open_route', cost: 300 },
+      faction_id: store.playerFactionId,
+    })
+    // 即时扣银
+    if (playerFaction.value) playerFaction.value.treasury -= 300
+    showToast(`已从${port.tile_name || port.tile_id}开辟新航线`, 'success')
+  } catch { showToast('开辟航线失败', 'error') }
+}
+async function navalPatrol(port: any) {
+  try {
+    await API.submitCommand({
+      action: 'patrol',
+      params: { tile_id: port.tile_id, type: 'naval', port_name: port.tile_name || port.tile_id },
+      faction_id: store.playerFactionId,
+    })
+    store.addEvent({
+      event_id: `patrol_${Date.now()}`, event_type: 'military', severity: 'minor',
+      round: store.currentRound, title: `水师巡航${port.tile_name || port.tile_id}`,
+      description: `派遣水师在${port.tile_name || port.tile_id}海域巡航。`,
+      faction_id: store.playerFactionId, tile_id: port.tile_id, effects: {},
+      narrative: `水师战船在${port.tile_name || port.tile_id}沿海巡航，震慑海寇。`,
+    })
+    showToast(`水师已从${port.tile_name || port.tile_id}出航巡航`, 'success')
+  } catch {
+    showToast('水师巡航失败', 'error')
+  }
+}
+
+// ===== 民俗面板函数 =====
+const viewedEvent = ref<any>(null)
+function viewEventDetail(evt: any) {
+  viewedEvent.value = viewedEvent.value?.title === evt.title && viewedEvent.value?.round === evt.round ? null : evt
+}
+async function writeChronicle() {
+  if (!chronicleText.value.trim() || chronicleWriting.value) return
+  chronicleWriting.value = true
+  const text = chronicleText.value.trim()
+  try {
+    await API.submitCommand({
+      action: 'decree',
+      params: { content: text, decree_type: 'chronicle' },
+      faction_id: store.playerFactionId,
+    })
+    store.reputation = Math.min(100, store.reputation + 1)
+    store.addEvent({
+      event_id: `chronicle_${Date.now()}`, event_type: 'history', severity: 'major',
+      round: store.currentRound, title: '御批国史',
+      description: text, faction_id: store.playerFactionId, tile_id: '', effects: { culture_bonus: 2, reputation: 1 },
+      narrative: text,
+    })
+    chronicleText.value = ''
+    showToast('已载入国史', 'success')
+  } catch {
+    showToast('御批国史失败', 'error')
+  } finally {
+    chronicleWriting.value = false
+  }
+}
+async function changeEraName() {
+  const newEra = prompt('请输入新的年号：', cultureInfo.value.eraName)
+  if (newEra && newEra.trim()) {
+    const eraText = newEra.trim()
+    try {
+      await API.submitCommand({
+        action: 'decree',
+        params: { content: `改元「${eraText}」`, decree_type: 'era_change', new_era_name: eraText },
+        faction_id: store.playerFactionId,
+      })
+      // 即时更新本地状态
+      store.reputation = Math.min(100, store.reputation + 5)
+      store.realmStability = Math.min(100, store.realmStability + 2)
+      store.addEvent({
+        event_id: `era_${Date.now()}`, event_type: 'history', severity: 'major',
+        round: store.currentRound, title: '改元',
+        description: `诏令天下，改年号为「${eraText}」。声望+5，民心+2。`,
+        faction_id: store.playerFactionId, tile_id: '', effects: { reputation: 5, realm_stability: 2 },
+        narrative: `天子昭告天下，改年号为「${eraText}」。百官朝贺，万民欢庆。`,
+      })
+      showToast(`已改元「${eraText}」`, 'success')
+    } catch {
+      showToast('改元失败', 'error')
+    }
+  }
+}
 
 function getStatClass(v: number): string {
   if (v >= 70) return 'stat-good'
@@ -3140,6 +4469,19 @@ onUnmounted(() => {
   padding: 10px 14px;
   border-bottom: 1px solid var(--border-light);
   background: linear-gradient(180deg, var(--bg-hover) 0%, var(--border-main) 100%);
+  position: relative;
+}
+/* 卷轴边框装饰：所有面板标题栏底部 */
+.fp-header::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: url('/assets/ui/ai_ui_scroll_border.png') center/cover no-repeat;
+  opacity: 0.25;
+  pointer-events: none;
 }
 
 .fp-header h3 {
@@ -3164,8 +4506,40 @@ onUnmounted(() => {
 
 .fp-close:hover { color: #8b0000; }
 
+/* === UI装饰：军事面板战旗 === */
+.fp-header-deco {
+  margin-right: 8px;
+  display: flex;
+  align-items: center;
+}
+.fp-war-banner {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  opacity: 0.7;
+  filter: drop-shadow(0 0 4px rgba(180, 120, 40, 0.3));
+}
+/* === UI装饰：邸报面板印章 === */
+.fp-seal-stamp {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+/* === UI装饰：面板身体云纹底纹 === */
 .fp-body {
   padding: 12px 16px;
+  position: relative;
+}
+.fp-body::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('/assets/ui/ai_ui_cloud_bg.png') center/200px repeat;
+  opacity: 0.03;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .kv-row {
@@ -3861,6 +5235,59 @@ onUnmounted(() => {
   background: rgba(139, 115, 85, 0.1);
 }
 
+.law-ref.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* 律法：选中囚犯 */
+.law-selected-prisoner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: rgba(139, 115, 85, 0.15);
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+.law-selected-prisoner .ls-label { font-size: 11px; color: var(--text-secondary); }
+.law-selected-prisoner .ls-name { font-weight: 600; color: var(--accent-gold); }
+.law-selected-prisoner .ls-from { font-size: 11px; color: var(--text-secondary); }
+
+/* 律法：囚犯选择列表 */
+.prisoner-select-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.prisoner-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  background: rgba(240, 228, 204, 0.3);
+  transition: background 0.15s;
+}
+.prisoner-row:hover { background: rgba(139, 115, 85, 0.1); }
+.prisoner-row.selected { background: rgba(139, 115, 85, 0.2); border: 1px solid var(--accent-gold); }
+.prisoner-row .pr-select-mark { margin-left: auto; font-size: 14px; }
+
+/* 律法：结果提示 */
+.law-result {
+  margin-top: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 3px;
+}
+.law-result.success { background: rgba(76, 175, 80, 0.15); color: #66bb6a; }
+.law-result.error { background: rgba(244, 67, 54, 0.15); color: #ef5350; }
+
 /* 工坊列表 */
 .workshop-list {
   display: flex;
@@ -3890,6 +5317,113 @@ onUnmounted(() => {
   color: #5b8c5a;
   border-radius: 2px;
 }
+
+/* 工坊：详情条目 */
+.workshop-item-detail {
+  padding: 6px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  margin-bottom: 4px;
+  background: rgba(240, 228, 204, 0.2);
+}
+.workshop-item-detail .ws-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.workshop-item-detail .ws-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+/* 工坊：产量总览 */
+.workshop-summary {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ws-summary-item {
+  flex: 1;
+  text-align: center;
+  padding: 8px 4px;
+  background: rgba(240, 228, 204, 0.3);
+  border-radius: 4px;
+}
+.ws-summary-label { display: block; font-size: 10px; color: var(--text-secondary); margin-bottom: 2px; }
+.ws-summary-val { display: block; font-size: 13px; font-weight: 600; color: var(--accent-gold); }
+
+/* 工坊：生产侧重 */
+.workshop-focus-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.ws-focus-btn {
+  padding: 6px 8px;
+  font-size: 11px;
+  border: 1px solid var(--border-light);
+  border-radius: 3px;
+  background: rgba(240, 228, 204, 0.3);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ws-focus-btn:hover { background: rgba(139, 115, 85, 0.15); }
+.ws-focus-btn.active {
+  border-color: var(--accent-gold);
+  color: var(--accent-gold);
+  background: rgba(200, 160, 80, 0.15);
+  font-weight: 600;
+}
+.focus-result {
+  margin-top: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 3px;
+}
+.focus-result.success { background: rgba(76, 175, 80, 0.15); color: #66bb6a; }
+
+/* 藩镇卡片 */
+.vassal-card {
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--border-light);
+  border-radius: 4px;
+  background: rgba(240, 228, 204, 0.2);
+}
+.vassal-card .vc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.vassal-card .vc-name { font-weight: 600; font-size: 13px; }
+.vassal-card .vc-stats { font-size: 11px; color: var(--text-secondary); }
+.vassal-card .vc-body { margin-bottom: 6px; }
+.vassal-card .vc-loyalty { font-size: 11px; color: var(--text-secondary); }
+.vassal-card .vc-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.vassal-risk-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+}
+.tribute-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 8px;
+  font-size: 12px;
+  border-bottom: 1px dotted var(--border-light);
+}
+.tribute-item .tribute-amount { color: var(--accent-gold); }
 
 /* 囚犯列表 */
 .prisoner-list {
@@ -4102,6 +5636,62 @@ onUnmounted(() => {
 }
 .audio-controls .btn-small {
   flex: 1;
+}
+
+.audio-vol-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.audio-vol-label {
+  font-size: 12px;
+  color: #8B7B6B;
+  min-width: 40px;
+}
+.audio-vol-pct {
+  font-size: 11px;
+  color: #C9A94E;
+  min-width: 34px;
+  text-align: right;
+}
+
+.bgm-track-list {
+  margin-top: 6px;
+  border: 1px solid rgba(184, 155, 104, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.bgm-track-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background 0.12s;
+  border-bottom: 1px solid rgba(184, 155, 104, 0.06);
+}
+.bgm-track-item:last-child { border-bottom: none; }
+.bgm-track-item:hover { background: rgba(184, 155, 104, 0.08); }
+.bgm-track-item.active { background: rgba(201, 169, 78, 0.12); }
+.bgm-track-icon {
+  font-size: 12px;
+  color: #C9A94E;
+  min-width: 16px;
+}
+.bgm-track-item.active .bgm-track-icon { color: #FFD700; }
+.bgm-track-name {
+  flex: 1;
+  font-size: 12px;
+  color: #C8B898;
+}
+.bgm-track-item.active .bgm-track-name { color: #FFD700; }
+.bgm-track-tag {
+  font-size: 10px;
+  color: #8B7355;
+  background: rgba(184, 155, 104, 0.1);
+  padding: 1px 6px;
+  border-radius: 2px;
 }
 
 /* ===== AI智能体监控面板样式 ===== */
@@ -4572,4 +6162,170 @@ onUnmounted(() => {
   color: #c8b896;
   font-family: "SimSun", serif;
 }
+
+/* ===== 国库增强样式 ===== */
+.treasury-summary-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.tsc-card {
+  background: rgba(139, 115, 85, 0.08);
+  border: 1px solid rgba(139, 115, 85, 0.15);
+  border-radius: 4px;
+  padding: 8px;
+  text-align: center;
+}
+.tsc-card.gold-bg { background: rgba(201, 169, 78, 0.08); border-color: rgba(201, 169, 78, 0.25); }
+.tsc-card.grain-bg { background: rgba(139, 115, 85, 0.08); border-color: rgba(139, 115, 85, 0.25); }
+.tsc-val { font-size: 18px; font-weight: bold; color: var(--text); }
+.tsc-lbl { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+.treasury-actions { display: flex; gap: 6px; }
+.income-list { display: flex; flex-direction: column; gap: 6px; }
+.income-item {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(139, 115, 85, 0.06); border: 1px solid rgba(139, 115, 85, 0.1);
+  border-radius: 4px; padding: 8px 10px; transition: border-color 0.2s;
+}
+.income-item:hover { border-color: var(--gold); }
+.income-item.expense-item { border-left: 2px solid rgba(196, 75, 60, 0.3); }
+.income-icon { font-size: 20px; flex-shrink: 0; }
+.income-info { flex: 1; min-width: 0; }
+.income-name { display: block; font-size: 12px; font-weight: bold; color: var(--text); }
+.income-desc { display: block; font-size: 10px; color: var(--text-dim); margin-top: 1px; }
+.income-val { font-size: 12px; font-weight: bold; white-space: nowrap; }
+
+/* ===== 灾荒增强样式 ===== */
+.disaster-index-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.di-label { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+.di-bar-wrap { flex: 1; height: 12px; background: rgba(255,255,255,0.08); border-radius: 6px; overflow: hidden; }
+.di-bar-fill { height: 100%; border-radius: 6px; transition: width 0.5s; }
+.di-val { font-size: 14px; font-weight: bold; white-space: nowrap; }
+.disaster-card {
+  background: rgba(139, 115, 85, 0.06); border: 1px solid rgba(139, 115, 85, 0.12);
+  border-radius: 4px; padding: 8px 10px; margin-bottom: 6px;
+}
+.disaster-card.severity-高 { border-left: 3px solid #C44B3C; }
+.disaster-card.severity-中 { border-left: 3px solid #C9A94E; }
+.disaster-card.severity-低 { border-left: 3px solid #5B8C5A; }
+.dc-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.dc-name { font-size: 13px; font-weight: bold; color: var(--text); }
+.dc-severity { font-size: 11px; padding: 1px 6px; border-radius: 2px; background: rgba(255,255,255,0.06); }
+.dc-info { font-size: 10px; color: var(--text-dim); margin-bottom: 2px; }
+.dc-actions { display: flex; gap: 6px; margin-top: 6px; }
+.dc-relief-result { margin-top: 6px; font-size: 11px; padding: 4px 8px; background: rgba(255,255,255,0.04); border-radius: 3px; }
+.disaster-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.forecast-result { margin-top: 8px; padding: 8px 10px; background: rgba(139, 115, 85, 0.06); border-radius: 4px; }
+.fr-label { font-size: 11px; color: var(--gold); margin-bottom: 4px; }
+.fr-content { font-size: 11px; color: var(--text-secondary); line-height: 1.5; }
+
+/* ===== 人物面板增强样式 ===== */
+.personnel-stats { display: flex; gap: 8px; margin-bottom: 8px; }
+.pstat { flex: 1; text-align: center; padding: 6px 4px; background: rgba(139, 115, 85, 0.08); border-radius: 4px; }
+.pstat-val { display: block; font-size: 18px; font-weight: bold; color: var(--text); }
+.pstat-lbl { display: block; font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+.official-card {
+  background: rgba(139, 115, 85, 0.05); border: 1px solid rgba(139, 115, 85, 0.12);
+  border-radius: 4px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.official-card:hover { border-color: var(--gold); }
+.official-card.expanded { border-color: var(--gold); background: rgba(139, 115, 85, 0.1); }
+.oc-header { display: flex; align-items: center; gap: 6px; }
+.oc-name { font-size: 13px; font-weight: bold; color: var(--text); }
+.oc-position { font-size: 11px; color: var(--text-dim); background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 2px; }
+.oc-expand { margin-left: auto; font-size: 12px; color: var(--text-dim); }
+.oc-bars { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+.oc-bar-row { display: flex; align-items: center; gap: 6px; font-size: 10px; }
+.oc-bar-label { width: 28px; color: var(--text-dim); flex-shrink: 0; }
+.oc-bar-wrap { flex: 1; height: 6px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; }
+.oc-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+.oc-bar-val { width: 24px; text-align: right; color: var(--text-secondary); flex-shrink: 0; }
+.oc-detail { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(139, 115, 85, 0.15); }
+.oc-detail-actions { display: flex; gap: 4px; margin-top: 8px; }
+
+/* ===== 皇族面板样式 ===== */
+.ruler-card { display: flex; align-items: center; gap: 12px; padding: 10px; background: linear-gradient(135deg, rgba(201,169,78,0.1), rgba(139,115,85,0.06)); border-radius: 6px; margin-bottom: 8px; }
+.ruler-avatar { font-size: 32px; }
+.ruler-name { font-size: 16px; font-weight: bold; color: var(--text); }
+.ruler-meta { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.royal-stats { display: flex; gap: 6px; }
+.royal-stat { flex: 1; text-align: center; padding: 6px 4px; background: rgba(139,115,85,0.08); border-radius: 4px; }
+.rs-val { display: block; font-size: 16px; font-weight: bold; color: var(--text); }
+.rs-lbl { display: block; font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+.prince-card {
+  background: rgba(139, 115, 85, 0.05); border: 1px solid rgba(139, 115, 85, 0.12);
+  border-radius: 4px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer;
+  transition: border-color 0.2s;
+}
+.prince-card:hover { border-color: var(--gold); }
+.prince-card.expanded { border-color: var(--gold); background: rgba(139, 115, 85, 0.1); }
+.pc-header { display: flex; align-items: center; gap: 6px; }
+.pc-name { font-size: 13px; font-weight: bold; color: var(--text); }
+.pc-age { font-size: 11px; color: var(--text-dim); }
+.pc-status { font-size: 10px; padding: 1px 6px; border-radius: 2px; background: rgba(255,255,255,0.06); color: var(--text-dim); }
+.pc-bars { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+.pc-bar-row { display: flex; align-items: center; gap: 6px; font-size: 10px; }
+.pc-bar-label { width: 28px; color: var(--text-dim); flex-shrink: 0; }
+.pc-detail { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(139, 115, 85, 0.15); }
+.pc-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.prince-result { margin-top: 8px; font-size: 11px; padding: 4px 8px; background: rgba(255,255,255,0.04); border-radius: 3px; }
+
+/* ===== 疾医面板样式 ===== */
+.medical-stats { display: flex; gap: 8px; margin-bottom: 8px; }
+.mstat { flex: 1; text-align: center; padding: 8px 4px; background: rgba(139,115,85,0.08); border-radius: 4px; }
+.mstat-val { display: block; font-size: 18px; font-weight: bold; color: var(--text); }
+.mstat-lbl { display: block; font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+.clinic-card {
+  background: rgba(139, 115, 85, 0.05); border: 1px solid rgba(139, 115, 85, 0.12);
+  border-radius: 4px; padding: 8px 10px; margin-bottom: 6px;
+}
+.cc-header { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.cc-name { font-size: 13px; font-weight: bold; color: var(--text); }
+.cc-level { font-size: 10px; padding: 1px 6px; background: rgba(76,175,80,0.15); color: #81c784; border-radius: 2px; margin-left: auto; }
+.cc-stats { display: flex; gap: 12px; font-size: 10px; color: var(--text-secondary); margin-bottom: 4px; }
+.cc-info { font-size: 10px; margin-bottom: 4px; }
+.cc-actions { display: flex; gap: 4px; }
+
+/* ===== 海策面板样式 ===== */
+.sea-summary-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+.ssc-card { background: rgba(139,115,85,0.08); border: 1px solid rgba(139,115,85,0.15); border-radius: 4px; padding: 8px; text-align: center; }
+.ssc-card.gold-bg { background: rgba(201,169,78,0.08); border-color: rgba(201,169,78,0.25); }
+.ssc-val { font-size: 18px; font-weight: bold; color: var(--text); }
+.ssc-lbl { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+.port-card {
+  background: rgba(139, 115, 85, 0.05); border: 1px solid rgba(139, 115, 85, 0.12);
+  border-radius: 4px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer;
+  transition: border-color 0.2s;
+}
+.port-card:hover { border-color: var(--gold); }
+.port-card.expanded { border-color: var(--gold); background: rgba(139, 115, 85, 0.1); }
+.pc-ships { font-size: 11px; color: #81c784; }
+.pc-expand { margin-left: auto; font-size: 12px; color: var(--text-dim); }
+.port-stats { display: flex; gap: 12px; font-size: 10px; color: var(--text-secondary); margin-top: 4px; }
+.port-detail { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(139, 115, 85, 0.15); }
+.port-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+
+/* ===== 民俗面板样式 ===== */
+.culture-era-card { text-align: center; padding: 10px; background: linear-gradient(135deg, rgba(201,169,78,0.1), rgba(139,115,85,0.06)); border-radius: 6px; margin-bottom: 8px; }
+.era-main { margin-bottom: 8px; }
+.era-name { font-size: 20px; font-weight: bold; }
+.era-year { display: block; font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+.culture-stats { display: flex; gap: 6px; }
+.cstat { flex: 1; text-align: center; padding: 6px 4px; background: rgba(139,115,85,0.06); border-radius: 4px; }
+.cstat-val { display: block; font-size: 16px; font-weight: bold; color: var(--text); }
+.cstat-lbl { display: block; font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+.culture-event { cursor: pointer; }
+.culture-event:hover { background: rgba(139, 115, 85, 0.1); border-radius: 3px; padding: 2px 4px; margin: -2px -4px; }
+.event-expand { margin-left: auto; font-size: 10px; color: var(--text-dim); }
+.event-detail-popup {
+  margin-top: 6px; padding: 8px 10px;
+  background: rgba(139, 115, 85, 0.08); border: 1px solid rgba(139, 115, 85, 0.2);
+  border-radius: 4px;
+}
+.edp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.edp-title { font-size: 13px; font-weight: bold; color: var(--text); }
+.edp-body { font-size: 11px; }
+.chronicle-actions { display: flex; gap: 6px; margin-top: 8px; }
 </style>

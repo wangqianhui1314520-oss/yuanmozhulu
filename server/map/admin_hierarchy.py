@@ -1,7 +1,7 @@
 """
-三级行政区划层级系统 v4.0 - 行省 → 路 → 府州
+三级行政区划层级系统 v4.1 - 行省 → 路 → 府州
 
-v4.0 变更：
+v4.1 变更：
 - 从四级(行省→路→府州→县)精简为三级(行省→路→府州)
 - 每个六边形格子 = 一个府/州
 - 版图扩展至东亚全域
@@ -117,7 +117,7 @@ PROVINCE_REGIONS: Dict[str, dict] = {
         "id": "gansu", "order": 5,
         "bounds": (2, 6, 11, 11),       # 甘肃西部/西域
         "circuits": {
-            "甘州路": {"bounds": (6, 8, 10, 10), "capital": (8, 9)},
+            "甘州路": {"bounds": (6, 8, 10, 10), "capital": (8, 8)},
             "永昌路": {"bounds": (8, 7, 11, 9), "capital": (9, 8)},
             "肃州路": {"bounds": (4, 7, 7, 9), "capital": (5, 8)},
             "沙州路": {"bounds": (2, 7, 5, 9), "capital": (3, 8)},
@@ -251,6 +251,7 @@ PROVINCE_REGIONS: Dict[str, dict] = {
 
 # 特殊名称映射 (用于替换默认的 col,row 名称)
 # key: (col, row), value: (prefecture_name, circuit_id)
+# 共 34 个著名地标 (按文档 3.5 节规范)
 FAMOUS_PREFECTURES: Dict[Tuple[int, int], Tuple[str, str]] = {
     # 中书省核心
     (24, 8): ("大都路", "大都路"),       # 北京
@@ -295,9 +296,6 @@ FAMOUS_PREFECTURES: Dict[Tuple[int, int], Tuple[str, str]] = {
     (35, 8): ("江户", "武藏国"),        # 东京
     # 名关要地
     (16, 10): ("潼关", "奉元路"),        # 潼关
-    (19, 16): ("襄阳", "襄阳路"),        # 襄阳
-    (14, 14): ("成都", "成都路"),        # 成都
-    (20, 17): ("武昌", "武昌路"),        # 武昌
 }
 
 
@@ -596,14 +594,14 @@ def export_admin_hierarchy_json(output_path: str = "server/data/map/admin_hierar
     stats = aggregate_stats(assignments)
 
     output = {
-        "version": "4.0",
+        "version": "4.1",
         "levels": ["province", "circuit", "prefecture"],
         "meta": {
             "grid_rows": GRID_ROWS,
             "grid_max_cols": GRID_MAX_COLS,
             "total_tiles": TOTAL_TILES,
             "province_count": len(PROVINCE_REGIONS),
-            "hex_size": 64,
+            "hex_size": 72,
         },
         "hierarchy_tree": tree.to_dict(),
         "tile_assignments": assignments,

@@ -11,12 +11,17 @@
 
   <!-- 主游戏界面 -->
   <div v-else class="game-container">
+
+
+
     <!-- ============ 顶层：天命气象 ============ -->
     <div class="top-bar">
       <div class="top-left">
         <div class="dynasty-banner">
           <div class="banner-emblem"
-            :style="{ borderColor: playerFactionColor }">龍</div>
+            :style="{ borderColor: playerFactionColor }">
+            <img src="/assets/ui/ai_ui_dragon_badge.png" alt="龙徽" class="dragon-badge-img" />
+          </div>
           <div class="banner-info">
             <div class="dynasty-name" :style="{ color: playerFactionColor }">
               {{ store.playerFaction?.name || '—' }}
@@ -502,7 +507,7 @@
     <SettingsPanel :visible="showSettings" @close="showSettings = false" />
     <SecurityPanel :visible="showSecurity" @close="showSecurity = false" />
     <ReplayPanel :visible="showReplay" @close="showReplay = false" />
-    <FloatPanels :panelSide="panelSide" />
+    <FloatPanels :panelSide="panelSide" @open-diplomacy-deep="showDiplomacyDeep = true" @open-talent-market="showTalentMarket = true" />
     <RecruitPanel />
     <MarchPanel
       :visible="store.showMarchPanel"
@@ -627,7 +632,7 @@
  * - 圣旨 AI 推演 store.executeEdictAI()
  */
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useGameStore } from '@/stores/gameStore'
 import { loadFactionsConfig, getStaticMap, quickSave, nlValidateEdict, nlProcessEdict, nlCancelCommands } from '@/services/api'
 import { generateRegionTiles } from '@/utils/regionTileGenerator'
@@ -662,6 +667,7 @@ import PeaceNegotiation from '@/components/PeaceNegotiation.vue'
 import { audioManager } from '@/utils/audioManager'
 
 const route = useRoute()
+const router = useRouter()
 const store = useGameStore()
 
 const showPolicy = ref(false)
@@ -669,6 +675,7 @@ const showAdvisor = ref(false)
 const showAdvisorPopup = ref(false)
 const showSettings = ref(false)
 const showReplay = ref(false)
+const showSecurity = ref(false)
 const showBatchBuild = ref(false)
 const showBatchRecruit = ref(false)
 const quickSaving = ref(false)
@@ -1258,11 +1265,14 @@ async function loadStaticMap() {
   isMapLoading.value = true
 
   // 1) 静态地图 (优先加载含海域的完整版)
-  //    三级回退: map_full → map_final → 本地 map_final
+  //    三级回退: map_full → 本地map_full → 本地map_final
+  //    修复: API 竞速3秒超时，避免后端离线时地图卡死120秒
   try {
     const { default: api } = await import('@/services/api')
-    // 尝试加载完整地图（含海域）
-    const rFull = await (api as any).get('/map/static-full')
+    const rFull = await Promise.race([
+      (api as any).get('/map/static-full'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+    ])
     if (rFull?.ok !== false && rFull?.data?.data?.tiles) {
       ingestMapTiles(rFull.data.data)
       console.log('[GamePage] 完整地图加载完成 (API):', Object.keys(staticMapTiles.value).length, '个格子')
@@ -1285,10 +1295,13 @@ async function loadStaticMap() {
     }
   }
 
-  // 2) 边界线 + 行省轮廓 (API → 本地 JSON)
+  // 2) 边界线 + 行省轮廓 (API → 本地 JSON，3秒超时竞速)
   try {
     const { default: api } = await import('@/services/api')
-    const r = await (api as any).get('/map/boundaries')
+    const r = await Promise.race([
+      (api as any).get('/map/boundaries'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+    ])
     staticBoundaries.value = r?.data?.data?.boundaries || null
     // 行省聚合轮廓 (用于最小缩放视图)
     const rawOutlines = r?.data?.data?.outlines || null
@@ -1321,9 +1334,12 @@ async function loadStaticMap() {
     return result
   }
 
-  // 3) 图层配置 (API → 本地 JSON)
+  // 3) 图层配置 (API → 本地 JSON，3秒超时竞速)
   try {
-    await loadLayerConfig()
+    await Promise.race([
+      loadLayerConfig(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+    ])
     console.log('[GamePage] 图层配置加载完成')
   } catch {
     console.warn('[GamePage] 图层配置加载失败 (使用本地默认值)')
@@ -1341,7 +1357,7 @@ function onRulerImgError() {
   rulerImgFailed.value = true
 }
 
-/** faction_id → ruler_*.jpg 映射表 */
+/** faction_id → ruler_*.jpg 映射表（势力君主画像） */
 const RULER_IMAGE_MAP: Record<string, string> = {
   faction_zhuyuanzhang: '/assets/factions/ruler_zhuyuan.jpg',
   faction_yuan: '/assets/factions/ruler_yuan.jpg',
@@ -1364,12 +1380,14 @@ const RULER_IMAGE_MAP: Record<string, string> = {
   ruler_xushou: '/assets/factions/ruler_xushou.jpg',
 }
 
+
+
 const rulerImage = computed(() => {
   const id = store.playerFactionId
   if (!id) return ''
   // 优先映射表查找
   if (RULER_IMAGE_MAP[id]) return RULER_IMAGE_MAP[id]
-  // 尝试直接拼接
+  // 尝试直接拼接路径
   return `/assets/factions/${id}.jpg`
 })
 
@@ -1412,9 +1430,12 @@ const toolbarItems = [
 /** 左侧工具栏：军国大事 */
 const leftToolbarItems = [
   { id: 'military', icon: '⚔️', label: '军事' },
+  { id: 'ambush', icon: '🌲', label: '伏击' },
+  { id: 'plunder', icon: '🏴', label: '劫掠' },
   { id: 'diplomacy', icon: '🤝', label: '外交' },
   { id: 'treasury', icon: '💰', label: '国库' },
   { id: 'court', icon: '🏯', label: '朝堂' },
+  { id: 'moveCapital', icon: '🏛', label: '迁都' },
   { id: 'construction', icon: '🏗️', label: '营造' },
   { id: 'recruit', icon: '🏇', label: '招兵' },
   { id: 'personnel', icon: '👤', label: '人事' },
@@ -1435,14 +1456,18 @@ const rightToolbarItems = [
   { id: 'law', icon: '⚖️', label: '律法' },
   { id: 'royal', icon: '👑', label: '宗室' },
   { id: 'territory', icon: '🗺️', label: '领土' },
+  { id: 'faction_network', icon: '🕸️', label: '势力图' },
   { id: 'prisoner', icon: '⛓️', label: '俘虏' },
   { id: 'medical', icon: '🏥', label: '疾医' },
   { id: 'sea', icon: '⛵', label: '海策' },
   { id: 'workshop', icon: '🔧', label: '工坊' },
   { id: 'agent', icon: '🧠', label: 'AI中枢' },
+  { id: 'ai-strategy', icon: '📊', label: 'AI推演' },
   { id: 'batch-build', icon: '🔄', label: '批量建' },
   { id: 'batch-recruit', icon: '🔄', label: '批量征' },
   { id: 'history', icon: '📜', label: '青史' },
+  { id: 'audio', icon: '🔊', label: '音效' },
+  { id: 'replay', icon: '⏪', label: '回放' },
 ] as const
 
 /** 当前弹出面板所在侧 */
@@ -1460,6 +1485,8 @@ function isToolActive(id: string): boolean {
   if (id === 'policy') return showPolicy.value
   if (id === 'advisor') return showAdvisor.value
   if (id === 'settings') return showSettings.value
+  if (id === 'replay') return showReplay.value
+  if (id === 'security') return showSecurity.value
   return store.activePanel === id
 }
 
@@ -1477,6 +1504,7 @@ function closeAllPanels() {
   showAIControl.value = false
   showSettings.value = false
   showSecurity.value = false
+  showReplay.value = false
   panelSide.value = ''
 }
 
@@ -1513,6 +1541,8 @@ async function onToolClick(tool: { id: string }) {
   if (tool.id === 'diplomacy-deep') { showDiplomacyDeep.value = true; return }
   if (tool.id === 'history') { showHistory.value = true; return }
   if (tool.id === 'ai-control') { showAIControl.value = true; return }
+  if (tool.id === 'replay') { showReplay.value = true; return }
+  if (tool.id === 'security') { showSecurity.value = true; return }
   store.activePanel = tool.id as any
 }
 
@@ -1832,7 +1862,7 @@ async function doInit(rawFactionId: string) {
 }
 
 async function retryInit() {
-  const factionId = (route.query.faction as string) || localStorage.getItem('yuanmo_player_faction') || 'faction_zhuyuanzhang'
+  const factionId = (route.query.faction as string) || localStorage.getItem('yuanmo_player_faction') || ''
   gameError.value = ''
   await doInit(factionId)
 }
@@ -1860,19 +1890,25 @@ function onResetView() {
 
 onMounted(async () => {
   // 兼容 /game?faction=xxx 和 /game/tactics-ruler/xxx 两种路由格式
-  const factionId = (route.query.faction as string) || (route.params.factionId as string) || 'faction_zhuyuanzhang'
+  const factionId = (route.query.faction as string) || (route.params.factionId as string) || localStorage.getItem('yuanmo_player_faction') || ''
+  if (!factionId) {
+    console.warn('[GamePage] 未检测到玩家势力，重定向到势力选择页')
+    router.push('/faction-select')
+    return
+  }
+  // 在 await doInit 之前立即启动 BGM，确保浏览器用户手势上下文有效（避免自动播放策略拦截）
+  audioManager.stopAll()
+  audioManager.playBgm('gameplay', 2.0)
+
   await doInit(factionId)
   // 全屏事件由 useFullscreen composable 内部管理，不再重复注册
   window.addEventListener('add-edict-decision', onAddEdictDecision)
-
-  // 停止首页/选势力的 BGM，切换为游玩背景音乐
-  audioManager.stopAll()
-  // 启动游玩界面背景音乐（循环播放）
-  audioManager.playBgm('gameplay', 2.0)
 })
 
 onUnmounted(() => {
   window.removeEventListener('add-edict-decision', onAddEdictDecision)
+  // 离开游玩界面时，停止游戏对局音频
+  audioManager.stopAll()
 })
 
 // ---- 本地 fallback ----
@@ -2020,6 +2056,14 @@ function severityName(s: string): string {
   position: fixed;
   top: 0;
   left: 0;
+}
+
+/* ---- 龙纹徽章 ---- */
+.banner-emblem .dragon-badge-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 50%;
 }
 
 /* ---- 顶层状态栏 ---- */
@@ -2239,23 +2283,11 @@ function severityName(s: string): string {
   position: relative;
   overflow: hidden;
 }
-
 .map-surface {
   flex: 1;
   position: relative;
   overflow: hidden;
   background: #2a2520;
-}
-
-/* 羊皮纸地图覆盖效果 */
-.map-surface::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 10;
-  background: radial-gradient(ellipse at 30% 20%, rgba(255,255,255,0.04) 0%, transparent 50%),
-              radial-gradient(ellipse at 70% 80%, rgba(0,0,0,0.12) 0%, transparent 40%);
 }
 
 /* 地图加载/空状态覆盖 */

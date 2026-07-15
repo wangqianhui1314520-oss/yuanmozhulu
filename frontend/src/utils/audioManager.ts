@@ -21,8 +21,8 @@ export interface AudioTrack {
 
 // 内置BGM列表（用户可替换 public/data/map/bgm/ 下的文件）
 const DEFAULT_BGM: AudioTrack[] = [
-  { id: 'main_menu', src: '/bgm.mp3', type: 'bgm', volume: 0.45 },
-  { id: 'gameplay', src: '/bgm_gameplay.mp3', type: 'bgm', volume: 0.4 },
+  { id: 'main_menu', src: '/bgm_main_menu.mp4', type: 'bgm', volume: 0.45 },
+  { id: 'gameplay', src: '/bgm_gameplay.mp4', type: 'bgm', volume: 0.4 },
   { id: 'main_theme', src: '/data/map/bgm/main_theme.mp3', type: 'bgm', volume: 0.4 },
   { id: 'war_drums', src: '/data/map/bgm/war_drums.mp3', type: 'bgm', volume: 0.35 },
   { id: 'court_music', src: '/data/map/bgm/court_music.mp3', type: 'bgm', volume: 0.3 },
@@ -84,6 +84,44 @@ export class AudioManager {
     this._applyVolume()
   }
 
+  /** 获取BGM音量 */
+  getBgmVolume(): number { return this._bgmVolume }
+
+  /** 设置音效音量 */
+  setSfxVolume(v: number) {
+    this._sfxVolume = Math.max(0, Math.min(1, v))
+    // 更新正在播放的音效
+    for (const p of this._sfxPlayers) {
+      p.volume = this._sfxVolume * (this._isMuted ? 0 : this._masterVolume)
+    }
+  }
+
+  /** 获取音效音量 */
+  getSfxVolume(): number { return this._sfxVolume }
+
+  /** 设置配音音量 */
+  setVoiceVolume(v: number) {
+    this._voiceVolume = Math.max(0, Math.min(1, v))
+    this._applyVolume()
+  }
+
+  /** 获取配音音量 */
+  getVoiceVolume(): number { return this._voiceVolume }
+
+  /** 设置BGM静音状态 */
+  setBgmMuted(muted: boolean) {
+    if (muted) {
+      this.pauseBgm()
+    } else {
+      this.resumeBgm()
+    }
+  }
+
+  /** 设置音效静音状态 */
+  setSfxMuted(muted: boolean) {
+    setUiSfxOptions({ muted })
+  }
+
   /** 静音切换 */
   toggleMute(): boolean {
     this._isMuted = !this._isMuted
@@ -91,6 +129,13 @@ export class AudioManager {
     // 同步 UI 音效静音状态
     setUiSfxOptions({ muted: this._isMuted })
     return this._isMuted
+  }
+
+  /** 设置全局静音 */
+  setMuted(muted: boolean) {
+    this._isMuted = muted
+    this._applyVolume()
+    setUiSfxOptions({ muted: this._isMuted })
   }
 
   /** 注册自定义BGM */
@@ -399,10 +444,23 @@ export class AudioManager {
     }
   }
 
+  /**
+   * 渐隐 BGM（选完势力 → 过渡到加载/游戏界面前的消声）
+   * @param duration 淡出时长（秒），默认 2.0
+   */
+  fadeOutBgm(duration: number = 2.0) {
+    if (this._bgmPlayer && !this._bgmPlayer.paused) {
+      this._fadeOutAndStop(this._bgmPlayer, duration)
+      this._bgmPlayer = null
+      this._currentBgmId = null
+    }
+  }
+
   /** 停止所有音频 */
   stopAll() {
     if (this._bgmPlayer) {
       this._bgmPlayer.pause()
+      this._bgmPlayer.src = ''
       this._bgmPlayer = null
     }
     this._stopVoice()
@@ -448,6 +506,19 @@ export class AudioManager {
       main_menu: '乱世序曲', gameplay: '逐鹿中原', main_theme: '山河颂', war_drums: '战鼓擂', court_music: '庙堂之音'
     }
     return nameMap[this._currentBgmId] || track?.id || this._currentBgmId
+  }
+
+  /** 获取当前 BGM ID */
+  getCurrentBgmId(): string | null {
+    return this._currentBgmId
+  }
+
+  /** 获取所有 BGM 曲目（含中文名） */
+  getBgmTracks(): (AudioTrack & { name: string })[] {
+    const nameMap: Record<string, string> = {
+      main_menu: '乱世序曲', gameplay: '逐鹿中原', main_theme: '山河颂', war_drums: '战鼓擂', court_music: '庙堂之音'
+    }
+    return this._bgmTracks.map(t => ({ ...t, name: nameMap[t.id] || t.id }))
   }
 
   /** 销毁 */

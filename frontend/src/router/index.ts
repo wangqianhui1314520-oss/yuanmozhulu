@@ -13,12 +13,6 @@ const router = createRouter({
       name: 'faction-select',
       component: () => import('@/pages/FactionSelectPage.vue'),
     },
-    // 势力选择电影镜头（15秒全国沙盘→聚焦行省→跳转对局）
-    {
-      path: '/faction-select-cinematic',
-      name: 'faction-select-cinematic',
-      component: () => import('@/pages/FactionSelectCinematic.vue'),
-    },
     // 沙盘势力镜头动画（势力选择后 → 故事背景 → 游戏对局前）
     {
       path: '/sandbox-intro',

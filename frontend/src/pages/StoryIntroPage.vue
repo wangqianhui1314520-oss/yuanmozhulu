@@ -236,6 +236,13 @@ async function enterGame() {
   if (isEntering.value) return
   isEntering.value = true
   
+  // 确保 localStorage 中有势力ID（容错：若 URL 参数丢失，从 localStorage 恢复）
+  if (factionId.value) {
+    localStorage.setItem('yuanmo_player_faction', factionId.value)
+  } else {
+    factionId.value = localStorage.getItem('yuanmo_player_faction') || ''
+  }
+
   audioManager.stopAll()
   router.push(`/game?faction=${factionId.value}`)
 }

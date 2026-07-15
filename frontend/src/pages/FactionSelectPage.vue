@@ -46,7 +46,7 @@
     <div v-else class="faction-main">
       <!-- 标题区 -->
       <header class="page-header">
-        <button class="btn-back" @click="$router.push('/')">
+        <button class="btn-back" v-audio @click="router.push('/')">
           <span class="back-icon">←</span>
           <span>返回首页</span>
         </button>
@@ -316,14 +316,8 @@ function animateMouseTrail() {
   animFrameId = requestAnimationFrame(animateMouseTrail)
 }
 
-/** 全屏状态变更回调（fullscreenchange 事件监听） */
-function onFullscreenChange() {
-  isFullscreen.value = !!document.fullscreenElement
-}
-
 onMounted(() => {
   animFrameId = requestAnimationFrame(animateMouseTrail)
-  document.addEventListener('fullscreenchange', onFullscreenChange)
   // 预加载势力 AI 配音配置 + 音频文件（非阻塞，静默失败）
   audioManager.loadVoiceConfigs().then(() => {
     audioManager.preloadAllFactionVoices()
@@ -332,9 +326,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (animFrameId) cancelAnimationFrame(animFrameId)
-  document.removeEventListener('fullscreenchange', onFullscreenChange)
-  // 离开势力选择界面时，停止所有音频（配音 + BGM）
-  audioManager.stopAll()
+  // 离开势力选择界面时，只停止配音/语音，BGM 保持不变（首页和势力选择共用同一段音频）
+  audioManager.stopVoice()
 })
 
 // 背景视差偏移样式
@@ -367,7 +360,7 @@ const BUILTIN_FACTIONS: FactionConfig[] = [
     capital_tile: 'tile_dadu', initial_territory: ['tile_dadu', 'tile_shangdu', 'tile_taiyuan', 'tile_datong', 'tile_jinan', 'tile_zhending', 'tile_baoding', 'tile_hejian', 'tile_daming', 'tile_pingyang', 'tile_yanan', 'tile_xian', 'tile_ganzhou', 'tile_suzhou_gs', 'tile_ningxia', 'tile_liaoyang', 'tile_shenyang', 'tile_helin', 'tile_karakorum'],
     initial_treasury: 20000, initial_grain: 8000, initial_arms: 300, initial_horses: 200, initial_troops: 6000, initial_reputation: 60,
     personality_tags: ['蒙古铁骑', '正统名分', '勋贵侵蚀', '民族隔阂'], difficulty: '地狱', playable: true,
-    image: '/assets/factions/a6f30b6324fce83790efa49f2d0929fd.jpg',
+    image: '/assets/factions/ruler_yuan.jpg',
     voice: '朕承大元社稷，君临天下。然乱世汹汹，红巾四起。卿既来辅朕，当重整河山，中兴大元。',
     buffs: [
       { name: '北地铁骑', effect: '骑兵战力+35%', type: 'military' },
@@ -385,7 +378,7 @@ const BUILTIN_FACTIONS: FactionConfig[] = [
     capital_tile: 'tile_yingtian', initial_territory: ['tile_yingtian', 'tile_chuzhou', 'tile_hezhou', 'tile_taiping', 'tile_zhenjiang', 'tile_changzhou', 'tile_huizhou', 'tile_ningguo', 'tile_guangde', 'tile_raozhou', 'tile_xinzhou'],
     initial_treasury: 8000, initial_grain: 4000, initial_arms: 80, initial_horses: 30, initial_troops: 3000, initial_reputation: 40,
     personality_tags: ['深谋远虑', '严刑峻法', '知人善任'], difficulty: '普通', playable: true,
-    image: '/assets/factions/b47057828607bd36e92aa37417631bf9.jpg',
+    image: '/assets/factions/ruler_zhuyuan.jpg',
     voice: '孤起于淮右，布衣提三尺剑，渡江取金陵。高筑墙，广积粮，缓称王。今日择我入世，必当驱除鞑虏，恢复中华。',
     buffs: [
       { name: '安民之治', effect: '流民转化率+30%', type: 'civil' },
@@ -402,7 +395,7 @@ const BUILTIN_FACTIONS: FactionConfig[] = [
     capital_tile: 'tile_wuchang', initial_territory: ['tile_wuchang', 'tile_jiangzhou', 'tile_yuezhou', 'tile_changsha', 'tile_hengzhou', 'tile_jingjiang', 'tile_longxing', 'tile_jian', 'tile_ganzhou_jx', 'tile_xiangyang', 'tile_jingzhou', 'tile_yichang', 'tile_huangzhou', 'tile_de_an'],
     initial_treasury: 12000, initial_grain: 6000, initial_arms: 150, initial_horses: 50, initial_troops: 5000, initial_reputation: 35,
     personality_tags: ['野心勃勃', '猜忌多疑', '水战精通'], difficulty: '困难', playable: true,
-    image: '/assets/factions/a1838ce68653600728081332905c0fd1.jpg',
+    image: '/assets/factions/ruler_chen.jpg',
     voice: '朕据荆楚，拥水师之利，志在一统。朱元璋、张士诚皆不足惧。择我者，当共图九五之尊。',
     buffs: [
       { name: '倾国水师', effect: '水战战力+50%', type: 'military' },
@@ -419,7 +412,7 @@ const BUILTIN_FACTIONS: FactionConfig[] = [
     capital_tile: 'tile_pingjiang', initial_territory: ['tile_pingjiang', 'tile_hangzhou', 'tile_songjiang', 'tile_huzhou', 'tile_jiaxin', 'tile_shaoxing', 'tile_gaoyou', 'tile_yangzhou', 'tile_taizhou_js'],
     initial_treasury: 15000, initial_grain: 7000, initial_arms: 100, initial_horses: 40, initial_troops: 3500, initial_reputation: 45,
     personality_tags: ['偏安一隅', '富甲一方', '优柔寡断'], difficulty: '简单', playable: true,
-    image: '/assets/factions/649817e3158b0df1c68ab2e2a2a0e4f7.jpg',
+    image: '/assets/factions/ruler_zhang.jpg',
     voice: '吾据江南膏腴之地，富甲一方。然天下未定，岂能偏安？愿与卿共治吴越，以成霸业。',
     buffs: [
       { name: '江南富庶', effect: '税收+30%', type: 'economy' },
@@ -436,7 +429,7 @@ const BUILTIN_FACTIONS: FactionConfig[] = [
     capital_tile: 'tile_qingyuan', initial_territory: ['tile_qingyuan', 'tile_taizhou_zj', 'tile_wenzhou', 'tile_zhoushan'],
     initial_treasury: 6000, initial_grain: 3000, initial_arms: 60, initial_horses: 20, initial_troops: 2000, initial_reputation: 30,
     personality_tags: ['海上枭雄', '投机善变', '重利轻义'], difficulty: '中等', playable: true,
-    image: '/assets/factions/0f3acb15948b699fbbd2a780dea693b8.jpg',
+    image: '/assets/factions/ruler_fang.jpg',
     voice: '海上有舟，舟山有兵。吾以海贸立世，进退自如。卿若随我，纵横浙东，何愁大事不成。',
     buffs: [
       { name: '海上通商', effect: '海上贸易收入+50%', type: 'economy' },
@@ -453,7 +446,7 @@ const BUILTIN_FACTIONS: FactionConfig[] = [
     capital_tile: 'tile_xiangyang', initial_territory: ['tile_xiangyang', 'tile_huangzhou', 'tile_de_an', 'tile_runing', 'tile_yingzhou', 'tile_nanyang'],
     initial_treasury: 6000, initial_grain: 4000, initial_arms: 90, initial_horses: 40, initial_troops: 3500, initial_reputation: 35,
     personality_tags: ['弥勒信徒', '红巾领袖', '仁厚之主'], difficulty: '困难', playable: true,
-    image: '/assets/factions/7a6ae9a077f4d6178e55be82b7039c7a.jpg',
+    image: '/assets/factions/ruler_xushou.jpg',
     voice: '弥勒降世，明王出世。吾举义旗，为天下苍生。卿来辅我，当共复光明世界。',
     buffs: [
       { name: '弥勒号召', effect: '流民征兵效率+50%', type: 'military' },
@@ -470,7 +463,7 @@ const BUILTIN_FACTIONS: FactionConfig[] = [
     capital_tile: 'tile_chongqing', initial_territory: ['tile_chongqing', 'tile_chengdu', 'tile_kuizhou', 'tile_baoning', 'tile_xuzhou_sc', 'tile_zunyi', 'tile_shunqing', 'tile_jiading'],
     initial_treasury: 6500, initial_grain: 5000, initial_arms: 90, initial_horses: 30, initial_troops: 3000, initial_reputation: 40,
     personality_tags: ['仁厚之主', '蜀道自守', '偏安一隅'], difficulty: '简单', playable: true,
-    image: '/assets/factions/649817e3158b0df1c68ab2e2a2a0e4f7.jpg',
+    image: '/assets/factions/ruler_ming.jpg',
     voice: '孤据蜀道天险，守大夏之土。民安物阜，关河稳固。卿来辅我，可共保西陲，以观天下之变。',
     buffs: [
       { name: '蜀道天险', effect: '防御战力+40%', type: 'military' },
@@ -487,7 +480,7 @@ const BUILTIN_FACTIONS: FactionConfig[] = [
     capital_tile: 'tile_taiyuan', initial_territory: ['tile_taiyuan', 'tile_datong', 'tile_pingyang', 'tile_yanan', 'tile_ganzhou', 'tile_lintao'],
     initial_treasury: 8000, initial_grain: 5000, initial_arms: 120, initial_horses: 150, initial_troops: 4000, initial_reputation: 45,
     personality_tags: ['忠勇无双', '骑兵统帅', '元廷柱石', '蒙古铁骑'], difficulty: '中等', playable: true,
-    image: '/assets/factions/a1838ce68653600728081332905c0fd1.jpg',
+    image: '/assets/factions/ruler_wang.jpg',
     voice: '吾乃扩廓帖木儿，大元最后的名将。铁骑所向，天下莫敢当。卿若随我，共保大元江山。',
     buffs: [
       { name: '铁骑无双', effect: '骑兵战力+40%', type: 'military' },
@@ -504,7 +497,7 @@ const BUILTIN_FACTIONS: FactionConfig[] = [
     capital_tile: 'tile_helin', initial_territory: ['tile_helin', 'tile_karakorum', 'tile_shangdu', 'tile_liaoyang', 'tile_shenyang'],
     initial_treasury: 5000, initial_grain: 2000, initial_arms: 80, initial_horses: 200, initial_troops: 4500, initial_reputation: 25,
     personality_tags: ['游牧骑射', '劫掠为生', '草原雄风'], difficulty: '困难', playable: true,
-    image: '/assets/factions/5812a954fbc9e83b11ddaa4cc2b7a88a.jpg',
+    image: '/assets/factions/ruler_tatar.jpg',
     voice: '草原雄鹰，驰骋万里。漠北诸部，铁骑所至，皆为牧场。卿若随我，纵横大漠，逐鹿中原。',
     buffs: [
       { name: '游牧骑射', effect: '骑兵战力+45%', type: 'military' },
@@ -700,11 +693,13 @@ async function startGame() {
   if (!confirmedFaction.value || isStarting.value) return
   const factionId = confirmedFaction.value.id
 
-  // 停止当前配音，避免跳转后残留
+  // 停止当前配音
   audioManager.stopVoice()
+  // 逐渐消声——选完势力后 BGM 淡出，过渡到加载界面
+  audioManager.fadeOutBgm(2.5)
   localStorage.setItem('yuanmo_player_faction', factionId)
 
-  // 跳转到沙盘镜头动画页面（动画结束后自动跳转游戏对局）
+  // 直接跳转沙盘介绍（→故事背景→游戏对局）
   isStarting.value = true
   await router.push(`/sandbox-intro?faction=${factionId}`).catch(() => {})
   // 导航完成后重置状态（仅在导航失败时有效；成功时组件已卸载）

@@ -237,6 +237,7 @@ import { useAdvisorChat } from '@/composables/useAdvisorChat'
 import type { NPCAdviser, ChatMessage, DebateMessage } from '@/composables/useAdvisorChat'
 import CharacterPortrait from '@/components/CharacterPortrait.vue'
 import type { PortraitData } from '@/components/CharacterPortrait.vue'
+import { RULER_IMAGE_MAP } from '@/components/CharacterPortrait.vue'
 
 defineProps<{ visible: boolean }>()
 defineEmits<{ close: [] }>()
@@ -314,6 +315,7 @@ function getNPCColor(npcId: string): string {
 }
 
 function getNPCPortraitData(npc: NPCAdviser): PortraitData {
+  const isRuler = npc.role === 'ruler'
   return {
     name: npc.name,
     title: npc.title,
@@ -326,7 +328,8 @@ function getNPCPortraitData(npc: NPCAdviser): PortraitData {
     ambition: npc.ambition,
     styleName: npc.style_name,
     specialties: npc.specialties || [],
-    isRuler: npc.role === 'ruler',
+    isRuler,
+    imageUrl: isRuler ? RULER_IMAGE_MAP[npc.faction] : undefined,
   }
 }
 

@@ -492,7 +492,8 @@ class SettleEngine:
                 continue
             tiles = self.world.get_faction_tiles(fid)
             # Bug #16修复: 无领地势力标记灭亡，清理其官员
-            if not tiles and faction.is_alive:
+            # Bug #18修复: 跳过玩家势力，玩家永不因失地被系统强制灭亡
+            if not tiles and faction.is_alive and fid != self.world.player_faction_id:
                 faction.is_alive = False
                 logger.info(f"势力 {faction.name}({fid}) 失去全部领地，标记为灭亡")
                 # 清理该势力所有官员

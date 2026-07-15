@@ -1,5 +1,14 @@
 <template>
+  <!-- 有真实图片时优先展示图片，否则 Canvas 绘制 -->
+  <img
+    v-if="portraitData.imageUrl"
+    :src="portraitData.imageUrl"
+    class="char-portrait-img"
+    :style="{ width: size + 'px', height: size + 'px' }"
+    :alt="portraitData.name"
+  />
   <canvas
+    v-else
     ref="canvasRef"
     class="char-portrait-canvas"
     :width="size"
@@ -8,8 +17,19 @@
   />
 </template>
 
-<script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+<script lang="ts">
+/** 九大势力 ID → 人物图片路径统一映射 */
+export const RULER_IMAGE_MAP: Record<string, string> = {
+  faction_yuan: '/assets/factions/ruler_yuan.jpg',
+  faction_zhuyuanzhang: '/assets/factions/ruler_zhuyuan.jpg',
+  faction_chenyouliang: '/assets/factions/ruler_chen.jpg',
+  faction_zhangshicheng: '/assets/factions/ruler_zhang.jpg',
+  faction_fangguozhen: '/assets/factions/ruler_fang.jpg',
+  faction_xushouhui: '/assets/factions/ruler_xushou.jpg',
+  faction_mingyuzhen: '/assets/factions/ruler_ming.jpg',
+  faction_wangbaobao: '/assets/factions/ruler_wang.jpg',
+  faction_mobei: '/assets/factions/ruler_tatar.jpg',
+}
 
 export interface PortraitData {
   name: string
@@ -28,7 +48,13 @@ export interface PortraitData {
   styleName?: string
   background?: string
   isRuler?: boolean
+  /** 真实人物图片路径（优先级高于 Canvas 绘制） */
+  imageUrl?: string
 }
+</script>
+
+<script setup lang="ts">
+import { ref, onMounted, watch } from 'vue'
 
 const props = withDefaults(defineProps<{
   portraitData: PortraitData
@@ -535,8 +561,13 @@ watch(() => props.size, () => { draw() })
 </script>
 
 <style scoped>
-.char-portrait-canvas {
+.char-portrait-canvas,
+.char-portrait-img {
   display: block;
   border-radius: 4px;
+}
+.char-portrait-img {
+  object-fit: cover;
+  object-position: top center;
 }
 </style>

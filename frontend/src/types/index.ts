@@ -96,6 +96,102 @@ export interface GameEvent {
 export type EventType = 'battle' | 'diplomacy' | 'disaster' | 'court' | 'economy' | 'spy' | 'civil' | 'royal' | 'random' | 'ending' | 'policy' | 'decree'
 export type EventSeverity = 'trivial' | 'minor' | 'major' | 'critical'
 
+// ===== WorldState 内部数据类型（替换 any） =====
+
+export interface AllianceTreaty {
+  treaty_id: string
+  treaty_type: string
+  parties: string[]
+  signed_round: number
+  expires_round: number
+  terms: Record<string, unknown>
+}
+
+export interface TradeRoute {
+  route_id: string
+  origin: string
+  destination: string
+  income: number
+  active: boolean
+}
+
+export interface SpyIntel {
+  network_id: string
+  source_faction: string
+  target_faction: string
+  level: number
+  intel: Record<string, unknown>
+  timestamp: number
+}
+
+export interface Official {
+  official_id: string
+  name: string
+  title: string
+  faction_id: string
+  loyalty: number
+  stats: Record<string, number>
+}
+
+export interface Prisoner {
+  prisoner_id: string
+  name: string
+  original_faction: string
+  captor_faction: string
+  captured_round: number
+  freed: boolean
+}
+
+export interface RebelArmy {
+  rebel_id: string
+  name: string
+  faction_id: string
+  troops: number
+  tile_id: string
+  leader: string
+}
+
+export interface DisasterRecord {
+  disaster_id: string
+  type: string
+  severity: string
+  tile_id: string
+  start_round: number
+  end_round: number | null
+  effects: Record<string, number>
+}
+
+export interface DecreeRecord {
+  decree_id: string
+  decree_type: string
+  content: string
+  issued_round: number
+  executed: boolean
+}
+
+export interface SiegeState {
+  siege_id: string
+  tile_id: string
+  attacker: string
+  defender: string
+  start_round: number
+  progress: number
+}
+
+export interface PurgeRecord {
+  purge_id: string
+  target_id: string
+  target_type: string
+  reason: string
+  round: number
+}
+
+export interface WeatherState {
+  current: string
+  next: string
+  effects: Record<string, unknown>
+}
+
 export interface WorldState {
   current_round: number
   current_year: number
@@ -106,28 +202,28 @@ export interface WorldState {
   tiles: Record<string, TileState>
   relations: Record<string, RelationState>
   coalitions: Record<string, string[]>
-  alliance_treaties: any[]
-  trade_routes: any[]
+  alliance_treaties: AllianceTreaty[]
+  trade_routes: TradeRoute[]
   vassal_relations: Record<string, string>
-  spy_networks: Record<string, any>
-  spy_intel: any[]
-  planted_false_intel: any[]
-  officials: Record<string, any>
+  spy_networks: Record<string, Record<string, unknown>>
+  spy_intel: SpyIntel[]
+  planted_false_intel: SpyIntel[]
+  officials: Record<string, Official>
   exiled_officials: string[]
-  purges: any[]
-  new_officials: any[]
-  siege_states: Record<string, any>
-  prisoners: Record<string, any>
-  rebel_armies: Record<string, any>
+  purges: PurgeRecord[]
+  new_officials: Official[]
+  siege_states: Record<string, SiegeState>
+  prisoners: Record<string, Prisoner>
+  rebel_armies: Record<string, RebelArmy>
   events_log: GameEvent[]
-  disasters: any[]
+  disasters: DisasterRecord[]
   disaster_index: number
-  decrees: any[]
-  diplomatic_archive: any[]
-  governance_logs: any[]
+  decrees: DecreeRecord[]
+  diplomatic_archive: Record<string, unknown>[]
+  governance_logs: Record<string, unknown>[]
   govern_merit: Record<string, number>
-  tile_changes: any[]
-  weather: Record<string, any>
+  tile_changes: Record<string, unknown>[]
+  weather: WeatherState
   game_mode: string
   version: string
 }
@@ -200,14 +296,9 @@ export type PanelType =
   | 'disaster' 
   | 'military' 
   | 'diplomacy' 
-  | 'diplomacyDeep'
   | 'events' 
   | 'construction' 
   | 'ai-strategy'
-  | 'battle'
-  | 'ending'
-  | 'save'
-  | 'help'
   | 'audio'
   | 'law'
   | 'law-interrogate'
@@ -228,5 +319,4 @@ export type PanelType =
   | 'moveCapital'
   | 'agent'
   | 'faction_network'
-  | 'faction_gallery'
   | ''
