@@ -15,9 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 工作目录
 WORKDIR /app
 
-# Python 依赖（分层缓存）
+# Python 依赖（分层缓存 · 阿里云镜像加速）
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    -i https://mirrors.aliyun.com/pypi/simple/ \
+    --trusted-host mirrors.aliyun.com
 
 # 复制后端代码
 COPY server/ ./server/
