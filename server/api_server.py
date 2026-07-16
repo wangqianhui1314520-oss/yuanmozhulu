@@ -674,6 +674,13 @@ async def startup_event():
     """服务启动：初始化LLM + 关键模块导入验证 + 打印健康面板"""
     global _startup_status, _default_llm_clients, _default_llm_available
 
+    # 确保 SessionManager 已初始化（兼容直接 uvicorn 启动的部署方式）
+    _project_root = Path(__file__).parent.parent
+    try:
+        init_session_manager(_project_root)
+    except Exception:
+        pass  # 可能已初始化，忽略
+
     # P0修复: 提前验证关键模块导入，避免运行时 ImportError
     _validate_critical_imports()
 
