@@ -1,6 +1,8 @@
 <template>
   <div ref="containerRef" class="hex-map-container">
     <div ref="stageContainer" class="stage-container"></div>
+    <!-- 着色器叠加层 (WebGL2 后处理效果，纯视觉，不影响交互) -->
+    <canvas ref="shaderCanvasRef" class="shader-overlay"></canvas>
 
     <!-- 快捷图层模式切换（精简版，完整面板在GamePage的LayerPanel中） -->
     <div class="layer-panel">
@@ -13,52 +15,54 @@
       </div>
     </div>
 
-    <!-- 悬停提示 - 势力名称优先标注 -->
-    <div v-if="hoveredTile" class="hex-tooltip" :style="tooltipStyle">
-      <!-- 海域专用提示 -->
-      <template v-if="hoveredTile.terrain === 'sea'">
-        <div class="tooltip-sea-header">
-          <span class="sea-icon">🌊</span>
-          <span class="tooltip-name">{{ (hoveredTile as any).sea_zone_name || '海域' }}</span>
-        </div>
-        <div class="tooltip-info">
-          {{ (hoveredTile as any).sea_zone_name || '远洋' }} ·
-          水深: {{ seaDepthLabel((hoveredTile as any).sea_depth) }}
-        </div>
-        <div class="tooltip-terrain">
-          海洋
-          <span class="terrain-stat">海移:{{ hoveredTile.movement_cost ?? 25 }}</span>
-          <span class="terrain-stat">海军:{{ (hoveredTile as any).navy_modifier ?? 1.0 }}x</span>
-        </div>
-        <div class="tooltip-badges">
-          <span v-if="hoveredTile.is_coastal" class="tooltip-badge coastal">🏖 沿岸</span>
-          <span v-if="(hoveredTile as any).sea_depth === 'deep'" class="tooltip-badge deepsea">🌊 深海</span>
-          <span v-if="(hoveredTile as any).sea_depth === 'abyssal'" class="tooltip-badge abyssal">🌀 远洋</span>
-        </div>
-      </template>
-      <!-- 陆地专用提示 -->
-      <template v-else>
-        <div v-if="hoveredTile.faction_id" class="tooltip-faction">
-          <span class="faction-dot" :style="{ background: factionColor(hoveredTile.faction_id) }"></span>
-          <span class="faction-label">{{ factionName(hoveredTile.faction_id) }}</span>
-        </div>
-        <div class="tooltip-name">{{ hoveredTile.tile_name }}</div>
-        <div class="tooltip-info">
-          {{ hoveredTile.province }} · {{ hoveredTile.prefecture }}
-        </div>
-        <div class="tooltip-terrain">
-          {{ terrainLabel(hoveredTile.terrain) }}
-          <span class="terrain-stat">移:{{ hoveredTile.movement_cost ?? 10 }}</span>
-          <span class="terrain-stat">防:+{{ hoveredTile.defense_bonus ?? 0 }}</span>
-        </div>
-        <div class="tooltip-badges">
-          <span v-if="hoveredTile.is_capital" class="tooltip-badge capital">★ 都城</span>
-          <span v-if="hoveredTile.is_port" class="tooltip-badge port">⚓ 港口</span>
-          <span v-if="hoveredTile.is_pass" class="tooltip-badge pass">🏔 关隘</span>
-          <span v-if="hoveredTile.is_ferry" class="tooltip-badge ferry">⛵ 渡口</span>
-          <span v-if="hoveredTile.is_coastal" class="tooltip-badge coastal">🌊 沿海</span>
-          <span v-if="hoveredTile.is_strategic" class="tooltip-badge strategic">🏰 战略</span>
-        </div>
+    <!-- 悬停提示 - 势力名称优先标注（CSS过渡+delay支持玩家自定义tooltipDelay） -->
+    <div class="hex-tooltip" :style="tooltipStyle" :class="{ 'hex-tooltip--visible': hoveredTile }">
+      <template v-if="hoveredTile">
+        <!-- 海域专用提示 -->
+        <template v-if="hoveredTile.terrain === 'sea'">
+          <div class="tooltip-sea-header">
+            <span class="sea-icon">🌊</span>
+            <span class="tooltip-name">{{ (hoveredTile as any).sea_zone_name || '海域' }}</span>
+          </div>
+          <div class="tooltip-info">
+            {{ (hoveredTile as any).sea_zone_name || '远洋' }} ·
+            水深: {{ seaDepthLabel((hoveredTile as any).sea_depth) }}
+          </div>
+          <div class="tooltip-terrain">
+            海洋
+            <span class="terrain-stat">海移:{{ hoveredTile.movement_cost ?? 25 }}</span>
+            <span class="terrain-stat">海军:{{ (hoveredTile as any).navy_modifier ?? 1.0 }}x</span>
+          </div>
+          <div class="tooltip-badges">
+            <span v-if="hoveredTile.is_coastal" class="tooltip-badge coastal">🏖 沿岸</span>
+            <span v-if="(hoveredTile as any).sea_depth === 'deep'" class="tooltip-badge deepsea">🌊 深海</span>
+            <span v-if="(hoveredTile as any).sea_depth === 'abyssal'" class="tooltip-badge abyssal">🌀 远洋</span>
+          </div>
+        </template>
+        <!-- 陆地专用提示 -->
+        <template v-else>
+          <div v-if="hoveredTile.faction_id" class="tooltip-faction">
+            <span class="faction-dot" :style="{ background: factionColor(hoveredTile.faction_id) }"></span>
+            <span class="faction-label">{{ factionName(hoveredTile.faction_id) }}</span>
+          </div>
+          <div class="tooltip-name">{{ hoveredTile.tile_name }}</div>
+          <div class="tooltip-info">
+            {{ hoveredTile.province }} · {{ hoveredTile.prefecture }}
+          </div>
+          <div class="tooltip-terrain">
+            {{ terrainLabel(hoveredTile.terrain) }}
+            <span class="terrain-stat">移:{{ hoveredTile.movement_cost ?? 10 }}</span>
+            <span class="terrain-stat">防:+{{ hoveredTile.defense_bonus ?? 0 }}</span>
+          </div>
+          <div class="tooltip-badges">
+            <span v-if="hoveredTile.is_capital" class="tooltip-badge capital">★ 都城</span>
+            <span v-if="hoveredTile.is_port" class="tooltip-badge port">⚓ 港口</span>
+            <span v-if="hoveredTile.is_pass" class="tooltip-badge pass">🏔 关隘</span>
+            <span v-if="hoveredTile.is_ferry" class="tooltip-badge ferry">⛵ 渡口</span>
+            <span v-if="hoveredTile.is_coastal" class="tooltip-badge coastal">🌊 沿海</span>
+            <span v-if="hoveredTile.is_strategic" class="tooltip-badge strategic">🏰 战略</span>
+          </div>
+        </template>
       </template>
     </div>
   </div>
@@ -66,7 +70,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, computed, nextTick, shallowRef } from 'vue'
-import type KonvaType from 'konva'
+import Konva from 'konva'
 import type { HexTile } from '@/utils/flatTopHexUtils'
 import {
   HEX_SIZE, HEX_WIDTH, HEX_HEIGHT, HEX_RATIO, setHexSize,
@@ -95,6 +99,7 @@ import {
 import type { ZoomRange } from '@/utils/mapInteractionConfig'
 import { generateInkWashTexture } from '@/utils/InkWashTexture'
 import { FACTION_PALETTE, FONT_FAMILY_TITLE } from '@/utils/parchmentTheme'
+import { ShaderOverlay } from '@/utils/ShaderOverlay'
 
 export interface BoundaryEdge {
   x: number; y: number
@@ -162,30 +167,60 @@ const emit = defineEmits<{
   setLayerMode: [mode: string]
 }>()
 
-  let Konva: typeof KonvaType | null = null
-  let stage: KonvaType.Stage | null = null
-  let bgLayer: KonvaType.Layer | null = null
-  let hexLayer: KonvaType.Layer | null = null
-  let factionLayer: KonvaType.Layer | null = null
-  let boundaryLayer: KonvaType.Layer | null = null
-  let overlayLayer: KonvaType.Layer | null = null
-  let fogLayer: KonvaType.Layer | null = null
+  let stage: Konva.Stage | null = null
+  let bgLayer: Konva.Layer | null = null
+  let hexLayer: Konva.Layer | null = null
+  let factionLayer: Konva.Layer | null = null
+  let boundaryLayer: Konva.Layer | null = null
+  let overlayLayer: Konva.Layer | null = null
+  let fogLayer: Konva.Layer | null = null
   // 新增7层
-  let marchRouteLayer: KonvaType.Layer | null = null
-  let buildingLayer: KonvaType.Layer | null = null
-  let disasterLayer: KonvaType.Layer | null = null
-  let diplomacyLayer: KonvaType.Layer | null = null
-  let garrisonLayer: KonvaType.Layer | null = null
-  let waterwayLayer: KonvaType.Layer | null = null
-  let claimLayer: KonvaType.Layer | null = null
+  let marchRouteLayer: Konva.Layer | null = null
+  let buildingLayer: Konva.Layer | null = null
+  let disasterLayer: Konva.Layer | null = null
+  let diplomacyLayer: Konva.Layer | null = null
+  let garrisonLayer: Konva.Layer | null = null
+  let waterwayLayer: Konva.Layer | null = null
+  let claimLayer: Konva.Layer | null = null
   /** 古卷宣纸纹理 (程序化生成) */
   let inkWashCanvas: HTMLCanvasElement | null = null
+
+  /** 预计算：tile_id → 世界像素坐标 {px, py}，避免每帧 offsetToAxial+axialToPixel */
+  const tilePixelCache = new Map<string, { px: number; py: number }>()
+
+  /** 预计算：势力ID → 区域中心点 {x, y}，renderOverlayMarkers 复用 */
+  const factionCentroidCache = new Map<string, { x: number; y: number }>()
+
+  /** 重建 tile 像素坐标缓存（HEX_SIZE 变化时调用） */
+  function rebuildTilePixelCache() {
+    tilePixelCache.clear()
+    factionCentroidCache.clear()
+    // 势力tile分组用于质心计算
+    const factionTiles = new Map<string, { sumX: number; sumY: number; count: number }>()
+    for (const tile of props.tiles) {
+      const axial = offsetToAxial(tile.col, tile.row)
+      const p = axialToPixel(axial.q, axial.r, HEX_SIZE)
+      tilePixelCache.set(tile.tile_id, { px: p.x, py: p.y })
+      // 同时收集势力质心数据
+      if (tile.faction_id) {
+        const acc = factionTiles.get(tile.faction_id) || { sumX: 0, sumY: 0, count: 0 }
+        acc.sumX += p.x; acc.sumY += p.y; acc.count++
+        factionTiles.set(tile.faction_id, acc)
+      }
+    }
+    // 计算势力质心
+    for (const [fid, acc] of factionTiles) {
+      factionCentroidCache.set(fid, { x: acc.sumX / acc.count, y: acc.sumY / acc.count })
+    }
+  }
 
 /** CK3 风格画布交互控制器 */
 let interaction: CanvasInteraction | null = null
 
 const containerRef = ref<HTMLDivElement>()
 const stageContainer = ref<HTMLDivElement>()
+const shaderCanvasRef = ref<HTMLCanvasElement>()
+let shaderOverlay: ShaderOverlay | null = null
 const hoveredTile = ref<HexTile | null>(null)
 const tooltipStyle = ref({ left: '0px', top: '0px' })
 
@@ -284,10 +319,8 @@ function getTileStrokeWidth(tile: HexTile): number {
 
 function initKonva() {
   if (!stageContainer.value) return
-  // @ts-ignore
-  Konva = window.Konva
   if (!Konva) {
-    setTimeout(initKonva, 200)
+    console.error('[HexMapView] Konva 未正确导入，地图不可用')
     return
   }
 
@@ -334,7 +367,10 @@ function initKonva() {
   // ============================================================
   // HEX_SIZE: 固定 64px 基准，确保缩放后六边形视觉清晰
   setHexSize(64)
-  console.log(`[HexMapView] HEX_SIZE: ${HEX_SIZE.toFixed(1)} (比率 ${HEX_RATIO.toFixed(3)})`)
+  if (import.meta.env.DEV) console.log(`[HexMapView] HEX_SIZE: ${HEX_SIZE.toFixed(1)} (比率 ${HEX_RATIO.toFixed(3)})`)
+
+  // 预计算 tile 像素坐标（避免每帧 offsetToAxial+axialToPixel）
+  rebuildTilePixelCache()
 
   // 疆域包围盒 (基于实际 tile，标准轴向坐标)
   let territoryBounds: TerritoryBounds
@@ -343,25 +379,25 @@ function initKonva() {
   } else {
     // 回退：用全网格估计
     const fw = HEX_SIZE * (1.5 * GRID_MAX_COLS + 0.75 + 2)
-    const fh = HEX_SIZE * (Math.sqrt(3) * GRID_ROWS + Math.sqrt(3))
+    const fh = HEX_HEIGHT * (GRID_ROWS + 1)
     territoryBounds = { minCol: GRID_MIN_COL, maxCol: GRID_MIN_COL + GRID_MAX_COLS - 1, minRow: 0, maxRow: GRID_ROWS - 1, pixelW: fw, pixelH: fh }
   }
   const territoryOrigin = getTerritoryOrigin(territoryBounds, HEX_SIZE)
 
   // 全网格矩形尺寸（供 CanvasInteraction 边界约束）
   const gridTotalW = HEX_SIZE * (1.5 * GRID_MAX_COLS + 0.75 + 2)
-  const gridTotalH = HEX_SIZE * (Math.sqrt(3) * GRID_ROWS + Math.sqrt(3))
+  const gridTotalH = HEX_HEIGHT * (GRID_ROWS + 1)
 
   // 自适应填满视口：包围盒像素 ÷ 容器像素 → fitScale（100% 即为最小缩放下限）
   const fitScale = calculateFitScale(territoryBounds.pixelW, territoryBounds.pixelH, w, h)
-  const startScale = Math.max(1.0, fitScale)  // 最小缩放 100%，不可再缩小
+  const startScale = fitScale  // 自适应填满视口，CanvasInteraction 按层控制缩放范围
   const fitOff = calculateFitOffset(
     territoryBounds.pixelW, territoryBounds.pixelH,
     w, h, startScale,
     territoryOrigin.x, territoryOrigin.y,
   )
 
-  console.log(`[HexMapView] 包围盒: ${territoryBounds.pixelW.toFixed(0)}×${territoryBounds.pixelH.toFixed(0)}px, fitScale=${fitScale.toFixed(4)}, startScale=${startScale.toFixed(4)}, origin=(${territoryOrigin.x.toFixed(1)},${territoryOrigin.y.toFixed(1)})`)
+  if (import.meta.env.DEV) console.log(`[HexMapView] 包围盒: ${territoryBounds.pixelW.toFixed(0)}×${territoryBounds.pixelH.toFixed(0)}px, fitScale=${fitScale.toFixed(4)}, startScale=${startScale.toFixed(4)}, origin=(${territoryOrigin.x.toFixed(1)},${territoryOrigin.y.toFixed(1)})`)
 
   // ============================================================
   // 初始化 CK3 风格画布交互控制器
@@ -443,16 +479,16 @@ function renderHexes() {
   hexLayer.destroyChildren()
 
   const hexW = HEX_SIZE * 2 * scale.value
-  const hexH = HEX_SIZE * Math.sqrt(3) * scale.value
+  const hexH = HEX_HEIGHT * scale.value
 
   const showTerrain = isLayerVisible('terrain')
   const showGrid = isLayerVisible('hex_grid')
 
   for (const tile of props.tiles) {
-    const axial = offsetToAxial(tile.col, tile.row)
-    const px = axialToPixel(axial.q, axial.r, HEX_SIZE)
-    const cx = px.x * scale.value + offsetX.value
-    const cy = px.y * scale.value + offsetY.value
+    const cached = tilePixelCache.get(tile.tile_id)
+    if (!cached) continue
+    const cx = cached.px * scale.value + offsetX.value
+    const cy = cached.py * scale.value + offsetY.value
 
     if (stage && (cx < -hexW || cx > stage.width() + hexW ||
         cy < -hexH || cy > stage.height() + hexH)) continue
@@ -464,7 +500,8 @@ function renderHexes() {
       const depth = (tile as any).sea_depth || 'moderate'
       fill = SEA_DEPTH_COLORS[depth] || TERRAIN_COLORS['sea'] || '#3a5870'
     } else {
-      fill = showTerrain ? (TERRAIN_COLORS[tile.terrain] || '#b0a080') : '#c4b898'
+      const terrainKey = tile.terrain === 'water' ? 'water_river' : tile.terrain
+      fill = showTerrain ? (TERRAIN_COLORS[terrainKey] || '#b0a080') : '#c4b898'
     }
     const isSelected = tile.tile_id === props.selectedTileId
     const isSea = tile.terrain === 'sea'
@@ -622,7 +659,7 @@ function renderFactionBlocks() {
   }
 
   const hexW = HEX_SIZE * 2 * scale.value
-  const hexH = HEX_SIZE * Math.sqrt(3) * scale.value
+  const hexH = HEX_HEIGHT * scale.value
 
   // 行省视图聚合阈值：使用 currentZoomRange 判断，与 ZOOM_RANGES 保持一致
   const isWorldView = currentZoomRange.value?.key === 'world'
@@ -630,10 +667,10 @@ function renderFactionBlocks() {
   for (const tile of props.tiles) {
     if (!tile.faction_id) continue
 
-    const axial = offsetToAxial(tile.col, tile.row)
-    const px = axialToPixel(axial.q, axial.r, HEX_SIZE)
-    const cx = px.x * scale.value + offsetX.value
-    const cy = px.y * scale.value + offsetY.value
+    const cached = tilePixelCache.get(tile.tile_id)
+    if (!cached) continue
+    const cx = cached.px * scale.value + offsetX.value
+    const cy = cached.py * scale.value + offsetY.value
 
     if (stage && (cx < -hexW || cx > stage.width() + hexW ||
         cy < -hexH || cy > stage.height() + hexH)) continue
@@ -692,18 +729,9 @@ function renderFactionBlocks() {
 
 // ==== 战略标记渲染 (overlay层) ====
 
-/** 计算势力区域中心点（用于大字标注） */
+/** 计算势力区域中心点（用于大字标注，使用预计算缓存） */
 function getFactionCentroid(factionId: string): { x: number; y: number } | null {
-  const tiles = props.tiles.filter(t => t.faction_id === factionId)
-  if (tiles.length === 0) return null
-  let sumX = 0, sumY = 0
-  for (const t of tiles) {
-    const axial = offsetToAxial(t.col, t.row)
-    const px = axialToPixel(axial.q, axial.r, HEX_SIZE)
-    sumX += px.x
-    sumY += px.y
-  }
-  return { x: sumX / tiles.length, y: sumY / tiles.length }
+  return factionCentroidCache.get(factionId) || null
 }
 
 function renderOverlayMarkers() {
@@ -716,15 +744,15 @@ function renderOverlayMarkers() {
   }
 
   const hexW = HEX_SIZE * 2 * scale.value
-  const hexH = HEX_SIZE * Math.sqrt(3) * scale.value
+  const hexH = HEX_HEIGHT * scale.value
 
   for (const tile of props.tiles) {
     if (!tile.is_capital && !tile.is_port && !tile.is_pass && !tile.is_ferry && !tile.is_strategic) continue
 
-    const axial = offsetToAxial(tile.col, tile.row)
-    const px = axialToPixel(axial.q, axial.r, HEX_SIZE)
-    const cx = px.x * scale.value + offsetX.value
-    const cy = px.y * scale.value + offsetY.value
+    const cached = tilePixelCache.get(tile.tile_id)
+    if (!cached) continue
+    const cx = cached.px * scale.value + offsetX.value
+    const cy = cached.py * scale.value + offsetY.value
 
     if (stage && (cx < -hexW || cx > stage.width() + hexW ||
         cy < -hexH || cy > stage.height() + hexH)) continue
@@ -812,15 +840,27 @@ function renderBoundaries() {
   const opacity = getLayerOpacity('boundary')
 
   const toScreen = (edge: BoundaryEdge) => {
+    // 优先使用预计算缓存（将 hex_col_row → col,row）
+    const tidA = edge.tile_a.replace('hex_', '').replace('_', ',')
+    const tidB = edge.tile_b.replace('hex_', '').replace('_', ',')
+    const pA = tilePixelCache.get(tidA)
+    const pB = tilePixelCache.get(tidB)
+    if (pA && pB) {
+      return {
+        x: ((pA.px + pB.px) / 2) * scale.value + offsetX.value,
+        y: ((pA.py + pB.py) / 2) * scale.value + offsetY.value,
+      }
+    }
+    // 回退：手动计算
     const [colA, rowA] = edge.tile_a.replace('hex_', '').split('_').map(Number)
     const [colB, rowB] = edge.tile_b.replace('hex_', '').split('_').map(Number)
     const axialA = offsetToAxial(colA, rowA)
     const axialB = offsetToAxial(colB, rowB)
-    const pA = axialToPixel(axialA.q, axialA.r, HEX_SIZE)
-    const pB = axialToPixel(axialB.q, axialB.r, HEX_SIZE)
+    const pxA = axialToPixel(axialA.q, axialA.r, HEX_SIZE)
+    const pxB = axialToPixel(axialB.q, axialB.r, HEX_SIZE)
     return {
-      x: ((pA.x + pB.x) / 2) * scale.value + offsetX.value,
-      y: ((pA.y + pB.y) / 2) * scale.value + offsetY.value,
+      x: ((pxA.x + pxB.x) / 2) * scale.value + offsetX.value,
+      y: ((pxA.y + pxB.y) / 2) * scale.value + offsetY.value,
     }
   }
 
@@ -906,14 +946,14 @@ function renderFog() {
 
   // 按格渲染雾霭: 未可见格 → 渐隐水墨遮罩
   const hexW = HEX_SIZE * 2 * scale.value
-  const hexH = HEX_SIZE * Math.sqrt(3) * scale.value
+  const hexH = HEX_HEIGHT * scale.value
   for (const tile of props.tiles) {
     if (visibleTileIds.has(tile.tile_id)) continue
 
-    const axial = offsetToAxial(tile.col, tile.row)
-    const px = axialToPixel(axial.q, axial.r, HEX_SIZE)
-    const cx = px.x * scale.value + offsetX.value
-    const cy = px.y * scale.value + offsetY.value
+    const cached = tilePixelCache.get(tile.tile_id)
+    if (!cached) continue
+    const cx = cached.px * scale.value + offsetX.value
+    const cy = cached.py * scale.value + offsetY.value
 
     if (stage && (cx < -hexW || cx > stage.width() + hexW ||
         cy < -hexH || cy > stage.height() + hexH)) continue
@@ -953,17 +993,14 @@ function renderWaterways() {
     waterwayLayer.batchDraw(); return
   }
   const opacity = getLayerOpacity('waterway')
-  const tileMap = new Map(props.tiles.map(t => [t.tile_id, t]))
 
   for (const route of props.waterRoutes) {
     const pts: number[] = []
     for (const tid of route.path) {
-      const tile = tileMap.get(tid)
-      if (!tile) continue
-      const axial = offsetToAxial(tile.col, tile.row)
-    const px = axialToPixel(axial.q, axial.r, HEX_SIZE)
-      pts.push(px.x * scale.value + offsetX.value)
-      pts.push(px.y * scale.value + offsetY.value)
+      const cached = tilePixelCache.get(tid)
+      if (!cached) continue
+      pts.push(cached.px * scale.value + offsetX.value)
+      pts.push(cached.py * scale.value + offsetY.value)
     }
     if (pts.length < 4) continue
 
@@ -991,14 +1028,14 @@ function renderClaims() {
   }
   const opacity = getLayerOpacity('claim')
   const hexW = HEX_SIZE * 2 * scale.value
-  const hexH = HEX_SIZE * Math.sqrt(3) * scale.value
+  const hexH = HEX_HEIGHT * scale.value
 
   for (const tile of props.tiles) {
     if (!props.claimTiles.has(tile.tile_id)) continue
-    const axial = offsetToAxial(tile.col, tile.row)
-    const px = axialToPixel(axial.q, axial.r, HEX_SIZE)
-    const cx = px.x * scale.value + offsetX.value
-    const cy = px.y * scale.value + offsetY.value
+    const cached = tilePixelCache.get(tile.tile_id)
+    if (!cached) continue
+    const cx = cached.px * scale.value + offsetX.value
+    const cy = cached.py * scale.value + offsetY.value
     if (stage && (cx < -hexW || cx > stage.width() + hexW || cy < -hexH || cy > stage.height() + hexH)) continue
 
     // 半透金纹覆盖
@@ -1026,16 +1063,16 @@ function renderBuildings() {
   }
   const opacity = getLayerOpacity('building')
   const hexW = HEX_SIZE * 2 * scale.value
-  const hexH = HEX_SIZE * Math.sqrt(3) * scale.value
+  const hexH = HEX_HEIGHT * scale.value
   const iconMap: Record<string, string> = { workshop: '🔨', port: '⚓', wall: '🏰', granary: '🏚', stable: '🐴' }
 
   for (const tile of props.tiles) {
     const buildings = props.buildingData[tile.tile_id]
     if (!buildings || buildings.length === 0) continue
-    const axial = offsetToAxial(tile.col, tile.row)
-    const px = axialToPixel(axial.q, axial.r, HEX_SIZE)
-    const cx = px.x * scale.value + offsetX.value
-    const cy = px.y * scale.value + offsetY.value
+    const cached = tilePixelCache.get(tile.tile_id)
+    if (!cached) continue
+    const cx = cached.px * scale.value + offsetX.value
+    const cy = cached.py * scale.value + offsetY.value
     if (stage && (cx < -hexW || cx > stage.width() + hexW || cy < -hexH || cy > stage.height() + hexH)) continue
 
     let yOff = 0.45
@@ -1068,7 +1105,7 @@ function renderDisasters() {
   }
   const opacity = getLayerOpacity('disaster')
   const hexW = HEX_SIZE * 2 * scale.value
-  const hexH = HEX_SIZE * Math.sqrt(3) * scale.value
+  const hexH = HEX_HEIGHT * scale.value
   const iconMap: Record<string, string> = {
     flood: '🌊', drought: '☀', locust: '🦗', plague: '☠',
     war_devastation: '💥', rebellion: '🔥', famine: '🌾',
@@ -1077,10 +1114,10 @@ function renderDisasters() {
   for (const tile of props.tiles) {
     const disasters = props.disasterTiles[tile.tile_id]
     if (!disasters || disasters.length === 0) continue
-    const axial = offsetToAxial(tile.col, tile.row)
-    const px = axialToPixel(axial.q, axial.r, HEX_SIZE)
-    const cx = px.x * scale.value + offsetX.value
-    const cy = px.y * scale.value + offsetY.value
+    const cached = tilePixelCache.get(tile.tile_id)
+    if (!cached) continue
+    const cx = cached.px * scale.value + offsetX.value
+    const cy = cached.py * scale.value + offsetY.value
     if (stage && (cx < -hexW || cx > stage.width() + hexW || cy < -hexH || cy > stage.height() + hexH)) continue
 
     for (const d of disasters) {
@@ -1113,15 +1150,15 @@ function renderGarrison() {
   }
   const opacity = getLayerOpacity('garrison')
   const hexW = HEX_SIZE * 2 * scale.value
-  const hexH = HEX_SIZE * Math.sqrt(3) * scale.value
+  const hexH = HEX_HEIGHT * scale.value
 
   for (const tile of props.tiles) {
     const g = props.garrisonData[tile.tile_id]
     if (!g) continue
-    const axial = offsetToAxial(tile.col, tile.row)
-    const px = axialToPixel(axial.q, axial.r, HEX_SIZE)
-    const cx = px.x * scale.value + offsetX.value
-    const cy = px.y * scale.value + offsetY.value
+    const cached = tilePixelCache.get(tile.tile_id)
+    if (!cached) continue
+    const cx = cached.px * scale.value + offsetX.value
+    const cy = cached.py * scale.value + offsetY.value
     if (stage && (cx < -hexW || cx > stage.width() + hexW || cy < -hexH || cy > stage.height() + hexH)) continue
 
     const troopText = g.troops >= 1000 ? `${(g.troops / 1000).toFixed(1)}k` : String(g.troops)
@@ -1149,7 +1186,6 @@ function renderMarchRoutes() {
   if (!isLayerVisible('march_route') && !isLayerVisible('supply_line')) {
     marchRouteLayer.batchDraw(); return
   }
-  const tileMap = new Map(props.tiles.map(t => [t.tile_id, t]))
 
   // 行军路线
   if (isLayerVisible('march_route') && props.marchRoutes) {
@@ -1157,12 +1193,10 @@ function renderMarchRoutes() {
     for (const route of props.marchRoutes) {
       const pts: number[] = []
       for (const tid of route.path) {
-        const tile = tileMap.get(tid)
-        if (!tile) continue
-        const axial = offsetToAxial(tile.col, tile.row)
-        const px = axialToPixel(axial.q, axial.r, HEX_SIZE)
-        pts.push(px.x * scale.value + offsetX.value)
-        pts.push(px.y * scale.value + offsetY.value)
+        const cached = tilePixelCache.get(tid)
+        if (!cached) continue
+        pts.push(cached.px * scale.value + offsetX.value)
+        pts.push(cached.py * scale.value + offsetY.value)
       }
       if (pts.length < 4) continue
 
@@ -1198,12 +1232,10 @@ function renderMarchRoutes() {
     for (const sl of props.supplyLines) {
       const pts: number[] = []
       for (const tid of sl.path) {
-        const tile = tileMap.get(tid)
-        if (!tile) continue
-        const axial = offsetToAxial(tile.col, tile.row)
-        const px = axialToPixel(axial.q, axial.r, HEX_SIZE)
-        pts.push(px.x * scale.value + offsetX.value)
-        pts.push(px.y * scale.value + offsetY.value)
+        const cached = tilePixelCache.get(tid)
+        if (!cached) continue
+        pts.push(cached.px * scale.value + offsetX.value)
+        pts.push(cached.py * scale.value + offsetY.value)
       }
       if (pts.length < 4) continue
 
@@ -1230,17 +1262,16 @@ function renderDiplomacy() {
     diplomacyLayer.batchDraw(); return
   }
   const opacity = getLayerOpacity('diplomacy_line')
-  const tileMap = new Map(props.tiles.map(t => [t.tile_id, t]))
 
   // 找到每个势力的首都地块作为连线端点
   const factionCapitals: Record<string, { cx: number; cy: number }> = {}
   for (const tile of props.tiles) {
     if (tile.is_capital && tile.faction_id) {
-      const axial = offsetToAxial(tile.col, tile.row)
-    const px = axialToPixel(axial.q, axial.r, HEX_SIZE)
+      const cached = tilePixelCache.get(tile.tile_id)
+      if (!cached) continue
       factionCapitals[tile.faction_id] = {
-        cx: px.x * scale.value + offsetX.value,
-        cy: px.y * scale.value + offsetY.value,
+        cx: cached.px * scale.value + offsetX.value,
+        cy: cached.py * scale.value + offsetY.value,
       }
     }
   }
@@ -1292,18 +1323,36 @@ function zoomOut() {
 }
 
 onMounted(() => {
-  nextTick(() => initKonva())
+  nextTick(() => {
+    initKonva()
+    // 初始化着色器叠加层 V2.0（WebGL2 不可用时静默降级）
+    if (shaderCanvasRef.value) {
+      shaderOverlay = new ShaderOverlay(shaderCanvasRef.value)
+      shaderOverlay.intensity = 0.55      // 总强度，不喧宾夺主
+      shaderOverlay.vignette = 0.65       // 域扭曲暗角
+      shaderOverlay.grainNoise = 0.50     // 竹简噪点
+      shaderOverlay.glow = 0.60           // 烛光微光
+      shaderOverlay.weathering = 0.40     // 边缘做旧
+      shaderOverlay.inkBleed = 0.35       // Voronoi 墨点
+      shaderOverlay.cloudMotif = 0.45     // 云纹
+      shaderOverlay.waterRipple = 0.30    // 水纹
+      shaderOverlay.start()
+    }
+  })
 })
 
 onUnmounted(() => {
   interaction?.destroy()
   interaction = null
   stage?.destroy()
+  // 清理着色器叠加层
+  shaderOverlay?.destroy()
+  shaderOverlay = null
 })
 
 // 监听数据变化
 watch(() => props.selectedTileId, () => renderAll())
-watch(() => props.tiles.length, () => { if (props.tiles.length > 0) renderAll() })
+watch(() => props.tiles.length, () => { if (props.tiles.length > 0) { rebuildTilePixelCache(); renderAll() } })
 watch(() => props.layers, () => renderAll(), { deep: true })
 watch(() => props.boundaries, () => renderAll())
 
@@ -1321,6 +1370,17 @@ defineExpose({ resetView, setZoomLevel, zoomIn, zoomOut, scale })
 }
 .hex-map-container:active { cursor: grabbing; }
 .stage-container { width: 100%; height: 100%; }
+
+/* 着色器叠加层 V2.0 (WebGL2 后处理) */
+.shader-overlay {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 2;
+  pointer-events: none;              /* 不拦截任何鼠标事件 */
+  mix-blend-mode: overlay;           /* 深色乘法加深 + 浅色屏幕提亮 */
+  opacity: 0.62;                     /* 效果强度（中调底色增强后适度提升） */
+}
 
 /* 快捷图层模式切换栏 */
 .layer-panel {
@@ -1347,7 +1407,7 @@ defineExpose({ resetView, setZoomLevel, zoomIn, zoomOut, scale })
 
 
 
-/* 悬停提示 - 古卷题签 */
+/* 悬停提示 - 古卷题签（支持tooltipDelay配置） */
 .hex-tooltip {
   position: absolute;
   background: rgba(15, 12, 8, 0.88);
@@ -1357,6 +1417,12 @@ defineExpose({ resetView, setZoomLevel, zoomIn, zoomOut, scale })
   padding: 8px 12px; font-size: 13px; pointer-events: none; z-index: 20;
   min-width: 140px; line-height: 1.5;
   box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  transition-delay: var(--tooltip-delay, 300ms);
+}
+.hex-tooltip--visible {
+  opacity: 1;
 }
 .tooltip-name { color: #c8a84a; font-weight: bold; font-size: 14px; }
 .tooltip-info { color: #8a8068; font-size: 11px; }

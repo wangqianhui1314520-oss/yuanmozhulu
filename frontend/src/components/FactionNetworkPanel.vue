@@ -1,5 +1,5 @@
 <template>
-  <div class="network-panel">
+  <div class="network-panel float-panel artifact-panel artifact-secret">
     <div class="fp-header">
       <h3>🗺 天下势力·关系网络</h3>
       <div class="fp-tabs">
@@ -413,10 +413,6 @@ watch(() => store.playerFactionId, () => {
   position: fixed; top: 8%; left: 50%;
   transform: translateX(-50%);
   width: 700px; max-height: 80vh;
-  background: linear-gradient(135deg, #1a1614 0%, #24201c 100%);
-  border: 1px solid #443F38;
-  border-radius: 6px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
   z-index: 1000;
   display: flex; flex-direction: column;
   font-family: "STKaiti", "KaiTi", serif;

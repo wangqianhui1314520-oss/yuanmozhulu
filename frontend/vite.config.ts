@@ -28,6 +28,19 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       assetsDir: 'assets',
+      // 图片资源内联阈值（小于 4KB 的图片内联为 base64）
+      assetsInlineLimit: 4096,
+      rollupOptions: {
+        output: {
+          // 将图片资源分类存放
+          assetFileNames: (assetInfo) => {
+            if (assetInfo.name && /\.(png|jpe?g|gif|webp|svg)$/i.test(assetInfo.name)) {
+              return 'assets/images/[name]-[hash][extname]'
+            }
+            return 'assets/[name]-[hash][extname]'
+          },
+        },
+      },
     },
   }
 })

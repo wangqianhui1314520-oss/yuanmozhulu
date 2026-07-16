@@ -32,8 +32,11 @@ TEMP_FAST = 0.65      # 快速推演
 # 默认并发限制
 MAX_CONCURRENT_AGENTS = 20
 
-# 超时设置（秒）
-API_TIMEOUT = 90
+# 超时设置（秒）— 按模型分组区分
+API_TIMEOUT = 90                 # 默认超时
+API_TIMEOUT_ADVISOR = 90         # 角色对话：允许较长时间生成
+API_TIMEOUT_LAW = 120            # 战略推演：超长上下文，需更多时间
+API_TIMEOUT_ENEMY = 45           # 快速推演：预期快速返回
 
 
 @dataclass
@@ -49,8 +52,14 @@ class LLMConfig:
 
     def to_openai_compatible(self) -> dict:
         """转换为OpenAI兼容格式"""
+        base = self.api_base.rstrip("/")
+        # 避免重复拼接: 若 api_base 已以 /chat/completions 结尾则直接使用
+        if base.endswith("/chat/completions"):
+            url = base
+        else:
+            url = base + "/chat/completions"
         return {
-            "base_url": self.api_base.rstrip("/") + "/chat/completions",
+            "base_url": url,
             "api_key": self.api_key,
             "model": self.model_name,
             "temperature": self.temperature,
@@ -61,17 +70,30 @@ class LLMConfig:
 @dataclass
 class LLMRuntimeConfig:
     """
-    运行时LLM配置 - 三套模型客户端
+    运行时LLM配置 - 三套模型客户端 + 圣旨解析
     对应设计文档中的三层模型体系:
     - advisor: 君主/文臣/百姓对话/廷议辩论 (chat_role)
     - law:     年度战略推演/合纵判定/结局传记 (chat_strategy)
     - enemy:   瞬时灾害/单地块事件/战斗结算/贪腐判定/寿命检查/瘟疫传播 (chat_fast)
+    - edict:   圣旨自然语言解析
     """
     advisor: LLMConfig   # 角色对话模型
     law: LLMConfig        # 战略推演模型
     enemy: LLMConfig      # 快速推演模型
+    edict: LLMConfig = None  # 圣旨解析模型（可选，默认复用 advisor）
     max_concurrent: int = MAX_CONCURRENT_AGENTS
     fallback_enabled: bool = True
+
+    def __post_init__(self):
+        if self.edict is None:
+            self.edict = LLMConfig(
+                provider=self.advisor.provider,
+                api_base=self.advisor.api_base,
+                api_key=self.advisor.api_key,
+                model_name=self.advisor.model_name,
+                temperature=self.advisor.temperature,
+                max_tokens=self.advisor.max_tokens,
+            )
 
     @classmethod
     def from_env(cls) -> "LLMRuntimeConfig":
@@ -89,12 +111,22 @@ class LLMRuntimeConfig:
                 with open(runtime_json_path, "r", encoding="utf-8") as f:
                     runtime_data = json.load(f)
                 logger.info("从 llm_runtime.json 加载LLM运行时配置")
-                return cls._from_dict(runtime_data, api_key, api_base)
+                config = cls._from_dict(runtime_data, api_key, api_base)
             except Exception as e:
                 logger.warning(f"llm_runtime.json 解析失败: {e}，使用环境变量")
+                config = cls._from_env_vars(api_key, api_base)
+        else:
+            # 从环境变量构建
+            config = cls._from_env_vars(api_key, api_base)
 
-        # 从环境变量构建
-        return cls._from_env_vars(api_key, api_base)
+        # 关键检查：API Key 为空时明确警告
+        if not config.advisor.api_key:
+            logger.warning(
+                "LLM API Key 未配置！请设置环境变量 TENCENT_API_KEY "
+                "或在 server/config/llm_runtime.json 中配置 api_key。"
+                "所有 AI 功能将不可用（返回空文本/降级响应）。"
+            )
+        return config
 
     @classmethod
     def _from_env_vars(cls, api_key: str, api_base: str) -> "LLMRuntimeConfig":
@@ -105,7 +137,7 @@ class LLMRuntimeConfig:
 
         return cls(
             advisor=LLMConfig(
-                provider="deepseek",
+                provider="hunyuan",
                 api_base=api_base,
                 api_key=api_key,
                 model_name=role_model,
@@ -113,7 +145,7 @@ class LLMRuntimeConfig:
                 max_tokens=4096,
             ),
             law=LLMConfig(
-                provider="deepseek",
+                provider="hunyuan",
                 api_base=api_base,
                 api_key=api_key,
                 model_name=strategy_model,
@@ -121,7 +153,7 @@ class LLMRuntimeConfig:
                 max_tokens=8192,
             ),
             enemy=LLMConfig(
-                provider="deepseek",
+                provider="hunyuan",
                 api_base=api_base,
                 api_key=api_key,
                 model_name=fast_model,
@@ -144,31 +176,45 @@ class LLMRuntimeConfig:
         advisors = data.get("advisors", {})
         laws = data.get("laws", {})
         enemies = data.get("enemies", {})
+        edict_data = data.get("edict", {})
+
+        def _val(d: dict, key: str, default):
+            """dict.get 但空字符串视为不存在（防 llm_runtime.json 的空 api_key 覆盖 env）"""
+            v = d.get(key, "")
+            return v if v else default
 
         return cls(
             advisor=LLMConfig(
-                provider=advisors.get("provider", "hunyuan"),
-                api_base=advisors.get("api_base", api_base),
-                api_key=advisors.get("api_key", api_key),
-                model_name=advisors.get("model", MODEL_ROLE),
-                temperature=advisors.get("temperature", TEMP_ROLE),
-                max_tokens=advisors.get("max_tokens", 4096),
+                provider=_val(advisors, "provider", "hunyuan"),
+                api_base=_val(advisors, "api_base", api_base),
+                api_key=_val(advisors, "api_key", api_key),
+                model_name=_val(advisors, "model", MODEL_ROLE),
+                temperature=_val(advisors, "temperature", TEMP_ROLE),
+                max_tokens=_val(advisors, "max_tokens", 4096),
             ),
             law=LLMConfig(
-                provider=laws.get("provider", "hunyuan"),
-                api_base=laws.get("api_base", api_base),
-                api_key=laws.get("api_key", api_key),
-                model_name=laws.get("model", MODEL_STRATEGY),
-                temperature=laws.get("temperature", TEMP_STRATEGY),
-                max_tokens=laws.get("max_tokens", 8192),
+                provider=_val(laws, "provider", "hunyuan"),
+                api_base=_val(laws, "api_base", api_base),
+                api_key=_val(laws, "api_key", api_key),
+                model_name=_val(laws, "model", MODEL_STRATEGY),
+                temperature=_val(laws, "temperature", TEMP_STRATEGY),
+                max_tokens=_val(laws, "max_tokens", 8192),
             ),
             enemy=LLMConfig(
-                provider=enemies.get("provider", "hunyuan"),
-                api_base=enemies.get("api_base", api_base),
-                api_key=enemies.get("api_key", api_key),
-                model_name=enemies.get("model", MODEL_FAST),
-                temperature=enemies.get("temperature", TEMP_FAST),
-                max_tokens=enemies.get("max_tokens", 2048),
+                provider=_val(enemies, "provider", "hunyuan"),
+                api_base=_val(enemies, "api_base", api_base),
+                api_key=_val(enemies, "api_key", api_key),
+                model_name=_val(enemies, "model", MODEL_FAST),
+                temperature=_val(enemies, "temperature", TEMP_FAST),
+                max_tokens=_val(enemies, "max_tokens", 2048),
+            ),
+            edict=LLMConfig(
+                provider=_val(edict_data, "provider", _val(advisors, "provider", "hunyuan")),
+                api_base=_val(edict_data, "api_base", api_base),
+                api_key=_val(edict_data, "api_key", api_key),
+                model_name=_val(edict_data, "model", _val(advisors, "model", MODEL_ROLE)),
+                temperature=_val(edict_data, "temperature", _val(advisors, "temperature", TEMP_ROLE)),
+                max_tokens=_val(edict_data, "max_tokens", _val(advisors, "max_tokens", 4096)),
             ),
             max_concurrent=data.get("max_concurrent", MAX_CONCURRENT_AGENTS),
             fallback_enabled=data.get("fallback_enabled", True),
@@ -177,15 +223,16 @@ class LLMRuntimeConfig:
 
 def create_clients_from_runtime(config: LLMRuntimeConfig) -> dict:
     """
-    从运行时配置创建三套LLM客户端
-    
+    从运行时配置创建三套LLM客户端 + 圣旨解析
+
     Returns:
-        {"advisor": HunyuanClient, "law": HunyuanClient, "enemy": HunyuanClient}
+        {"advisor": HunyuanClient, "law": HunyuanClient, "enemy": HunyuanClient, "edict": HunyuanClient}
     """
     from .factory import create_llm_client
 
     return {
-        "advisor": create_llm_client(config.advisor),
-        "law": create_llm_client(config.law),
-        "enemy": create_llm_client(config.enemy),
+        "advisor": create_llm_client(config.advisor, agent_group="advisor"),
+        "law": create_llm_client(config.law, agent_group="law"),
+        "enemy": create_llm_client(config.enemy, agent_group="enemy"),
+        "edict": create_llm_client(config.edict, agent_group="advisor"),
     }

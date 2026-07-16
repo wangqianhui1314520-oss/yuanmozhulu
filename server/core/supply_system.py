@@ -33,16 +33,22 @@ SUPPLY_CONFIG = {
 
 
 class SupplyEngine:
-    """补给线引擎"""
+    """补给线引擎 (V4.2: 添加补给基地预索引和BFS缓存)"""
 
     def __init__(self, world: WorldState):
         self.world = world
         self._territory_adjacency: dict[str, list[str]] = {}
+        # V4.2: 补给基地预索引 — faction_id → [tile]
+        self._supply_bases: dict[str, list] = {}
+        # V4.2: BFS距离缓存 — (source_id, target_id) → distance
+        self._bfs_cache: dict[tuple, int] = {}
 
     def build_supply_network(self):
-        """构建补给网络：为每个势力计算补给线"""
+        """构建补给网络：为每个势力计算补给线 (V4.2: 预索引补给基地)"""
         # 先构建领地邻接图
         self._build_adjacency()
+        # V4.2: 清空BFS缓存（每回合重新计算）
+        self._bfs_cache.clear()
 
         # 清理过期补给线
         expired_lines = []
@@ -54,19 +60,31 @@ class SupplyEngine:
         for lid in expired_lines:
             del self.world.supply_lines[lid]
 
+        # V4.2: 预索引补给基地
+        self._supply_bases.clear()
+        for tile in self.world.tiles.values():
+            if not tile.faction_id:
+                continue
+            is_base = (tile.tile_type in SUPPLY_CONFIG["supply_base_types"] 
+                      or tile.is_capital or tile.is_supply_base)
+            if is_base:
+                tile.supply_capacity = 200
+                tile.is_supply_base = True
+                self._supply_bases.setdefault(tile.faction_id, []).append(tile)
+
         # 为每个有驻军的地块建立/更新补给线
         for tile in self.world.tiles.values():
             if not tile.faction_id or tile.troops <= 0:
                 continue
             if tile.tile_type in SUPPLY_CONFIG["supply_base_types"]:
-                tile.supply_capacity = 200  # 补给基地容量
+                tile.supply_capacity = 200
                 tile.is_supply_base = True
                 continue
 
-            # 查找最近的补给基地
-            nearest_base = self._find_nearest_supply_base(tile)
+            # V4.2: 使用预索引查找最近补给基地
+            nearest_base = self._find_nearest_supply_base_fast(tile)
             if nearest_base:
-                distance = self._bfs_distance(nearest_base.tile_id, tile.tile_id)
+                distance = self._bfs_distance_cached(nearest_base.tile_id, tile.tile_id)
                 line_id = f"supply_{tile.faction_id}_{tile.tile_id}"
 
                 is_broken = distance > SUPPLY_CONFIG["max_supply_distance"]
@@ -84,7 +102,7 @@ class SupplyEngine:
                 self.world.supply_lines[line_id] = line
 
                 if is_broken:
-                    logger.info(
+                    logger.debug(
                         f"补给线断裂: {tile.tile_name}({tile.faction_id}) "
                         f"距离补给基地{nearest_base.tile_name} {distance}格 > {SUPPLY_CONFIG['max_supply_distance']}格上限"
                     )
@@ -121,7 +139,7 @@ class SupplyEngine:
                 result["desertion_total"] += deserted
 
                 if deserted > 0:
-                    logger.info(
+                    logger.debug(  # 3.0: 降级为 debug 避免每回合数十条逃散日志刷屏
                         f"补给断裂逃散: {tile.tile_name} 逃散{deserted}人 "
                         f"(逃散率{attrition_rate:.1%}, 剩余兵力{tile.troops})"
                     )
@@ -131,50 +149,98 @@ class SupplyEngine:
                 grain_cost = int(tile.troops * 0.01 * max(1, line.distance - SUPPLY_CONFIG["safe_supply_distance"]))
                 tile.grain = max(0, tile.grain - grain_cost)
 
+        # 3.0: 汇总日志（一条 info 替代数十条 debug）
+        if result["broken_lines"] > 0:
+            logger.info(
+                f"补给报告: {result['broken_lines']}条断裂, "
+                f"逃散总计{result['desertion_total']}人 "
+                f"(涉及{len(result['deserted_troops'])}个地块)"
+            )
+
         return result
 
     def _build_adjacency(self):
-        """构建领地邻接图（基于同势力相邻地块）"""
+        """构建领地邻接图（基于同势力相邻地块，使用坐标索引优化O(n²)）"""
         self._territory_adjacency = {}
+        # 预建坐标索引: (q, r) → tile
+        coord_index: dict = {}
         tiles_list = list(self.world.tiles.values())
-        for i, tile_a in enumerate(tiles_list):
+        for t in tiles_list:
+            coord_index[(t.q, t.r)] = t
+
+        # 六边形合法邻居偏移（轴向坐标 q, r）
+        HEX_NEIGHBORS = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, -1), (-1, 1)]
+
+        for tile_a in tiles_list:
             if not tile_a.faction_id:
                 continue
             neighbors = []
-            for j, tile_b in enumerate(tiles_list):
-                if i == j:
-                    continue
-                if tile_b.faction_id == tile_a.faction_id:
-                    if self._are_adjacent(tile_a, tile_b):
-                        neighbors.append(tile_b.tile_id)
+            for dq, dr in HEX_NEIGHBORS:
+                nb = coord_index.get((tile_a.q + dq, tile_a.r + dr))
+                if nb and nb.faction_id == tile_a.faction_id:
+                    neighbors.append(nb.tile_id)
             self._territory_adjacency[tile_a.tile_id] = neighbors
 
     def _are_adjacent(self, a: TileState, b: TileState) -> bool:
-        """判断两个地块是否相邻（基于 q/r 六边形坐标）"""
+        """判断两个地块是否相邻（基于 q/r 六边形坐标）
+        
+        六边形合法邻居: {(1,0),(-1,0),(0,1),(0,-1),(1,-1),(-1,1)}
+        注意: (1,1) 和 (-1,-1) 是对角线，不是合法邻居
+        """
         if a.q == 0 and a.r == 0 and b.q == 0 and b.r == 0:
             return False
         dq = abs(a.q - b.q)
         dr = abs(a.r - b.r)
-        # 六边形距离不超过1
-        if dq <= 1 and dr <= 1 and (dq + dr) <= 1:
-            return True
-        return dq <= 1 and dr <= 1
+        # 六边形合法邻居: dq≤1, dr≤1, 且 dq+dr≤1（排除对角线 (1,1)）
+        # 但还需排除 dq+dr==0（同一地块），已在调用方排除
+        return dq <= 1 and dr <= 1 and (dq + dr) <= 1
 
     def _find_nearest_supply_base(self, tile: TileState) -> Optional[TileState]:
-        """查找最近的本方补给基地"""
+        """查找最近的本方补给基地（保留用于向后兼容）"""
+        return self._find_nearest_supply_base_fast(tile)
+
+    def _find_nearest_supply_base_fast(self, tile: TileState) -> Optional[TileState]:
+        """V4.2: 使用预索引快速查找最近补给基地"""
+        bases = self._supply_bases.get(tile.faction_id, [])
+        if not bases:
+            # 回退：遍历所有tile
+            best_base = None
+            best_distance = 999
+            for other in self.world.tiles.values():
+                if other.faction_id != tile.faction_id:
+                    continue
+                if other.tile_type not in SUPPLY_CONFIG["supply_base_types"] and not other.is_supply_base:
+                    if not other.is_capital:
+                        continue
+                dist = self._bfs_distance_cached(other.tile_id, tile.tile_id)
+                if dist < best_distance:
+                    best_distance = dist
+                    best_base = other
+            return best_base
+        
+        # 遍历预索引的补给基地
         best_base = None
         best_distance = 999
-        for other in self.world.tiles.values():
-            if other.faction_id != tile.faction_id:
-                continue
-            if other.tile_type not in SUPPLY_CONFIG["supply_base_types"] and not other.is_supply_base:
-                if not other.is_capital:  # 首都也是补给基地
-                    continue
-            dist = self._bfs_distance(other.tile_id, tile.tile_id)
+        for base in bases:
+            dist = self._bfs_distance_cached(base.tile_id, tile.tile_id)
             if dist < best_distance:
                 best_distance = dist
-                best_base = other
+                best_base = base
         return best_base
+
+    def _bfs_distance_cached(self, start_id: str, target_id: str) -> int:
+        """V4.2: 带缓存的BFS距离计算"""
+        if start_id == target_id:
+            return 0
+        cache_key = (start_id, target_id)
+        if cache_key in self._bfs_cache:
+            return self._bfs_cache[cache_key]
+        
+        dist = self._bfs_distance(start_id, target_id)
+        # 缓存双向
+        self._bfs_cache[cache_key] = dist
+        self._bfs_cache[(target_id, start_id)] = dist
+        return dist
 
     def _bfs_distance(self, start_id: str, target_id: str) -> int:
         """BFS计算两地块间最短距离（沿己方领土相邻图）"""

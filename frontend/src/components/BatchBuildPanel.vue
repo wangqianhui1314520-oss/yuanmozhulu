@@ -2,7 +2,7 @@
   <Teleport to="body">
     <transition name="modal">
       <div class="batch-build-overlay" v-if="visible" @click.self="$emit('close')">
-        <div class="batch-build-dialog">
+        <div class="batch-build-dialog artifact-panel artifact-memorial">
           <!-- 标题栏 -->
           <div class="bb-header">
             <h2>营造司 · 批量城建</h2>
@@ -337,14 +337,12 @@ watch(() => props.visible, (v) => {
 }
 
 .batch-build-dialog {
-  background: linear-gradient(180deg, #2a2418 0%, #1a1510 100%);
-  border: 2px solid var(--gold);
-  border-radius: 4px;
   width: 680px;
   max-width: 95vw;
   max-height: 85vh;
   display: flex;
   flex-direction: column;
+  box-shadow: inset 3px 0 0 var(--wuxing-earth);
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
 }
 

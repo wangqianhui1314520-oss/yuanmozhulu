@@ -270,7 +270,7 @@ export function useYuanMap(options: YuanMapOptions = {}) {
       loadingProgress.value = 1.0
       ready.value = true
 
-      console.log(`[useYuanMap] 初始化完成: ${hexTiles.value.length} 格, 已就绪`)
+      if (import.meta.env.DEV) console.log(`[useYuanMap] 初始化完成: ${hexTiles.value.length} 格, 已就绪`)
     } catch (err: any) {
       error.value = err.message || '地图初始化失败'
       console.error('[useYuanMap] 初始化失败:', err)

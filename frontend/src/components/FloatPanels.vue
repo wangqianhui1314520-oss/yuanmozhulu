@@ -1,7 +1,7 @@
 <template>
   <div class="fp-panel-group" :class="panelGroupClass">
   <!-- 国库面板 -->
-  <div v-if="store.activePanel === 'treasury'" class="float-panel animate-fade-in" style="top:60px;right:280px;width:380px;max-height:80vh;">
+  <div v-if="store.activePanel === 'treasury'" class="float-panel animate-fade-in artifact-panel artifact-memorial" style="top:var(--panel-top);right:var(--panel-offset-right);width:380px;max-height:80vh;">
     <div class="fp-header">
       <h3>📜 国库卷宗</h3>
       <div class="territory-tabs" style="margin-left:auto;margin-right:8px;">
@@ -119,7 +119,7 @@
               <span class="income-name">外交贡礼</span>
               <span class="income-desc">藩属赏赐·使节往来</span>
             </div>
-            <span class="income-val danger-text">-200/回合</span>
+            <span class="income-val danger-text">-{{ formatNum(Math.max(50, Object.keys(store.relations || {}).length * 100)) }}/回合</span>
           </div>
         </div>
         <div class="kv-divider"></div>
@@ -134,7 +134,7 @@
   </div>
 
   <!-- 天下势力面板 -->
-  <div v-if="store.activePanel === 'factions'" class="float-panel animate-fade-in" style="top:60px;right:280px;width:400px;max-height:70vh;">
+  <div v-if="store.activePanel === 'factions'" class="float-panel animate-fade-in artifact-panel artifact-codex" style="top:var(--panel-top);right:var(--panel-offset-right);width:400px;max-height:70vh;">
     <div class="fp-header">
       <h3>👥 天下大势</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('factions')">✕</button>
@@ -168,7 +168,7 @@
   </div>
 
   <!-- 朝堂面板（完整版：国策树 + 官员管理 + 敕令发布 + 廷议入口） -->
-  <div v-if="store.activePanel === 'court'" class="float-panel animate-fade-in" style="top:60px;right:280px;width:460px;max-height:80vh;">
+  <div v-if="store.activePanel === 'court'" class="float-panel animate-fade-in artifact-panel artifact-edict" style="top:var(--panel-top);right:var(--panel-offset-right);width:460px;max-height:80vh;">
     <div class="fp-header">
       <h3>🏛 朝堂</h3>
       <div class="court-tabs">
@@ -364,7 +364,7 @@
   </div>
 
   <!-- 军事面板 -->
-  <div v-if="store.activePanel === 'military'" class="float-panel animate-fade-in" style="top:60px;right:280px;width:380px;">
+  <div v-if="store.activePanel === 'military'" class="float-panel animate-fade-in artifact-panel artifact-dispatch" style="top:var(--panel-top);right:var(--panel-offset-right);width:380px;">
     <div class="fp-header fp-header-war">
       <div class="fp-header-deco">
         <img src="/assets/ui/ai_ui_war_banner.png" alt="" class="fp-war-banner" />
@@ -400,7 +400,7 @@
   </div>
 
   <!-- 外交面板 -->
-  <div v-if="store.activePanel === 'diplomacy'" class="float-panel animate-fade-in" style="top:60px;right:280px;width:440px;max-height:80vh;">
+  <div v-if="store.activePanel === 'diplomacy'" class="float-panel animate-fade-in artifact-panel artifact-secret" style="top:var(--panel-top);right:var(--panel-offset-right);width:440px;max-height:80vh;">
     <div class="fp-header">
       <h3>🤝 邦交总览</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('diplomacy')">✕</button>
@@ -545,7 +545,7 @@
   </div>
 
   <!-- 灾荒面板 -->
-  <div v-if="store.activePanel === 'disaster'" class="float-panel animate-fade-in" style="top:60px;right:280px;width:380px;max-height:70vh;">
+  <div v-if="store.activePanel === 'disaster'" class="float-panel animate-fade-in artifact-panel artifact-memorial" style="top:var(--panel-top);right:var(--panel-offset-right);width:380px;max-height:70vh;">
     <div class="fp-header">
       <h3>⚠ 灾荒录</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('disaster')">✕</button>
@@ -601,7 +601,7 @@
   </div>
 
   <!-- 工程面板 -->
-  <div v-if="store.activePanel === 'construction'" class="float-panel animate-fade-in" style="top:60px;right:280px;width:420px;max-height:80vh;">
+  <div v-if="store.activePanel === 'construction'" class="float-panel animate-fade-in artifact-panel artifact-memorial" style="top:var(--panel-top);right:var(--panel-offset-right);width:420px;max-height:80vh;">
     <div class="fp-header">
       <h3>🏗 营造司</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('construction')">✕</button>
@@ -682,7 +682,7 @@
   </div>
 
   <!-- AI推演面板 -->
-  <div v-if="store.activePanel === 'ai-strategy'" class="float-panel animate-fade-in" style="top:60px;right:280px;width:420px;max-height:70vh;">
+  <div v-if="store.activePanel === 'ai-strategy'" class="float-panel animate-fade-in artifact-panel artifact-secret" style="top:var(--panel-top);right:var(--panel-offset-right);width:420px;max-height:70vh;">
     <div class="fp-header">
       <h3>🧠 谋士推演</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('ai-strategy')">✕</button>
@@ -712,7 +712,7 @@
   </div>
 
   <!-- 律法面板 -->
-  <div v-if="store.activePanel === 'law'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:420px;max-height:75vh;">
+  <div v-if="store.activePanel === 'law'" class="float-panel animate-fade-in artifact-panel artifact-edict" style="top:var(--panel-top);left:var(--panel-offset-left);width:420px;max-height:75vh;">
     <div class="fp-header">
       <h3>⚖ 律法卷宗</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('law')">✕</button>
@@ -774,7 +774,7 @@
   </div>
 
   <!-- 谍报驿站面板 -->
-  <div v-if="store.activePanel === 'spy'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:380px;">
+  <div v-if="store.activePanel === 'spy'" class="float-panel animate-fade-in artifact-panel artifact-secret" style="top:var(--panel-top);left:var(--panel-offset-left);width:380px;">
     <div class="fp-header">
       <h3>🕵 驿站谍报</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('spy')">✕</button>
@@ -839,7 +839,7 @@
   </div>
 
   <!-- 藩镇面板 -->
-  <div v-if="store.activePanel === 'vassal'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:420px;max-height:75vh;">
+  <div v-if="store.activePanel === 'vassal'" class="float-panel animate-fade-in artifact-panel artifact-codex" style="top:var(--panel-top);left:var(--panel-offset-left);width:420px;max-height:75vh;">
     <div class="fp-header">
       <h3>🏰 藩镇管控</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('vassal')">✕</button>
@@ -884,7 +884,7 @@
   </div>
 
   <!-- 工坊生产面板 -->
-  <div v-if="store.activePanel === 'workshop'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:420px;max-height:75vh;">
+  <div v-if="store.activePanel === 'workshop'" class="float-panel animate-fade-in artifact-panel artifact-personnel" style="top:var(--panel-top);left:var(--panel-offset-left);width:420px;max-height:75vh;">
     <div class="fp-header">
       <h3>🔨 工坊生产</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('workshop')">✕</button>
@@ -944,7 +944,7 @@
   </div>
 
   <!-- 叛军镇压面板（P0） -->
-  <div v-if="store.activePanel === 'rebel'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:420px;max-height:70vh;">
+  <div v-if="store.activePanel === 'rebel'" class="float-panel animate-fade-in artifact-panel artifact-dispatch" style="top:var(--panel-top);left:var(--panel-offset-left);width:420px;max-height:70vh;">
     <div class="fp-header">
       <h3>⚔ 叛军镇压</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('rebel')">✕</button>
@@ -978,7 +978,7 @@
   </div>
 
   <!-- 伏击面板（P1） -->
-  <div v-if="store.activePanel === 'ambush'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:400px;">
+  <div v-if="store.activePanel === 'ambush'" class="float-panel animate-fade-in artifact-panel artifact-dispatch" style="top:var(--panel-top);left:var(--panel-offset-left);width:400px;">
     <div class="fp-header">
       <h3>🌲 伏击设伏</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('ambush')">✕</button>
@@ -1014,7 +1014,7 @@
   </div>
 
   <!-- 劫掠面板（P1） -->
-  <div v-if="store.activePanel === 'plunder'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:400px;">
+  <div v-if="store.activePanel === 'plunder'" class="float-panel animate-fade-in artifact-panel artifact-dispatch" style="top:var(--panel-top);left:var(--panel-offset-left);width:400px;">
     <div class="fp-header">
       <h3>🏴 劫掠敌境</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('plunder')">✕</button>
@@ -1069,7 +1069,7 @@
   </div>
 
   <!-- 迁都面板（完整重设计） -->
-  <div v-if="store.activePanel === 'moveCapital'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:560px;">
+  <div v-if="store.activePanel === 'moveCapital'" class="float-panel animate-fade-in artifact-panel artifact-edict" style="top:var(--panel-top);left:var(--panel-offset-left);width:560px;">
     <div class="fp-header">
       <h3>🏛 迁都议事</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('moveCapital')">✕</button>
@@ -1208,7 +1208,7 @@
   </div>
 
   <!-- 俘虏招安面板 -->
-  <div v-if="store.activePanel === 'prisoner'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:400px;">
+  <div v-if="store.activePanel === 'prisoner'" class="float-panel animate-fade-in artifact-panel artifact-secret" style="top:var(--panel-top);left:var(--panel-offset-left);width:400px;">
     <div class="fp-header">
       <h3>🔗 俘虏招安</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('prisoner')">✕</button>
@@ -1233,7 +1233,7 @@
   </div>
 
   <!-- 人物总览面板 -->
-  <div v-if="store.activePanel === 'personnel'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:420px;max-height:70vh;">
+  <div v-if="store.activePanel === 'personnel'" class="float-panel animate-fade-in artifact-panel artifact-personnel" style="top:var(--panel-top);left:var(--panel-offset-left);width:420px;max-height:70vh;">
     <div class="fp-header">
       <h3>👤 人物总览</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('personnel')">✕</button>
@@ -1292,7 +1292,7 @@
   </div>
 
   <!-- 邸报事件面板（AI事件生成） -->
-  <div v-if="store.activePanel === 'events'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:420px;max-height:70vh;">
+  <div v-if="store.activePanel === 'events'" class="float-panel animate-fade-in artifact-panel artifact-codex" style="top:var(--panel-top);left:var(--panel-offset-left);width:420px;max-height:70vh;">
     <div class="fp-header fp-header-events">
       <h3>📋 邸报 · 天下大事</h3>
       <img src="/assets/ui/ai_ui_seal_stamp.png" alt="" class="fp-seal-stamp" />
@@ -1322,7 +1322,7 @@
   </div>
 
   <!-- 律法审讯面板（AI对话） -->
-  <div v-if="store.activePanel === 'law-interrogate'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:420px;max-height:70vh;">
+  <div v-if="store.activePanel === 'law-interrogate'" class="float-panel animate-fade-in artifact-panel artifact-secret" style="top:var(--panel-top);left:var(--panel-offset-left);width:420px;max-height:70vh;">
     <div class="fp-header">
       <h3>🔍 刑部审讯</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('law-interrogate')">✕</button>
@@ -1354,7 +1354,7 @@
   </div>
 
   <!-- 皇子宗室面板 -->
-  <div v-if="store.activePanel === 'royal'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:400px;max-height:70vh;">
+  <div v-if="store.activePanel === 'royal'" class="float-panel animate-fade-in artifact-panel artifact-personnel" style="top:var(--panel-top);left:var(--panel-offset-left);width:400px;max-height:70vh;">
     <div class="fp-header">
       <h3>{{ getPanelTitle('royal') }}</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('royal')">✕</button>
@@ -1457,7 +1457,7 @@
   </div>
 
   <!-- 疲病伤病面板 -->
-  <div v-if="store.activePanel === 'medical'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:400px;max-height:70vh;">
+  <div v-if="store.activePanel === 'medical'" class="float-panel animate-fade-in artifact-panel artifact-personnel" style="top:var(--panel-top);left:var(--panel-offset-left);width:400px;max-height:70vh;">
     <div class="fp-header">
       <h3>{{ getPanelTitle('medical') }}</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('medical')">✕</button>
@@ -1525,7 +1525,7 @@
   </div>
 
   <!-- 海策远洋面板 -->
-  <div v-if="store.activePanel === 'sea'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:420px;max-height:72vh;">
+  <div v-if="store.activePanel === 'sea'" class="float-panel animate-fade-in artifact-panel artifact-codex" style="top:var(--panel-top);left:var(--panel-offset-left);width:420px;max-height:72vh;">
     <div class="fp-header">
       <h3>{{ getPanelTitle('sea') }}</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('sea')">✕</button>
@@ -1598,7 +1598,7 @@
   </div>
 
   <!-- 民俗国史面板 -->
-  <div v-if="store.activePanel === 'culture'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:400px;max-height:72vh;">
+  <div v-if="store.activePanel === 'culture'" class="float-panel animate-fade-in artifact-panel artifact-codex" style="top:var(--panel-top);left:var(--panel-offset-left);width:400px;max-height:72vh;">
     <div class="fp-header">
       <h3>{{ getPanelTitle('culture') }}</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('culture')">✕</button>
@@ -1654,7 +1654,7 @@
   </div>
 
   <!-- 音效设置面板 -->
-  <div v-if="store.activePanel === 'audio'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:340px;">
+  <div v-if="store.activePanel === 'audio'" class="float-panel animate-fade-in artifact-panel artifact-memorial" style="top:var(--panel-top);left:var(--panel-offset-left);width:340px;">
     <div class="fp-header">
       <h3>🎵 音效设置</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('audio')">✕</button>
@@ -1728,7 +1728,7 @@
   </div>
 
   <!-- AI智能体监控面板 -->
-  <div v-if="store.activePanel === 'agent'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:480px;">
+  <div v-if="store.activePanel === 'agent'" class="float-panel animate-fade-in artifact-panel artifact-secret" style="top:var(--panel-top);left:var(--panel-offset-left);width:480px;">
     <div class="fp-header">
       <h3>🧠 AI智能体中枢</h3>
       <div class="fp-header-actions">
@@ -1815,7 +1815,7 @@
   </div>
 
   <!-- 领土面板 -->
-  <div v-if="store.activePanel === 'territory'" class="float-panel animate-fade-in" style="top:60px;left:280px;width:520px;max-height:82vh;">
+  <div v-if="store.activePanel === 'territory'" class="float-panel animate-fade-in artifact-panel artifact-codex" style="top:var(--panel-top);left:var(--panel-offset-left);width:520px;max-height:82vh;">
     <div class="fp-header">
       <h3>🗺️ 山河舆图</h3>
       <div class="fp-header-actions">
@@ -2023,11 +2023,11 @@ async function loadTerritoryData() {
   territoryLoading.value = true
   try {
     const [summary, changes] = await Promise.all([
-      API.getTerritorySummary(store.playerFactionId),
-      API.getTerritoryChanges(store.playerFactionId, 30),
+      API.getTerritorySummary(store.playerFactionId).catch(() => null),
+      API.getTerritoryChanges(store.playerFactionId, 30).catch(() => null),
     ])
-    territorySummary.value = summary
-    territoryChanges.value = changes
+    if (summary) territorySummary.value = summary
+    if (changes) territoryChanges.value = changes
   } catch (e) {
     console.warn('[Territory] 加载失败:', e)
   } finally {
@@ -2189,12 +2189,14 @@ async function loadCapitalCandidates() {
   capitalCandidatesLoading.value = true
   try {
     const [candidates, history] = await Promise.all([
-      getCapitalCandidates(store.playerFactionId),
-      getCapitalHistory(store.playerFactionId),
+      getCapitalCandidates(store.playerFactionId).catch(() => null),
+      getCapitalHistory(store.playerFactionId).catch(() => null),
     ])
-    capitalCandidatesData.value = candidates
-    capitalCandidates.value = candidates?.candidates || []
-    capitalHistoryData.value = history
+    if (candidates) {
+      capitalCandidatesData.value = candidates
+      capitalCandidates.value = candidates?.candidates || []
+    }
+    if (history) capitalHistoryData.value = history
   } catch (e) {
     console.warn('[Capital] 加载迁都数据失败:', e)
   } finally {
@@ -2404,8 +2406,8 @@ const agentLoading = ref(false)
 async function refreshAgentDashboard() {
   agentLoading.value = true
   try {
-    const { default: api } = await import('@/services/api')
-    agentDashboard.value = await (api as any).agentDashboard()
+    const { agentDashboard: fetchAgentDashboard } = await import('@/services/api')
+    agentDashboard.value = await fetchAgentDashboard()
   } catch (e) {
     console.warn('Agent Dashboard加载失败:', e)
   } finally {
@@ -2421,13 +2423,13 @@ function loadAudioSettings() {
       const parsed = JSON.parse(saved)
       Object.assign(audioSettings.value, parsed)
     }
-  } catch {}
+  } catch { console.warn('[Audio] 加载音频设置失败') }
 }
 
 function saveAudioSettings() {
   try {
     localStorage.setItem(AUDIO_STORAGE_KEY, JSON.stringify(audioSettings.value))
-  } catch {}
+  } catch { console.warn('[Audio] 保存音频设置失败') }
 }
 
 function applyAllAudioSettings() {
@@ -2627,11 +2629,11 @@ async function refreshCourtData() {
   courtOverviewLoading.value = true
   try {
     const [overview, debateH] = await Promise.all([
-      API.getCourtOverview(store.playerFactionId),
-      API.getDebateHistory(store.playerFactionId),
+      API.getCourtOverview(store.playerFactionId).catch(() => null),
+      API.getDebateHistory(store.playerFactionId).catch(() => null),
     ])
-    courtOverviewData.value = overview
-    debateHistory.value = debateH?.history || []
+    if (overview) courtOverviewData.value = overview
+    if (debateH) debateHistory.value = debateH?.history || []
   } catch (e) {
     console.warn('[Court] 加载朝堂数据失败:', e)
   } finally {
@@ -2693,6 +2695,9 @@ watch(() => store.activePanel, async (panel) => {
   }
   if (panel === 'rebel') {
     await loadRebels()
+  }
+  if (panel === 'agent') {
+    await refreshAgentDashboard()
   }
   if (panel === 'moveCapital') {
     await loadCapitalCandidates()
@@ -2802,12 +2807,9 @@ function getVassalLoyalty(factionId: string): string {
   return '谋叛'
 }
 
-// 藩镇：加载纳贡记录
+// 藩镇：加载纳贡记录（TODO: 后端 /vassal/tributes 端点尚未实现，暂返回空）
 async function loadVassalTributes() {
-  try {
-    const result = await API.getTributes?.(store.playerFactionId)
-    vassalTributes.value = result?.tributes || []
-  } catch { vassalTributes.value = [] }
+  vassalTributes.value = []
 }
 
 // 藩镇：纳贡
@@ -2815,7 +2817,7 @@ async function doVassalTribute(vassalId: string) {
   try {
     const amount = prompt('输入索贡银两数额：', '500')
     if (!amount || isNaN(Number(amount))) return
-    const result = await API.requestTribute({ 
+    const result = await API.demandTribute({ 
       suzerain_faction: store.playerFactionId, 
       vassal_faction: vassalId, 
       amount: parseInt(amount) 
@@ -3338,6 +3340,10 @@ const cultureInfo = computed(() => {
 
 // 邸报事件生成
 async function generateEvents() {
+  if (!store.aiAvailable) {
+    generatedEvents.value = '邸报生成失败（AI服务未就绪，请在设置中配置API Key）。'
+    return
+  }
   eventLoading.value = true
   generatedEvents.value = ''
   try {
@@ -3431,7 +3437,10 @@ function estimateMilitaryCost(): number {
   return Math.floor(store.totalTroops * 0.08 + 50)
 }
 function estimateNetIncome(): number {
-  return estimateTaxIncome() + estimateTradeIncome() - estimateMilitaryCost() - store.officials.length * 50 - Math.max(100, store.playerTiles.length * 25) - 200
+  // 注意：以下为前端预估，可能与后端实际结算有微小差异
+  // 真实值请以国库面板的实际变化为准
+  const diplomacyCost = Math.max(50, Object.keys(store.relations || {}).length * 100)
+  return estimateTaxIncome() + estimateTradeIncome() - estimateMilitaryCost() - store.officials.length * 50 - Math.max(100, store.playerTiles.length * 25) - diplomacyCost
 }
 
 // ===== 灾荒面板函数 =====
@@ -3943,10 +3952,11 @@ async function loadCourtData() {
   try {
     policyData.value = await API.getPolicies()
   } catch {
-    // 降级：尝试本地静态数据
+    // 降级：尝试本地静态数据（提取内层 policies 对象以匹配 API 响应格式）
     try {
       const resp = await fetch('/data/policies.json')
-      policyData.value = await resp.json()
+      const raw = await resp.json()
+      policyData.value = raw?.policies || raw  // 2026-07-15: 修正 fallback 数据结构
     } catch { console.warn('加载静态国策数据失败') }
   }
 }
@@ -4454,12 +4464,9 @@ onUnmounted(() => {
 <style scoped>
 .float-panel {
   position: fixed;
-  background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-panel) 100%);
-  border: 2px solid var(--text-dim);
-  border-radius: 3px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   z-index: 2000;
   overflow: hidden;
+  max-width: 90vw;
 }
 
 .fp-header {

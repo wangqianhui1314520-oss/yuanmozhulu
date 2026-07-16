@@ -293,9 +293,27 @@ class UnitCounterEngine:
             is_first_strike=True,
         )
 
-        # 城防加成
+        # 城防加成（v3.3: 应用防御倍率上限，防止叠加过强）
+        # M-1: 改为从 combat_utils 导入（消除与 combat_modifiers 的循环依赖）
+        from server.core.combat_utils import apply_defense_cap, get_faction_attack_bonus, get_faction_defense_bonus, estimate_unit_type_from_faction
         fort_mult = 1.0 + fortification * 0.2
-        def_power *= fort_mult
+        
+        # 计算地形倍率（从地形适应推算基础防御倍率）
+        def_terrain_bonus = 1.0
+        if terrain in ("mountain", "pass", "city", "port", "coastal"):
+            def_terrain_bonus = 1.2  # 基础防御地形修正
+        
+        # 势力特殊防御加成
+        def_faction_bonus = get_faction_defense_bonus(defender_legion.faction_id)
+        
+        # 综合防御倍率（含上限）
+        defense_mult = apply_defense_cap(def_terrain_bonus * fort_mult + def_faction_bonus)
+        def_power *= defense_mult
+
+        # 攻方势力特殊攻击加成
+        atk_unit_type = estimate_unit_type_from_faction(attacker_legion.faction_id, terrain)
+        atk_faction_bonus = get_faction_attack_bonus(attacker_legion.faction_id, atk_unit_type)
+        atk_power *= (1.0 + atk_faction_bonus)
 
         # 防御阵型加成
         def_formation_mult = self.get_formation_defense_mult(defender_legion.formation)
@@ -315,7 +333,7 @@ class UnitCounterEngine:
 
         if ratio > 1.3:
             winner = "attacker"
-            atk_loss_rate = 0.15 + random.random() * 0.15  # 15~30%
+            atk_loss_rate = 0.10 + random.random() * 0.10  # 10~20%（v4.1: 原15~30%，降低滚雪球门槛）
             def_loss_rate = 0.40 + random.random() * 0.30  # 40~70%
         elif ratio < 0.7:
             winner = "defender"
@@ -323,7 +341,7 @@ class UnitCounterEngine:
             def_loss_rate = 0.10 + random.random() * 0.15
         else:
             winner = None  # 平局
-            atk_loss_rate = 0.25 + random.random() * 0.20
+            atk_loss_rate = 0.20 + random.random() * 0.15  # 20~35%（v4.1: 原25~45%）
             def_loss_rate = 0.25 + random.random() * 0.20
 
         # 忠勇无双：攻方不败退

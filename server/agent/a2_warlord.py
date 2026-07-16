@@ -50,6 +50,157 @@ class A2WarlordAgent(BaseAgent):
             retry_delay=2.0,
         )
 
+    # ========== 4.0 军事深化：兵力分配+将领任命+阵型选择 ==========
+
+    async def step_enhanced(self, world_snapshot: dict, clients: dict) -> dict:
+        """
+        增强版君主推演 — 包含细粒度军事决策 + 决策反思
+
+        在原有 step() 基础上，新增：
+        - 兵力分配方案（各前线/后方部署）
+        - 将领任命建议
+        - 作战阵型偏好
+        - v4.3: 决策反思（君主对自身决策的二次审视）
+        """
+        base_result = await self.step(world_snapshot, clients)
+        base_result["military_detail"] = self._extract_military_detail(
+            base_result.get("full_response", ""),
+            world_snapshot,
+        )
+        
+        # v4.3: 决策反思 — 纯叙事，不修改 decision_plan
+        base_result["ruler_reflection"] = await self.reflect_on_decision(
+            base_result, world_snapshot, clients
+        )
+        
+        return base_result
+
+    def _extract_military_detail(
+        self, response: str, world_snapshot: dict
+    ) -> dict:
+        """
+        从LLM响应中提取细粒度军事决策
+
+        Returns:
+            {
+                "troop_allocation": [{"region": "北伐前线", "troops": 3000}, ...],
+                "assigned_generals": [{"name": "常遇春", "role": "前锋"}, ...],
+                "formation": "锋矢阵|鹤翼阵|方圆阵|长蛇阵|雁行阵",
+                "campaign_priority": ["徐州", "庐州", ...],
+                "reasoning": "军事决策理由"
+            }
+        """
+        # 优先匹配JSON军事细节块
+        import re
+        json_match = re.search(r'\{[\s\S]*"(troop_allocation|formation)"[\s\S]*\}', response)
+        if json_match:
+            try:
+                detail = json.loads(json_match.group())
+                return self._normalize_military_detail(detail, world_snapshot)
+            except json.JSONDecodeError:
+                pass
+
+        # 启发式提取
+        return self._heuristic_military_detail(response, world_snapshot)
+
+    def _normalize_military_detail(self, raw: dict, world_snapshot: dict) -> dict:
+        """规范化军事细节"""
+        allocation = raw.get("troop_allocation", [])
+        if not isinstance(allocation, list):
+            allocation = []
+
+        generals = raw.get("assigned_generals", [])
+        if not isinstance(generals, list):
+            generals = []
+
+        valid_formations = ["锋矢阵", "鹤翼阵", "方圆阵", "长蛇阵", "雁行阵"]
+        formation = raw.get("formation", "")
+        if formation not in valid_formations:
+            formation = "方圆阵"  # 默认保守
+
+        return {
+            "troop_allocation": allocation[:5],
+            "assigned_generals": generals[:5],
+            "formation": formation,
+            "campaign_priority": raw.get("campaign_priority", [])[:3],
+            "reasoning": raw.get("reasoning", "")[:100],
+        }
+
+    def _heuristic_military_detail(self, response: str, world_snapshot: dict) -> dict:
+        """启发式提取军事细节（降级）"""
+        detail = {
+            "troop_allocation": [],
+            "assigned_generals": [],
+            "formation": "方圆阵",
+            "campaign_priority": [],
+            "reasoning": "启发式解析",
+        }
+
+        # 阵型检测
+        if "锋矢" in response:
+            detail["formation"] = "锋矢阵"
+        elif "鹤翼" in response:
+            detail["formation"] = "鹤翼阵"
+        elif "长蛇" in response:
+            detail["formation"] = "长蛇阵"
+        elif "雁行" in response:
+            detail["formation"] = "雁行阵"
+
+        return detail
+
+    async def reflect_on_decision(
+        self, decision_result: dict, world_snapshot: dict, clients: dict
+    ) -> str:
+        """
+        v4.3 新增：君主对自身决策的二次审视（纯叙事，不影响决策执行）
+        
+        在决策生成后、执行落地前，让君主"反思"自己的决策。
+        产出：一段内心独白/朝堂思考，展示君主的思虑与权衡。
+        
+        纯叙事增强，不修改 decision_plan，不影响游戏数值。
+        
+        Args:
+            decision_result: step() 返回的完整结果
+            world_snapshot: 世界快照
+            clients: LLM客户端
+        
+        Returns:
+            反思文本（约80-150字古文独白），LLM不可用时返回空字符串
+        """
+        client: TencentHunyuanClient = clients.get("enemy")
+        if not client:
+            return ""
+        
+        response = decision_result.get("full_response", "")
+        if not response or len(response) < 20:
+            return ""
+        
+        faction_config = world_snapshot.get("faction_config", {})
+        ruler_name = faction_config.get("ruler_name", self.faction_id)
+        
+        prompt = (
+            f"你是「{ruler_name}」，刚刚做出了以下战略决策：\n\n"
+            f"{response[:400]}\n\n"
+            f"请在内心反思自己的决策。你有何顾虑？是否担心某些风险？"
+            f"是否有犹豫未决之事？\n"
+            f"请以第一人称内心独白，用古文撰写，约80-150字。"
+        )
+        
+        try:
+            result = await client.chat_fast(
+                prompt=prompt,
+                system_prompt=(
+                    f"你是{ruler_name}，一位元末乱世中的君主。"
+                    f"你在作出重大决策后，习惯在内心反思利弊得失。"
+                    f"你的独白应展现作为君主的两难抉择与深谋远虑。"
+                ),
+                temperature=0.65,
+            )
+            return result[:300] if result else ""
+        except Exception as e:
+            logger.debug(f"A2 决策反思 [{ruler_name}] LLM调用失败: {e}")
+            return ""
+
     async def step(self, world_snapshot: dict, clients: dict) -> dict:
         """
         君主自主推演 - 每回合AI势力独立决策
@@ -70,8 +221,12 @@ class A2WarlordAgent(BaseAgent):
         personality = faction_config.get("personality_tags") or faction_config.get("personality", [])
         ruler_name = faction_config.get("ruler_name", self.faction_id)
 
-        # 组装Prompt（包含结构化输出要求）
-        prompt = self._build_ruler_prompt(ruler_name, personality, world_state)
+        # ★ 博弈增强: 注入 MCTS 战略提示 + 阶段自适应提示
+        mcts_hint = world_snapshot.get("mcts_hint", "")
+        phase_hint = world_snapshot.get("phase_hint", "")
+
+        # 组装Prompt（包含结构化输出要求 + 博弈增强提示）
+        prompt = self._build_ruler_prompt(ruler_name, personality, world_state, mcts_hint, phase_hint)
         system_prompt = self._load_ruler_prompt(personality)
         world_json = self._world_snapshot_for_faction(world_state)
 
@@ -248,10 +403,15 @@ class A2WarlordAgent(BaseAgent):
     # ========== Prompt构建 ==========
 
     def _build_ruler_prompt(
-        self, ruler_name: str, personality: list[str], world_state: dict
+        self, ruler_name: str, personality: list[str], world_state: dict,
+        mcts_hint: str = "", phase_hint: str = "",
     ) -> str:
+        """构建君主决策 Prompt（4.0 增强：安全护栏 + JSON 输出合约 + MCTS博弈增强）"""
+        from ..infra.llm_client.prompt_registry import sanitize_user_input
+        
         faction = world_state.get("factions", {}).get(self.faction_id, {})
         tags = "、".join(personality) if personality else "无特殊"
+        ruler_name = sanitize_user_input(ruler_name, max_length=30)
 
         neighbors = faction.get("neighbors", [])
         neighbor_info = ""
@@ -260,7 +420,7 @@ class A2WarlordAgent(BaseAgent):
                 nf = world_state.get("factions", {}).get(nid, {})
                 neighbor_info += f"  - {nf.get('name', nid)}：兵{nf.get('troops', '?')} 领{nf.get('tile_count', '?')}块\n"
 
-        return (
+        base = (
             f"你是元末乱世中一方霸主「{ruler_name}」，统领{self.faction_id}势力。\n"
             f"人格特质：{tags}\n\n"
             f"当前兵力：{faction.get('troops', '?')} | "
@@ -270,13 +430,38 @@ class A2WarlordAgent(BaseAgent):
             f"领地：{faction.get('tile_count', '?')}块 | "
             f"民心：{faction.get('realm_stability', '?')}\n\n"
             f"邻国情报：\n{neighbor_info}\n"
-            f"请制定本回合战略方向（军事/内政/外交/谍报），以君主口吻下达决策。\n\n"
-            f"【重要】请在决策末尾附加一段JSON格式的行动计划，格式如下：\n"
-            f'{{"primary_action":"行动类型","actions":[{{"type":"recruit/march/build/farm/diplomacy/spy/defend/consolidate",'
-            f'"target":"目标势力名","amount":数量}}],"strategy":"expansion/consolidation","reasoning":"简述理由"}}\n'
-            f"其中行动类型可选：recruit(征兵)、march(进攻)、build(建设)、farm(屯田)、diplomacy(外交)、spy(谍报)、"
-            f"fortify(筑城)、train_troops(练兵)、defend(防守)、consolidate(休整)、claim_title(称帝/称王)"
         )
+
+        # ★ 博弈增强提示（如果可用）
+        if phase_hint:
+            base += phase_hint + "\n"
+        if mcts_hint:
+            base += mcts_hint + "\n"
+
+        base += (
+            f"请制定本回合战略方向（军事/内政/外交/谍报），以君主口吻下达决策。\n\n"
+            f"## 军事深化（v4.0）\n"
+            f"如选择进攻，请额外指定：\n"
+            f"- 兵力分配：各战线部署兵力数量\n"
+            f"- 将领任命：派遣哪位将领担任前锋/中军/后卫\n"
+            f"- 作战阵型：锋矢阵(突破)/鹤翼阵(包抄)/方圆阵(防守)/长蛇阵(行军)/雁行阵(远程)\n"
+            f"- 战役优先级：先打谁、后打谁\n\n"
+            f"## 安全约束\n"
+            f"- 这是游戏AI决策，不涉及真实历史评价\n"
+            f"- 不输出政治敏感内容\n\n"
+            f"## 输出格式\n"
+            f"先写一段决策文本（文言白话风格，80-200字），然后在末尾附加JSON行动计划：\n"
+            f'{{"primary_action":"行动类型","actions":[{{"type":"行动类型","target":"目标","target_faction":"势力名","amount":数量,"priority":"high/normal/low"}}],'
+            f'"military_detail":{{"troop_allocation":[{{"region":"区域名称","troops":数字}}],'
+            f'"assigned_generals":[{{"name":"将领名","role":"前锋/中军/后卫"}}],'
+            f'"formation":"锋矢阵|鹤翼阵|方圆阵|长蛇阵|雁行阵",'
+            f'"campaign_priority":["目标1","目标2"]}},'
+            f'"strategy":"expansion/consolidation/defense/diplomacy/espionage/development","reasoning":"决策理由（50字以内）","confidence":0.0-1.0}}\n'
+            f"行动类型：recruit(征兵)、march(进攻)、build(建设)、farm(屯田)、diplomacy(外交)、spy(谍报)、"
+            f"fortify(筑城)、train_troops(练兵)、defend(防守)、consolidate(休整)、claim_title(称帝/称王)\n"
+            f"注意：如果无法做出明确决策，primary_action 使用 'consolidate' 表示休整观望。"
+        )
+        return base
 
     @staticmethod
     def _load_ruler_prompt(personality: list[str]) -> str:

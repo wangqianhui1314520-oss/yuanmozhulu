@@ -1,20 +1,22 @@
 """
-八大智能体架构 - Agent基类与类型定义
+十大智能体架构 - Agent基类与类型定义
 
-A1~A8 共8个独立智能体模块:
+A1~A10 共10个独立智能体模块:
   A1 谋策    (advisor)   - 谋臣献策、廷议辩论、战略分析
-  A2 群雄AI  (advisor)   - 君主NPC自主推演、势力决策
-  A3 律法审讯 (advisor)   - 案件审理、律法判决
-  A4 谍报谋略 (enemy)     - 细作行动、情报搜集
+  A2 群雄AI  (advisor)   - 君主NPC自主推演、势力决策（含军事深化）
+  A3 律法吏部 (advisor)   - 案件审理、律法判决、官员任免
+  A4 谍报谋略 (enemy)     - 细作行动、情报搜集、AI间谍策略
   A5 随机事件 (enemy)     - 天灾人祸、祥瑞异象
-  A6 外交缔约 (law)       - 合纵连横、盟约谈判
-  A7 宗室皇储 (advisor)   - 继承顺位、宗室管理
+  A6 外交缔约 (law)       - 合纵连横、盟约谈判、AI谈判
+  A7 宗室皇储 (advisor)   - 继承顺位、宗室管理、联姻、储位
   A8 国史编撰 (law)       - 史书修撰、结局传记
+  A9 军机处   (enemy)     - AI古风战报生成
+  A10 度支司  (law)       - AI经济决策（税率/粮储/贸易/建设）
 
 三套模型分组:
   - advisor: chat_role()  → A1/A2/A3/A7
-  - law:     chat_strategy() → A6/A8
-  - enemy:   chat_fast()  → A4/A5
+  - law:     chat_strategy() → A6/A8/A10
+  - enemy:   chat_fast()  → A4/A5/A9
 """
 from __future__ import annotations
 import asyncio
@@ -29,15 +31,17 @@ logger = logging.getLogger("yuanmo.agent")
 
 
 class AgentCategory(Enum):
-    """八大智能体类别"""
+    """十大智能体类别"""
     A1_ADVISOR = "a1_advisor"           # 谋策 - 谋臣献策
-    A2_WARLORD = "a2_warlord"           # 群雄AI - 君主推演
-    A3_LAW = "a3_law"                   # 律法审讯
-    A4_ESPIONAGE = "a4_espionage"       # 谍报谋略
+    A2_WARLORD = "a2_warlord"           # 群雄AI - 君主推演（含军事深化）
+    A3_LAW = "a3_law"                   # 律法吏部 - 审讯+官员任免
+    A4_ESPIONAGE = "a4_espionage"       # 谍报谋略（含AI间谍策略）
     A5_EVENT = "a5_event"               # 随机事件
-    A6_DIPLOMACY = "a6_diplomacy"       # 外交缔约
-    A7_ROYAL = "a7_royal"               # 宗室皇储
+    A6_DIPLOMACY = "a6_diplomacy"       # 外交缔约（含AI谈判）
+    A7_ROYAL = "a7_royal"               # 宗室皇储（含联姻/储位）
     A8_HISTORY = "a8_history"           # 国史编撰
+    A9_BATTLE_REPORT = "a9_battle"      # AI战报生成
+    A10_TREASURY = "a10_treasury"       # 度支司 - AI经济决策
 
     @property
     def model_group(self) -> str:
@@ -51,6 +55,8 @@ class AgentCategory(Enum):
             AgentCategory.A6_DIPLOMACY: "law",
             AgentCategory.A7_ROYAL: "advisor",
             AgentCategory.A8_HISTORY: "law",
+            AgentCategory.A9_BATTLE_REPORT: "enemy",
+            AgentCategory.A10_TREASURY: "law",
         }
         return mapping.get(self, "enemy")
 
@@ -65,6 +71,8 @@ class AgentCategory(Enum):
             AgentCategory.A6_DIPLOMACY: "外交署",
             AgentCategory.A7_ROYAL: "宗室府",
             AgentCategory.A8_HISTORY: "国史馆",
+            AgentCategory.A9_BATTLE_REPORT: "军机处",
+            AgentCategory.A10_TREASURY: "度支司",
         }
         return names.get(self, "未知")
 
@@ -146,6 +154,37 @@ class CircuitBreaker:
         self._state = "CLOSED"
         self._half_open_trials = 0
         logger.info(f"[熔断器:{self.name}] 手动重置 → CLOSED")
+
+
+# ============================================================
+# LLM客户端模型覆盖代理（透明注入 agent_config 中的模型名）
+# ============================================================
+
+class _ModelClientProxy:
+    """透明代理：拦截 chat_fast/chat_role/chat_strategy 调用，自动注入 model 参数。
+
+    零副作用：当 agent_config.json 中 model_name 为空时，此代理不会被创建。
+    """
+
+    def __init__(self, client, model_name: str):
+        self.__client = client
+        self.__model = model_name
+
+    def __getattr__(self, name):
+        attr = getattr(self.__client, name)
+        if name in ("chat_fast", "chat_role", "chat_strategy") and callable(attr):
+            return self._wrap(attr)
+        return attr
+
+    def _wrap(self, original):
+        model = self.__model
+
+        async def wrapper(*args, **kwargs):
+            if "model" not in kwargs:
+                kwargs["model"] = model
+            return await original(*args, **kwargs)
+
+        return wrapper
 
 
 # ============================================================
@@ -253,6 +292,13 @@ class BaseAgent(ABC):
         client = clients.get(self.model_group)
         if client is None:
             return self._fallback_response("no_client")
+
+        # 若 agent_config.json 配置了非空 model_name，通过透明代理注入到 chat 调用
+        if self._model_override and self._model_override.get("model"):
+            wrapped_client = _ModelClientProxy(client, self._model_override["model"])
+            proxied_clients = dict(clients)
+            proxied_clients[self.model_group] = wrapped_client
+            clients = proxied_clients
 
         last_error = None
         for attempt in range(self.max_retries + 1):

@@ -36,8 +36,8 @@
         { "name": "正统名分", "effect": "初始声望+20", "type": "diplomacy" }
       ],
       "debuffs": [
-        { "name": "勋贵侵蚀", "effect": "每月国库流失2%银两", "type": "economy" },
-        { "name": "民族隔阂", "effect": "汉人地块每月民心-5", "type": "civil" },
+        { "name": "勋贵侵蚀", "effect": "每月国库流失2%银两（不低于初始30%）", "type": "economy", "min_treasury_pct": 0.30 },
+        { "name": "民族隔阂", "effect": "汉人地块每月民心-5（不低于20）", "type": "civil", "min_morale": 20 },
         { "name": "朝堂腐败", "effect": "朝堂稳定度每月-2", "type": "court" }
       ],
       "ai_logic": { "expansion": 0.2, "consolidation": 0.6, "diplomacy": 0.3, "military": 0.5, "economy": 0.2 },
@@ -49,7 +49,7 @@
       "name": "朱元璋",
       "full_name": "朱元璋（西吴）",
       "title": "吴国公",
-      "color": "#DC143C",
+      "color": "#006400",
       "capital_tile": "tile_yingtian",
       "initial_territory": [
         "tile_yingtian", "tile_chuzhou", "tile_hezhou", "tile_taiping",
@@ -69,7 +69,8 @@
       "adviser_description": "西吴谋士团：刘基运筹帷幄、李善长坐镇后方、徐达常遇春统兵征伐、朱升定鼎国策",
       "buffs": [
         { "name": "安民之治", "effect": "流民转化率+30%", "type": "civil" },
-        { "name": "屯田养兵", "effect": "驻军粮草消耗-20%", "type": "military" }
+        { "name": "屯田养兵", "effect": "驻军粮草消耗-20%", "type": "military" },
+        { "name": "火攻战术", "effect": "对水军伤害+20%", "type": "military" }
       ],
       "debuffs": [
         { "name": "文武党争", "effect": "朝堂派系冲突概率+20%", "type": "court" },
@@ -84,7 +85,7 @@
       "name": "陈友谅",
       "full_name": "陈友谅（陈汉）",
       "title": "汉帝",
-      "color": "#1E90FF",
+      "color": "#00008B",
       "capital_tile": "tile_wuchang",
       "initial_territory": [
         "tile_wuchang", "tile_jiangzhou", "tile_yuezhou", "tile_changsha",
@@ -103,7 +104,7 @@
       "adviser_team": ["zhang_dingbian", "zou_pusheng", "zhang_bixian"],
       "adviser_description": "陈汉谋士团：张定边忠勇无双、邹普胜谋划方略、张必先保障后勤",
       "buffs": [
-        { "name": "倾国水师", "effect": "水战战力+50%", "type": "military" },
+        { "name": "倾国水师", "effect": "水战战力+30%", "type": "military" },
         { "name": "荆楚粮仓", "effect": "粮食产量+20%", "type": "economy" }
       ],
       "debuffs": [
@@ -119,7 +120,7 @@
       "name": "张士诚",
       "full_name": "张士诚（大周）",
       "title": "周王",
-      "color": "#FF8C00",
+      "color": "#8B008B",
       "capital_tile": "tile_pingjiang",
       "initial_territory": [
         "tile_pingjiang", "tile_hangzhou", "tile_songjiang", "tile_huzhou",
@@ -154,7 +155,7 @@
       "name": "方国珍",
       "full_name": "方国珍",
       "title": "浙东节度",
-      "color": "#20B2AA",
+      "color": "#2F4F4F",
       "capital_tile": "tile_qingyuan",
       "initial_territory": [
         "tile_qingyuan", "tile_taizhou_zj", "tile_wenzhou", "tile_zhoushan"
@@ -172,7 +173,9 @@
       "adviser_description": "浙东势力：方国珍以海上贸易立足，善于投机应变",
       "buffs": [
         { "name": "海上通商", "effect": "海上贸易收入+50%", "type": "economy" },
-        { "name": "水师精锐", "effect": "水战战力+40%", "type": "military" }
+        { "name": "水师精锐", "effect": "水战战力+40%", "type": "military" },
+        { "name": "海岛要塞", "effect": "防御战力+30%", "type": "military" },
+        { "name": "海上疾行", "effect": "海上移动速度+30%", "type": "military" }
       ],
       "debuffs": [
         { "name": "海运命脉", "effect": "海上封锁时经济崩溃", "type": "economy" },
@@ -187,8 +190,8 @@
       "name": "徐寿辉",
       "full_name": "徐寿辉（天完）",
       "title": "天完皇帝",
-      "color": "#996633",
-      "capital_tile": "tile_xiangyang",
+      "color": "#B8860B",
+      "capital_tile": "tile_bianlianglu",
       "initial_territory": [
         "tile_xiangyang", "tile_huangzhou", "tile_de_an", "tile_runing",
         "tile_yingzhou", "tile_nanyang"
@@ -221,7 +224,7 @@
       "name": "明玉珍",
       "full_name": "明玉珍（大夏）",
       "title": "大夏皇帝",
-      "color": "#B8860B",
+      "color": "#8B4513",
       "capital_tile": "tile_chongqing",
       "initial_territory": [
         "tile_chongqing", "tile_chengdu", "tile_kuizhou", "tile_baoning",
@@ -255,7 +258,7 @@
       "name": "王保保",
       "full_name": "王保保（扩廓帖木儿）",
       "title": "河南王",
-      "color": "#666699",
+      "color": "#4B0082",
       "capital_tile": "tile_taiyuan",
       "initial_territory": [
         "tile_taiyuan", "tile_datong", "tile_pingyang", "tile_yanan",
@@ -277,7 +280,7 @@
         { "name": "忠义之名", "effect": "将领忠诚度+20%", "type": "court" }
       ],
       "debuffs": [
-        { "name": "两线作战", "effect": "南北同时用兵，资源消耗+30%", "type": "military" },
+        { "name": "两线作战", "effect": "南北同时用兵，资源消耗+20%", "type": "military" },
         { "name": "朝堂猜忌", "effect": "元廷内部掣肘", "type": "court" }
       ],
       "ai_logic": { "expansion": 0.5, "consolidation": 0.4, "diplomacy": 0.3, "military": 0.8, "economy": 0.3 },
@@ -289,7 +292,7 @@
       "name": "漠北诸部",
       "full_name": "漠北诸部（蒙古草原部落联盟）",
       "title": "草原大汗",
-      "color": "#887766",
+      "color": "#556B2F",
       "capital_tile": "tile_helin",
       "initial_territory": [
         "tile_helin", "tile_karakorum", "tile_shangdu",
@@ -311,7 +314,7 @@
         { "name": "以战养战", "effect": "战斗胜利获得额外银两+30%", "type": "economy" }
       ],
       "debuffs": [
-        { "name": "无固定根基", "effect": "非草原地块收益-40%", "type": "economy" },
+        { "name": "无固定根基", "effect": "非草原地块收益-25%", "type": "economy" },
         { "name": "部落内斗", "effect": "朝堂稳定度每月-2", "type": "court" }
       ],
       "ai_logic": { "expansion": 0.7, "consolidation": 0.2, "diplomacy": 0.2, "military": 0.8, "economy": 0.2 },

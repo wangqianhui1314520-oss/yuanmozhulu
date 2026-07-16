@@ -297,7 +297,7 @@ class FactionAIEngine:
                     n_tile = self.world.tiles.get(nid) if hasattr(self.world, 'tiles') else None
                     if not n_tile:
                         continue
-                    n_owner = getattr(n_tile, 'owner_faction', '')
+                    n_owner = getattr(n_tile, 'faction_id', '')
                     if n_owner and n_owner != fid and n_owner not in at_war:
                         n_faction = self.world.factions.get(n_owner)
                         if n_faction and n_faction.is_alive:
@@ -449,7 +449,7 @@ class FactionAIEngine:
         for t in tiles:
             for nid in getattr(t, 'neighbors', []):
                 n_tile = self.world.tiles.get(nid) if hasattr(self.world, 'tiles') else None
-                if n_tile and getattr(n_tile, 'owner_faction', '') != fid:
+                if n_tile and getattr(n_tile, 'faction_id', '') != fid:
                     border.append(t)
                     break
         return border or tiles
@@ -477,7 +477,7 @@ class FactionAIEngine:
             for nid in getattr(t, 'neighbors', []):
                 n_tile = self.world.tiles.get(nid) if hasattr(self.world, 'tiles') else None
                 if n_tile:
-                    n_owner = getattr(n_tile, 'owner_faction', '')
+                    n_owner = getattr(n_tile, 'faction_id', '')
                     if n_owner and n_owner != fid:
                         neighbors.add(n_owner)
         return list(neighbors)

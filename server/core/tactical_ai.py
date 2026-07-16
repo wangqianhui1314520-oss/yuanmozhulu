@@ -17,6 +17,7 @@ from collections import defaultdict
 
 from server.models.ai_protocol import AICommandSet, AICommand, CommandType
 from server.models.world_state import WorldState
+from server.core.combat_modifiers import get_counter_bonus, estimate_unit_type_from_faction, UnitType
 
 logger = logging.getLogger("yuanmo.ai.tactical")
 
@@ -85,7 +86,11 @@ class TacticalAI:
         closed = set()
         g_scores = {from_tile_id: 0}
 
+        MAX_OPEN_SET = 2000  # 防止不可达目标遍历全部格子
         while open_set:
+            if len(open_set) > MAX_OPEN_SET:
+                logger.warning(f"[A*] open_set 超过 {MAX_OPEN_SET}，提前终止寻路 {from_tile_id}→{to_tile_id}")
+                break
             f, g, current, path = heapq.heappop(open_set)
 
             if current == to_tile_id:
@@ -142,7 +147,7 @@ class TacticalAI:
         cost *= self.TERRAIN_MOVE_COST.get(tt, 1.0)
 
         # 敌军地块代价
-        owner = getattr(to_tile, 'owner_faction', '')
+        owner = getattr(to_tile, 'faction_id', '')
         if owner and owner != faction_id:
             stance = self._get_stance(faction_id, owner)
             if stance == "war":
@@ -168,24 +173,59 @@ class TacticalAI:
         return cost
 
     def _heuristic(self, tile_a_id: str, tile_b_id: str) -> float:
-        """A*启发式函数（六角格距离估计）"""
+        """A*启发式函数（六角格Axial坐标距离）"""
         tiles = getattr(self.world, 'tiles', {})
         tile_a = tiles.get(tile_a_id)
         tile_b = tiles.get(tile_b_id)
         if not tile_a or not tile_b:
             return 999
 
-        # 使用坐标估算（如果有）
-        ax = getattr(tile_a, 'x', 0) or 0
-        ay = getattr(tile_a, 'y', 0) or 0
-        bx = getattr(tile_b, 'x', 0) or 0
-        by = getattr(tile_b, 'y', 0) or 0
+        # 优先使用六角格 axial 坐标 (q, r) 计算真实六角距离
+        aq = getattr(tile_a, 'q', None)
+        ar = getattr(tile_a, 'r', None)
+        bq = getattr(tile_b, 'q', None)
+        br = getattr(tile_b, 'r', None)
+
+        if aq is not None and ar is not None and bq is not None and br is not None:
+            hex_dist = self._calculate_hex_distance(aq, ar, bq, br)
+            if hex_dist > 0:
+                # 使用最快地形代价作为每步最小代价估算
+                min_cost = min(self.TERRAIN_MOVE_COST.values())
+                return hex_dist * min_cost
+
+        # 回退：使用质心坐标的欧氏距离（乘以最快地形代价）
+        ax = getattr(tile_a, 'centroid_lon', 0) or 0
+        ay = getattr(tile_a, 'centroid_lat', 0) or 0
+        bx = getattr(tile_b, 'centroid_lon', 0) or 0
+        by = getattr(tile_b, 'centroid_lat', 0) or 0
 
         if ax or ay or bx or by:
-            return math.sqrt((ax - bx) ** 2 + (ay - by) ** 2) / 10
+            min_cost = min(self.TERRAIN_MOVE_COST.values())
+            return math.sqrt((ax - bx) ** 2 + (ay - by) ** 2) * min_cost
 
         # 无坐标时返回默认
         return 1.0
+
+    @staticmethod
+    def _calculate_hex_distance(q1: int, r1: int, q2: int, r2: int) -> int:
+        """
+        计算六角格 Axial 坐标距离
+        
+        使用标准六角格距离公式:
+            distance = (abs(dq) + abs(dq+dr) + abs(dr)) / 2
+            其中第三个轴 s = -(q+r)，差值 = abs(q1+r1 - q2-r2)
+        
+        Args:
+            q1, r1: 第一个六角格的 axial 坐标
+            q2, r2: 第二个六角格的 axial 坐标
+        
+        Returns:
+            六角格距离（整数步数）
+        """
+        dq = q1 - q2
+        dr = r1 - r2
+        ds = (q1 + r1) - (q2 + r2)
+        return (abs(dq) + abs(dr) + abs(ds)) // 2
 
     # ============================================================
     # 战损推演
@@ -224,7 +264,7 @@ class TacticalAI:
                     "key_factors": ["目标地块不存在"]}
 
         defender_troops = getattr(def_tile, 'troops', 0)
-        defender_faction = getattr(def_tile, 'owner_faction', '')
+        defender_faction = getattr(def_tile, 'faction_id', '')
         fortification = getattr(def_tile, 'fortification', 0)
 
         if defender_troops <= 0:
@@ -244,9 +284,23 @@ class TacticalAI:
         base_ratio = attacker_troops / max(1, defender_troops)
         key_factors.append(f"基础兵力比 {base_ratio:.1%}")
 
+        # 1.5. 兵种克制因子
+        tt = self._tile_type_str(getattr(def_tile, 'tile_type', 'farmland'))
+        attacker_unit_type = estimate_unit_type_from_faction(
+            attacker_faction,
+            self._tile_type_str(getattr(atk_tile, 'tile_type', 'farmland')) if atk_tile else ""
+        )
+        defender_unit_type = estimate_unit_type_from_faction(
+            defender_faction,
+            tt if def_tile else ""
+        )
+        counter_bonus = get_counter_bonus(attacker_unit_type, defender_unit_type)
+        counter_mult = 1.0 + counter_bonus
+        if counter_bonus != 0.0:
+            key_factors.append(f"兵种克制 {counter_bonus:+.0%}")
+
         # 2. 地形修正
         terrain_mult = 1.0
-        tt = self._tile_type_str(getattr(def_tile, 'tile_type', 'farmland'))
         if tt in self.TERRAIN_COMBAT_MOD:
             beneficiary, mod = self.TERRAIN_COMBAT_MOD[tt]
             if beneficiary == "defender":
@@ -261,9 +315,16 @@ class TacticalAI:
         if fortification > 0:
             key_factors.append(f"城防减伤 x{fort_mult:.2f}")
 
-        # 4. 兰彻斯特有效战力
-        effective_attacker = attacker_troops
-        effective_defender = defender_troops * terrain_mult * fort_mult
+        # v3.3 防御倍率硬上限：防止城墙+关隘+地形无限叠加
+        from server.core.combat_modifiers import apply_defense_cap
+        raw_defense = terrain_mult * fort_mult
+        defense_mult = apply_defense_cap(raw_defense)
+        if raw_defense > defense_mult:
+            key_factors.append(f"防御倍率限制: {raw_defense:.2f}x → {defense_mult:.2f}x (上限2.5x)")
+
+        # 4. 兰彻斯特有效战力（含兵种克制）
+        effective_attacker = attacker_troops * counter_mult
+        effective_defender = defender_troops * defense_mult
 
         # 5. 胜率计算
         if effective_attacker > effective_defender * 1.5:
@@ -304,6 +365,9 @@ class TacticalAI:
             "key_factors": key_factors,
             "recommendation": recommendation,
             "effective_power_ratio": round(effective_attacker / max(1, effective_defender), 2),
+            "counter_bonus": counter_bonus,
+            "attacker_unit_type": attacker_unit_type.value if attacker_unit_type else "unknown",
+            "defender_unit_type": defender_unit_type.value if defender_unit_type else "unknown",
         }
 
     # ============================================================
@@ -339,7 +403,7 @@ class TacticalAI:
             enemy_threat = sum(
                 getattr(self.world.tiles.get(nid, None), 'troops', 0) or 0
                 for nid in getattr(t, 'neighbors', [])
-                if getattr(self.world.tiles.get(nid, None), 'owner_faction', '') != faction_id
+                if getattr(self.world.tiles.get(nid, None), 'faction_id', '') != faction_id
             )
             score += enemy_threat // 10
 
@@ -437,7 +501,7 @@ class TacticalAI:
         if not target:
             return {"error": "目标地块不存在"}
 
-        target_owner = getattr(target, 'owner_faction', '')
+        target_owner = getattr(target, 'faction_id', '')
         target_troops = getattr(target, 'troops', 0)
         target_tt = self._tile_type_str(getattr(target, 'tile_type', 'farmland'))
 
@@ -529,7 +593,7 @@ class TacticalAI:
             tile = tiles.get(tid)
             if not tile:
                 continue
-            owner = getattr(tile, 'owner_faction', '')
+            owner = getattr(tile, 'faction_id', '')
             if owner and owner != faction_id:
                 stance = self._get_stance(faction_id, owner)
                 if stance == "war":
@@ -543,7 +607,7 @@ class TacticalAI:
         """判断是否边境"""
         for nid in getattr(tile, 'neighbors', []):
             n_tile = self.world.tiles.get(nid) if hasattr(self.world, 'tiles') else None
-            if n_tile and getattr(n_tile, 'owner_faction', '') != fid:
+            if n_tile and getattr(n_tile, 'faction_id', '') != fid:
                 return True
         return False
 
@@ -564,7 +628,7 @@ class TacticalAI:
             "tile_id": tile_id,
             "tile_name": getattr(tile, 'tile_name', tile_id),
             "tile_type": self._tile_type_str(getattr(tile, 'tile_type', '')),
-            "owner": getattr(tile, 'owner_faction', ''),
+            "owner": getattr(tile, 'faction_id', ''),
             "troops": getattr(tile, 'troops', 0),
         }
 

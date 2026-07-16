@@ -47,6 +47,8 @@ interface Mountain {
   damage: number // 0.3~0.7 破损程度
   battlementPositions: { x: number; y: number; broken: boolean }[]
   color: string
+  // V5.0 预计算山脊线数据（避免每帧随机抖动）
+  ridgeLines: { sx: number; sy: number; ex: number; ey: number }[]
 }
 let mountains: Mountain[] = []
 
@@ -186,12 +188,25 @@ function initLayers() {
       })
     }
 
+    // V5.0 预计算山脊线（避免每帧随机抖动）
+    const ridgeLines = []
+    for (let ri = 0; ri < points.length; ri += 3) {
+      if (Math.random() < damage * 0.3) continue
+      ridgeLines.push({
+        sx: points[ri].x,
+        sy: points[ri].y,
+        ex: points[ri].x + (Math.random() - 0.5) * 4,
+        ey: points[ri].y + 2 + Math.random() * 8,
+      })
+    }
+
     mountains.push({
       points,
       basePoints,
       damage,
       battlementPositions: battlements,
       color: `hsl(${25 + Math.random() * 10}, ${8 + Math.random() * 5}%, ${10 + Math.random() * 8}%)`,
+      ridgeLines,
     })
   }
   // 按远近排序（低山在后）
@@ -269,7 +284,7 @@ function createRedScarf(randomPos: boolean): RedScarf {
   return {
     x: randomPos ? Math.random() * W : -40,
     y: randomPos ? Math.random() * H : H * 0.15 + Math.random() * H * 0.6,
-    vx: -0.3 + Math.random() * 0.8 - 0.3,
+    vx: -0.6 + Math.random() * 0.8,
     vy: -0.2 + Math.random() * 0.5,
     rotation: Math.random() * Math.PI * 2,
     rotSpeed: (Math.random() - 0.5) * 0.02,
@@ -357,11 +372,11 @@ function drawMountains(ctx: CanvasRenderingContext2D) {
     // 山脊纹理（破损线条）
     ctx.strokeStyle = `rgba(40, 30, 20, 0.5)`
     ctx.lineWidth = 0.5
-    for (let i = 0; i < mt.points.length; i += 3) {
-      if (Math.random() < mt.damage * 0.3) continue
+    // V5.0 使用预计算山脊线（避免每帧随机抖动）
+    for (const ridge of mt.ridgeLines) {
       ctx.beginPath()
-      ctx.moveTo(mt.points[i].x, mt.points[i].y)
-      ctx.lineTo(mt.points[i].x + (Math.random() - 0.5) * 4, mt.points[i].y + 2 + Math.random() * 8)
+      ctx.moveTo(ridge.sx, ridge.sy)
+      ctx.lineTo(ridge.ex, ridge.ey)
       ctx.stroke()
     }
 

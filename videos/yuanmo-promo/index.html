@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js" integrity="sha384-sG0Hv1tP1lZCk9KQmrIbY/XNwi+OY84GQqhMscbnsoBFqAz8KNCil1kvfL3Hbbk2" crossorigin="anonymous"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #000;
+      }
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #E8D5B7;
+      }
+      .scene {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="77"
+      data-width="1920"
+      data-height="1080"
+    >
+      <div
+        id="el-01-chaos"
+        class="scene"
+        data-composition-id="01-chaos"
+        data-composition-src="compositions/frames/01-chaos.html"
+        data-start="0"
+        data-duration="6"
+        data-track-index="1"
+      ></div>
+
+      <div
+        id="el-02-collapse"
+        class="scene"
+        data-composition-id="02-collapse"
+        data-composition-src="compositions/frames/02-collapse.html"
+        data-start="6"
+        data-duration="7"
+        data-track-index="1"
+      ></div>
+
+      <div
+        id="el-03-warlords"
+        class="scene"
+        data-composition-id="03-warlords"
+        data-composition-src="compositions/frames/03-warlords.html"
+        data-start="13"
+        data-duration="7"
+        data-track-index="1"
+      ></div>
+
+      <div
+        id="el-04-title"
+        class="scene"
+        data-composition-id="04-title"
+        data-composition-src="compositions/frames/04-title.html"
+        data-start="20"
+        data-duration="5"
+        data-track-index="1"
+      ></div>
+
+      <div
+        id="el-05-sandbox"
+        class="scene"
+        data-composition-id="05-sandbox"
+        data-composition-src="compositions/frames/05-sandbox.html"
+        data-start="25"
+        data-duration="7"
+        data-track-index="1"
+      ></div>
+
+      <div
+        id="el-06-edict"
+        class="scene"
+        data-composition-id="06-edict"
+        data-composition-src="compositions/frames/06-edict.html"
+        data-start="32"
+        data-duration="7"
+        data-track-index="1"
+      ></div>
+
+      <div
+        id="el-07-systems"
+        class="scene"
+        data-composition-id="07-systems"
+        data-composition-src="compositions/frames/07-systems.html"
+        data-start="39"
+        data-duration="8"
+        data-track-index="1"
+      ></div>
+
+      <div
+        id="el-08-ai"
+        class="scene"
+        data-composition-id="08-ai"
+        data-composition-src="compositions/frames/08-ai.html"
+        data-start="47"
+        data-duration="7"
+        data-track-index="1"
+      ></div>
+
+      <div
+        id="el-09-fog"
+        class="scene"
+        data-composition-id="09-fog"
+        data-composition-src="compositions/frames/09-fog.html"
+        data-start="54"
+        data-duration="7"
+        data-track-index="1"
+      ></div>
+
+      <div
+        id="el-10-destiny"
+        class="scene"
+        data-composition-id="10-destiny"
+        data-composition-src="compositions/frames/10-destiny.html"
+        data-start="61"
+        data-duration="6"
+        data-track-index="1"
+      ></div>
+
+      <div
+        id="el-11-lockup"
+        class="scene"
+        data-composition-id="11-lockup"
+        data-composition-src="compositions/frames/11-lockup.html"
+        data-start="67"
+        data-duration="5"
+        data-track-index="1"
+      ></div>
+
+      <div
+        id="el-12-cta"
+        class="scene"
+        data-composition-id="12-cta"
+        data-composition-src="compositions/frames/12-cta.html"
+        data-start="72"
+        data-duration="5"
+        data-track-index="1"
+      ></div>
+
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = gsap.timeline({ paused: true });
+    </script>
+  </body>
+</html>

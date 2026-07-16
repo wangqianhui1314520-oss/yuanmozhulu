@@ -1,0 +1,154 @@
+◆  Linting yuanmo-promo/13 files
+
+  ✗ [index.html] missing_or_empty_sub_composition: data-composition-src references "compositions/frames/01-chaos.html", but the file's <template>/<body> content has no element with a data-composition-id attribute.
+    Fix: Fix this before rendering — the render pre-flight rejects unusable sub-compositions. Write valid HTML into "compositions/frames/01-chaos.html" — it needs a <template> or <body> containing an element with data-composition-id, data-width, and data-height. Preview/studio still tolerates and skips the scene while you author it. If a scene-authoring step is still running, wait for it to finish before referencing the file, or re-run the step that generates it.
+  ✗ [index.html] missing_or_empty_sub_composition: data-composition-src references "compositions/frames/02-collapse.html", but the file's <template>/<body> content has no element with a data-composition-id attribute.
+    Fix: Fix this before rendering — the render pre-flight rejects unusable sub-compositions. Write valid HTML into "compositions/frames/02-collapse.html" — it needs a <template> or <body> containing an element with data-composition-id, data-width, and data-height. Preview/studio still tolerates and skips the scene while you author it. If a scene-authoring step is still running, wait for it to finish before referencing the file, or re-run the step that generates it.
+  ✗ [index.html] missing_or_empty_sub_composition: data-composition-src references "compositions/frames/03-warlords.html", but the file's <template>/<body> content has no element with a data-composition-id attribute.
+    Fix: Fix this before rendering — the render pre-flight rejects unusable sub-compositions. Write valid HTML into "compositions/frames/03-warlords.html" — it needs a <template> or <body> containing an element with data-composition-id, data-width, and data-height. Preview/studio still tolerates and skips the scene while you author it. If a scene-authoring step is still running, wait for it to finish before referencing the file, or re-run the step that generates it.
+  ✗ [index.html] missing_or_empty_sub_composition: data-composition-src references "compositions/frames/04-title.html", but the file's <template>/<body> content has no element with a data-composition-id attribute.
+    Fix: Fix this before rendering — the render pre-flight rejects unusable sub-compositions. Write valid HTML into "compositions/frames/04-title.html" — it needs a <template> or <body> containing an element with data-composition-id, data-width, and data-height. Preview/studio still tolerates and skips the scene while you author it. If a scene-authoring step is still running, wait for it to finish before referencing the file, or re-run the step that generates it.
+  ✗ [index.html] missing_or_empty_sub_composition: data-composition-src references "compositions/frames/05-sandbox.html", but the file's <template>/<body> content has no element with a data-composition-id attribute.
+    Fix: Fix this before rendering — the render pre-flight rejects unusable sub-compositions. Write valid HTML into "compositions/frames/05-sandbox.html" — it needs a <template> or <body> containing an element with data-composition-id, data-width, and data-height. Preview/studio still tolerates and skips the scene while you author it. If a scene-authoring step is still running, wait for it to finish before referencing the file, or re-run the step that generates it.
+  ✗ [index.html] missing_or_empty_sub_composition: data-composition-src references "compositions/frames/06-edict.html", but the file's <template>/<body> content has no element with a data-composition-id attribute.
+    Fix: Fix this before rendering — the render pre-flight rejects unusable sub-compositions. Write valid HTML into "compositions/frames/06-edict.html" — it needs a <template> or <body> containing an element with data-composition-id, data-width, and data-height. Preview/studio still tolerates and skips the scene while you author it. If a scene-authoring step is still running, wait for it to finish before referencing the file, or re-run the step that generates it.
+  ✗ [index.html] missing_or_empty_sub_composition: data-composition-src references "compositions/frames/07-systems.html", but the file's <template>/<body> content has no element with a data-composition-id attribute.
+    Fix: Fix this before rendering — the render pre-flight rejects unusable sub-compositions. Write valid HTML into "compositions/frames/07-systems.html" — it needs a <template> or <body> containing an element with data-composition-id, data-width, and data-height. Preview/studio still tolerates and skips the scene while you author it. If a scene-authoring step is still running, wait for it to finish before referencing the file, or re-run the step that generates it.
+  ✗ [index.html] missing_or_empty_sub_composition: data-composition-src references "compositions/frames/08-ai.html", but the file's <template>/<body> content has no element with a data-composition-id attribute.
+    Fix: Fix this before rendering — the render pre-flight rejects unusable sub-compositions. Write valid HTML into "compositions/frames/08-ai.html" — it needs a <template> or <body> containing an element with data-composition-id, data-width, and data-height. Preview/studio still tolerates and skips the scene while you author it. If a scene-authoring step is still running, wait for it to finish before referencing the file, or re-run the step that generates it.
+  ✗ [index.html] missing_or_empty_sub_composition: data-composition-src references "compositions/frames/09-fog.html", but the file's <template>/<body> content has no element with a data-composition-id attribute.
+    Fix: Fix this before rendering — the render pre-flight rejects unusable sub-compositions. Write valid HTML into "compositions/frames/09-fog.html" — it needs a <template> or <body> containing an element with data-composition-id, data-width, and data-height. Preview/studio still tolerates and skips the scene while you author it. If a scene-authoring step is still running, wait for it to finish before referencing the file, or re-run the step that generates it.
+  ✗ [index.html] missing_or_empty_sub_composition: data-composition-src references "compositions/frames/10-destiny.html", but the file's <template>/<body> content has no element with a data-composition-id attribute.
+    Fix: Fix this before rendering — the render pre-flight rejects unusable sub-compositions. Write valid HTML into "compositions/frames/10-destiny.html" — it needs a <template> or <body> containing an element with data-composition-id, data-width, and data-height. Preview/studio still tolerates and skips the scene while you author it. If a scene-authoring step is still running, wait for it to finish before referencing the file, or re-run the step that generates it.
+  ✗ [index.html] missing_or_empty_sub_composition: data-composition-src references "compositions/frames/11-lockup.html", but the file's <template>/<body> content has no element with a data-composition-id attribute.
+    Fix: Fix this before rendering — the render pre-flight rejects unusable sub-compositions. Write valid HTML into "compositions/frames/11-lockup.html" — it needs a <template> or <body> containing an element with data-composition-id, data-width, and data-height. Preview/studio still tolerates and skips the scene while you author it. If a scene-authoring step is still running, wait for it to finish before referencing the file, or re-run the step that generates it.
+  ✗ [index.html] missing_or_empty_sub_composition: data-composition-src references "compositions/frames/12-cta.html", but the file's <template>/<body> content has no element with a data-composition-id attribute.
+    Fix: Fix this before rendering — the render pre-flight rejects unusable sub-compositions. Write valid HTML into "compositions/frames/12-cta.html" — it needs a <template> or <body> containing an element with data-composition-id, data-width, and data-height. Preview/studio still tolerates and skips the scene while you author it. If a scene-authoring step is still running, wait for it to finish before referencing the file, or re-run the step that generates it.
+  ✗ [compositions/frames/01-chaos.html] root_missing_composition_id: Root composition is missing `data-composition-id`.
+    Fix: Add a stable `data-composition-id` to the entry composition wrapper.
+  ✗ [compositions/frames/01-chaos.html] root_missing_dimensions: Root composition is missing `data-width` or `data-height`.
+    Fix: Set numeric `data-width` and `data-height` on the entry composition root.
+  ✗ [compositions/frames/01-chaos.html] timeline_id_mismatch: Timeline registered as "01-chaos" but no element has data-composition-id="01-chaos". The runtime cannot auto-nest this timeline.
+    Fix: Change window.__timelines["01-chaos"] to match the data-composition-id attribute, or vice versa.
+  ⚠ [compositions/frames/01-chaos.html] google_fonts_import: Composition loads fonts from fonts.googleapis.com. The producer resolves Google Fonts during compile/render, but raw external font requests add latency and can fail before canonicalization. Prefer mapped family names or local @font-face declarations when possible.
+    Fix: For bundled fonts, remove the Google Fonts <link> or @import and keep the font-family declaration. For custom fonts, use @font-face { font-family: '...'; src: url('...woff2'); }.
+  ✗ [compositions/frames/02-collapse.html] root_missing_composition_id: Root composition is missing `data-composition-id`.
+    Fix: Add a stable `data-composition-id` to the entry composition wrapper.
+  ✗ [compositions/frames/02-collapse.html] root_missing_dimensions: Root composition is missing `data-width` or `data-height`.
+    Fix: Set numeric `data-width` and `data-height` on the entry composition root.
+  ✗ [compositions/frames/02-collapse.html] timeline_id_mismatch: Timeline registered as "02-collapse" but no element has data-composition-id="02-collapse". The runtime cannot auto-nest this timeline.
+    Fix: Change window.__timelines["02-collapse"] to match the data-composition-id attribute, or vice versa.
+  ⚠ [compositions/frames/02-collapse.html] google_fonts_import: Composition loads fonts from fonts.googleapis.com. The producer resolves Google Fonts during compile/render, but raw external font requests add latency and can fail before canonicalization. Prefer mapped family names or local @font-face declarations when possible.
+    Fix: For bundled fonts, remove the Google Fonts <link> or @import and keep the font-family declaration. For custom fonts, use @font-face { font-family: '...'; src: url('...woff2'); }.
+  ✗ [compositions/frames/03-warlords.html] root_missing_composition_id: Root composition is missing `data-composition-id`.
+    Fix: Add a stable `data-composition-id` to the entry composition wrapper.
+  ✗ [compositions/frames/03-warlords.html] root_missing_dimensions: Root composition is missing `data-width` or `data-height`.
+    Fix: Set numeric `data-width` and `data-height` on the entry composition root.
+  ✗ [compositions/frames/03-warlords.html] timeline_id_mismatch: Timeline registered as "03-warlords" but no element has data-composition-id="03-warlords". The runtime cannot auto-nest this timeline.
+    Fix: Change window.__timelines["03-warlords"] to match the data-composition-id attribute, or vice versa.
+  ✗ [compositions/frames/03-warlords.html] unscoped_gsap_selector: Timeline "03-warlords" uses unscoped selector "dwell/hold" that will target elements in ALL compositions when bundled, causing data loss (opacity, transforms, etc.).
+    Fix: Scope the selector: `[data-composition-id="03-warlords"] dwell/hold` or use a unique id.
+  ⚠ [compositions/frames/03-warlords.html] google_fonts_import: Composition loads fonts from fonts.googleapis.com. The producer resolves Google Fonts during compile/render, but raw external font requests add latency and can fail before canonicalization. Prefer mapped family names or local @font-face declarations when possible.
+    Fix: For bundled fonts, remove the Google Fonts <link> or @import and keep the font-family declaration. For custom fonts, use @font-face { font-family: '...'; src: url('...woff2'); }.
+  ✗ [compositions/frames/04-title.html] root_missing_composition_id: Root composition is missing `data-composition-id`.
+    Fix: Add a stable `data-composition-id` to the entry composition wrapper.
+  ✗ [compositions/frames/04-title.html] root_missing_dimensions: Root composition is missing `data-width` or `data-height`.
+    Fix: Set numeric `data-width` and `data-height` on the entry composition root.
+  ✗ [compositions/frames/04-title.html] timeline_id_mismatch: Timeline registered as "04-title" but no element has data-composition-id="04-title". The runtime cannot auto-nest this timeline.
+    Fix: Change window.__timelines["04-title"] to match the data-composition-id attribute, or vice versa.
+  ✗ [compositions/frames/04-title.html] gsap_non_transform_motion: GSAP tween on "#c1" uses motion that snaps to integer device pixels: left, top. Layout and text-reflow properties snap during browser layout; roundProps rounds the tween value. Slow motion or an ease-out tail then stutters under the seek-by-frame capture engine — animate transforms (x/y/scale/opacity) instead.
+    Fix: replace left/top with the transform equivalent (x, y) — e.g. tl.fromTo("#c1", { x: -1300 }, { x: 0, ...yourAnimation }). Transforms interpolate sub-pixel and stay smooth at any speed.
+  ✗ [compositions/frames/04-title.html] gsap_non_transform_motion: GSAP tween on "#c2" uses motion that snaps to integer device pixels: left, top. Layout and text-reflow properties snap during browser layout; roundProps rounds the tween value. Slow motion or an ease-out tail then stutters under the seek-by-frame capture engine — animate transforms (x/y/scale/opacity) instead.
+    Fix: replace left/top with the transform equivalent (x, y) — e.g. tl.fromTo("#c2", { x: -1300 }, { x: 0, ...yourAnimation }). Transforms interpolate sub-pixel and stay smooth at any speed.
+  ✗ [compositions/frames/04-title.html] gsap_non_transform_motion: GSAP tween on "#c3" uses motion that snaps to integer device pixels: left, top. Layout and text-reflow properties snap during browser layout; roundProps rounds the tween value. Slow motion or an ease-out tail then stutters under the seek-by-frame capture engine — animate transforms (x/y/scale/opacity) instead.
+    Fix: replace left/top with the transform equivalent (x, y) — e.g. tl.fromTo("#c3", { x: -1300 }, { x: 0, ...yourAnimation }). Transforms interpolate sub-pixel and stay smooth at any speed.
+  ✗ [compositions/frames/04-title.html] gsap_non_transform_motion: GSAP tween on "#c4" uses motion that snaps to integer device pixels: left, top. Layout and text-reflow properties snap during browser layout; roundProps rounds the tween value. Slow motion or an ease-out tail then stutters under the seek-by-frame capture engine — animate transforms (x/y/scale/opacity) instead.
+    Fix: replace left/top with the transform equivalent (x, y) — e.g. tl.fromTo("#c4", { x: -1300 }, { x: 0, ...yourAnimation }). Transforms interpolate sub-pixel and stay smooth at any speed.
+  ⚠ [compositions/frames/04-title.html] google_fonts_import: Composition loads fonts from fonts.googleapis.com. The producer resolves Google Fonts during compile/render, but raw external font requests add latency and can fail before canonicalization. Prefer mapped family names or local @font-face declarations when possible.
+    Fix: For bundled fonts, remove the Google Fonts <link> or @import and keep the font-family declaration. For custom fonts, use @font-face { font-family: '...'; src: url('...woff2'); }.
+  ✗ [compositions/frames/05-sandbox.html] root_missing_composition_id: Root composition is missing `data-composition-id`.
+    Fix: Add a stable `data-composition-id` to the entry composition wrapper.
+  ✗ [compositions/frames/05-sandbox.html] root_missing_dimensions: Root composition is missing `data-width` or `data-height`.
+    Fix: Set numeric `data-width` and `data-height` on the entry composition root.
+  ✗ [compositions/frames/05-sandbox.html] timeline_id_mismatch: Timeline registered as "05-sandbox" but no element has data-composition-id="05-sandbox". The runtime cannot auto-nest this timeline.
+    Fix: Change window.__timelines["05-sandbox"] to match the data-composition-id attribute, or vice versa.
+  ✗ [compositions/frames/05-sandbox.html] unscoped_gsap_selector: Timeline "05-sandbox" uses unscoped selector "dwell/hold" that will target elements in ALL compositions when bundled, causing data loss (opacity, transforms, etc.).
+    Fix: Scope the selector: `[data-composition-id="05-sandbox"] dwell/hold` or use a unique id.
+  ⚠ [compositions/frames/05-sandbox.html] google_fonts_import: Composition loads fonts from fonts.googleapis.com. The producer resolves Google Fonts during compile/render, but raw external font requests add latency and can fail before canonicalization. Prefer mapped family names or local @font-face declarations when possible.
+    Fix: For bundled fonts, remove the Google Fonts <link> or @import and keep the font-family declaration. For custom fonts, use @font-face { font-family: '...'; src: url('...woff2'); }.
+  ✗ [compositions/frames/06-edict.html] root_missing_composition_id: Root composition is missing `data-composition-id`.
+    Fix: Add a stable `data-composition-id` to the entry composition wrapper.
+  ✗ [compositions/frames/06-edict.html] root_missing_dimensions: Root composition is missing `data-width` or `data-height`.
+    Fix: Set numeric `data-width` and `data-height` on the entry composition root.
+  ✗ [compositions/frames/06-edict.html] timeline_id_mismatch: Timeline registered as "06-edict" but no element has data-composition-id="06-edict". The runtime cannot auto-nest this timeline.
+    Fix: Change window.__timelines["06-edict"] to match the data-composition-id attribute, or vice versa.
+  ⚠ [compositions/frames/06-edict.html] overlapping_gsap_tweens: GSAP tweens overlap on "#final" for scale between 6.50s and 6.70s.
+    Fix: Shorten the earlier tween, move the later tween, or add `overwrite: "auto"`.
+  ⚠ [compositions/frames/06-edict.html] google_fonts_import: Composition loads fonts from fonts.googleapis.com. The producer resolves Google Fonts during compile/render, but raw external font requests add latency and can fail before canonicalization. Prefer mapped family names or local @font-face declarations when possible.
+    Fix: For bundled fonts, remove the Google Fonts <link> or @import and keep the font-family declaration. For custom fonts, use @font-face { font-family: '...'; src: url('...woff2'); }.
+  ✗ [compositions/frames/07-systems.html] root_missing_composition_id: Root composition is missing `data-composition-id`.
+    Fix: Add a stable `data-composition-id` to the entry composition wrapper.
+  ✗ [compositions/frames/07-systems.html] root_missing_dimensions: Root composition is missing `data-width` or `data-height`.
+    Fix: Set numeric `data-width` and `data-height` on the entry composition root.
+  ✗ [compositions/frames/07-systems.html] timeline_id_mismatch: Timeline registered as "07-systems" but no element has data-composition-id="07-systems". The runtime cannot auto-nest this timeline.
+    Fix: Change window.__timelines["07-systems"] to match the data-composition-id attribute, or vice versa.
+  ✗ [compositions/frames/07-systems.html] unscoped_gsap_selector: Timeline "07-systems" uses unscoped selector "dwell/hold" that will target elements in ALL compositions when bundled, causing data loss (opacity, transforms, etc.).
+    Fix: Scope the selector: `[data-composition-id="07-systems"] dwell/hold` or use a unique id.
+  ⚠ [compositions/frames/07-systems.html] google_fonts_import: Composition loads fonts from fonts.googleapis.com. The producer resolves Google Fonts during compile/render, but raw external font requests add latency and can fail before canonicalization. Prefer mapped family names or local @font-face declarations when possible.
+    Fix: For bundled fonts, remove the Google Fonts <link> or @import and keep the font-family declaration. For custom fonts, use @font-face { font-family: '...'; src: url('...woff2'); }.
+  ✗ [compositions/frames/08-ai.html] root_missing_composition_id: Root composition is missing `data-composition-id`.
+    Fix: Add a stable `data-composition-id` to the entry composition wrapper.
+  ✗ [compositions/frames/08-ai.html] root_missing_dimensions: Root composition is missing `data-width` or `data-height`.
+    Fix: Set numeric `data-width` and `data-height` on the entry composition root.
+  ✗ [compositions/frames/08-ai.html] timeline_id_mismatch: Timeline registered as "08-ai" but no element has data-composition-id="08-ai". The runtime cannot auto-nest this timeline.
+    Fix: Change window.__timelines["08-ai"] to match the data-composition-id attribute, or vice versa.
+  ⚠ [compositions/frames/08-ai.html] google_fonts_import: Composition loads fonts from fonts.googleapis.com. The producer resolves Google Fonts during compile/render, but raw external font requests add latency and can fail before canonicalization. Prefer mapped family names or local @font-face declarations when possible.
+    Fix: For bundled fonts, remove the Google Fonts <link> or @import and keep the font-family declaration. For custom fonts, use @font-face { font-family: '...'; src: url('...woff2'); }.
+  ✗ [compositions/frames/09-fog.html] root_missing_composition_id: Root composition is missing `data-composition-id`.
+    Fix: Add a stable `data-composition-id` to the entry composition wrapper.
+  ✗ [compositions/frames/09-fog.html] root_missing_dimensions: Root composition is missing `data-width` or `data-height`.
+    Fix: Set numeric `data-width` and `data-height` on the entry composition root.
+  ✗ [compositions/frames/09-fog.html] timeline_id_mismatch: Timeline registered as "09-fog" but no element has data-composition-id="09-fog". The runtime cannot auto-nest this timeline.
+    Fix: Change window.__timelines["09-fog"] to match the data-composition-id attribute, or vice versa.
+  ⚠ [compositions/frames/09-fog.html] overlapping_gsap_tweens: GSAP tweens overlap on "#bar" for width between 5.20s and 5.30s.
+    Fix: Shorten the earlier tween, move the later tween, or add `overwrite: "auto"`.
+  ⚠ [compositions/frames/09-fog.html] google_fonts_import: Composition loads fonts from fonts.googleapis.com. The producer resolves Google Fonts during compile/render, but raw external font requests add latency and can fail before canonicalization. Prefer mapped family names or local @font-face declarations when possible.
+    Fix: For bundled fonts, remove the Google Fonts <link> or @import and keep the font-family declaration. For custom fonts, use @font-face { font-family: '...'; src: url('...woff2'); }.
+  ✗ [compositions/frames/10-destiny.html] root_missing_composition_id: Root composition is missing `data-composition-id`.
+    Fix: Add a stable `data-composition-id` to the entry composition wrapper.
+  ✗ [compositions/frames/10-destiny.html] root_missing_dimensions: Root composition is missing `data-width` or `data-height`.
+    Fix: Set numeric `data-width` and `data-height` on the entry composition root.
+  ✗ [compositions/frames/10-destiny.html] timeline_id_mismatch: Timeline registered as "10-destiny" but no element has data-composition-id="10-destiny". The runtime cannot auto-nest this timeline.
+    Fix: Change window.__timelines["10-destiny"] to match the data-composition-id attribute, or vice versa.
+  ⚠ [compositions/frames/10-destiny.html] overlapping_gsap_tweens: GSAP tweens overlap on "#bar" for width between 5.50s and 6.00s.
+    Fix: Shorten the earlier tween, move the later tween, or add `overwrite: "auto"`.
+  ⚠ [compositions/frames/10-destiny.html] google_fonts_import: Composition loads fonts from fonts.googleapis.com. The producer resolves Google Fonts during compile/render, but raw external font requests add latency and can fail before canonicalization. Prefer mapped family names or local @font-face declarations when possible.
+    Fix: For bundled fonts, remove the Google Fonts <link> or @import and keep the font-family declaration. For custom fonts, use @font-face { font-family: '...'; src: url('...woff2'); }.
+  ✗ [compositions/frames/11-lockup.html] root_missing_composition_id: Root composition is missing `data-composition-id`.
+    Fix: Add a stable `data-composition-id` to the entry composition wrapper.
+  ✗ [compositions/frames/11-lockup.html] root_missing_dimensions: Root composition is missing `data-width` or `data-height`.
+    Fix: Set numeric `data-width` and `data-height` on the entry composition root.
+  ✗ [compositions/frames/11-lockup.html] timeline_id_mismatch: Timeline registered as "11-lockup" but no element has data-composition-id="11-lockup". The runtime cannot auto-nest this timeline.
+    Fix: Change window.__timelines["11-lockup"] to match the data-composition-id attribute, or vice versa.
+  ✗ [compositions/frames/11-lockup.html] gsap_non_transform_motion: GSAP tween on "#f1" uses motion that snaps to integer device pixels: left, top. Layout and text-reflow properties snap during browser layout; roundProps rounds the tween value. Slow motion or an ease-out tail then stutters under the seek-by-frame capture engine — animate transforms (x/y/scale/opacity) instead.
+    Fix: replace left/top with the transform equivalent (x, y) — e.g. tl.fromTo("#f1", { x: -1300 }, { x: 0, ...yourAnimation }). Transforms interpolate sub-pixel and stay smooth at any speed.
+  ✗ [compositions/frames/11-lockup.html] gsap_non_transform_motion: GSAP tween on "#f2" uses motion that snaps to integer device pixels: left, top. Layout and text-reflow properties snap during browser layout; roundProps rounds the tween value. Slow motion or an ease-out tail then stutters under the seek-by-frame capture engine — animate transforms (x/y/scale/opacity) instead.
+    Fix: replace left/top with the transform equivalent (x, y) — e.g. tl.fromTo("#f2", { x: -1300 }, { x: 0, ...yourAnimation }). Transforms interpolate sub-pixel and stay smooth at any speed.
+  ✗ [compositions/frames/11-lockup.html] gsap_non_transform_motion: GSAP tween on "#f3" uses motion that snaps to integer device pixels: left, top. Layout and text-reflow properties snap during browser layout; roundProps rounds the tween value. Slow motion or an ease-out tail then stutters under the seek-by-frame capture engine — animate transforms (x/y/scale/opacity) instead.
+    Fix: replace left/top with the transform equivalent (x, y) — e.g. tl.fromTo("#f3", { x: -1300 }, { x: 0, ...yourAnimation }). Transforms interpolate sub-pixel and stay smooth at any speed.
+  ✗ [compositions/frames/11-lockup.html] gsap_non_transform_motion: GSAP tween on "#f4" uses motion that snaps to integer device pixels: left, top. Layout and text-reflow properties snap during browser layout; roundProps rounds the tween value. Slow motion or an ease-out tail then stutters under the seek-by-frame capture engine — animate transforms (x/y/scale/opacity) instead.
+    Fix: replace left/top with the transform equivalent (x, y) — e.g. tl.fromTo("#f4", { x: -1300 }, { x: 0, ...yourAnimation }). Transforms interpolate sub-pixel and stay smooth at any speed.
+  ⚠ [compositions/frames/11-lockup.html] google_fonts_import: Composition loads fonts from fonts.googleapis.com. The producer resolves Google Fonts during compile/render, but raw external font requests add latency and can fail before canonicalization. Prefer mapped family names or local @font-face declarations when possible.
+    Fix: For bundled fonts, remove the Google Fonts <link> or @import and keep the font-family declaration. For custom fonts, use @font-face { font-family: '...'; src: url('...woff2'); }.
+  ✗ [compositions/frames/12-cta.html] root_missing_composition_id: Root composition is missing `data-composition-id`.
+    Fix: Add a stable `data-composition-id` to the entry composition wrapper.
+  ✗ [compositions/frames/12-cta.html] root_missing_dimensions: Root composition is missing `data-width` or `data-height`.
+    Fix: Set numeric `data-width` and `data-height` on the entry composition root.
+  ✗ [compositions/frames/12-cta.html] timeline_id_mismatch: Timeline registered as "12-cta" but no element has data-composition-id="12-cta". The runtime cannot auto-nest this timeline.
+    Fix: Change window.__timelines["12-cta"] to match the data-composition-id attribute, or vice versa.
+  ✗ [compositions/frames/12-cta.html] gsap_non_transform_motion: GSAP tween on "#cur" uses motion that snaps to integer device pixels: left. Layout and text-reflow properties snap during browser layout; roundProps rounds the tween value. Slow motion or an ease-out tail then stutters under the seek-by-frame capture engine — animate transforms (x/y/scale/opacity) instead.
+    Fix: replace left with the transform equivalent (x) — e.g. tl.fromTo("#cur", { x: -1300 }, { x: 0, ...yourAnimation }). Transforms interpolate sub-pixel and stay smooth at any speed.
+  ⚠ [compositions/frames/12-cta.html] google_fonts_import: Composition loads fonts from fonts.googleapis.com. The producer resolves Google Fonts during compile/render, but raw external font requests add latency and can fail before canonicalization. Prefer mapped family names or local @font-face declarations when possible.
+    Fix: For bundled fonts, remove the Google Fonts <link> or @import and keep the font-family declaration. For custom fonts, use @font-face { font-family: '...'; src: url('...woff2'); }.
+
+◇  60 error(s), 15 warning(s)

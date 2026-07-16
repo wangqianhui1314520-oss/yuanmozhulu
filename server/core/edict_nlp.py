@@ -739,8 +739,8 @@ def repair_json(text: str) -> Optional[str]:
     json_str = re.sub(r',\s*}', '}', json_str)
     json_str = re.sub(r',\s*]', ']', json_str)
 
-    # 4. 修复缺失引号的键名
-    json_str = re.sub(r'(?<!\w)([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'"\1":', json_str)
+    # 4. 修复缺失引号的键名（仅匹配紧跟 { 或 , 之后的键，避免误改字符串内容中的冒号）
+    json_str = re.sub(r'(?<=[{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'"\1":', json_str)
 
     # 5. 尝试找到并提取完整的 JSON 对象
     # 找最后一个 } 并截断
@@ -769,7 +769,7 @@ def robust_json_parse(text: str) -> dict:
 
     # 策略1: markdown 代码块
     strategies.append(lambda t: json.loads(
-        re.search(r'```(?:json)?\s*([\s\S]*?)```', t).group(1)
+        (lambda m: m.group(1) if m else "{}")(re.search(r'```(?:json)?\s*([\s\S]*?)```', t))
     ))
 
     # 策略2: 平衡括号提取（替代原来的贪婪 {[\s\S]*}）
@@ -833,6 +833,491 @@ def _extract_balanced_json(text: str) -> str:
                 return text[start:i + 1]
 
     return "{}"
+
+
+# ============================================================
+# 本地增强模块（无 LLM 依赖）
+# ============================================================
+
+def _select_edict_style(actions: list[str], params_list: list[dict], text: str = "") -> tuple[str, str, str]:
+    """
+    根据政令类别自动选择正确的圣旨文体（7种）。
+
+    严格遵循 edict_engine.py EDICT_FORMAT_SPEC 的文体选择规则。
+
+    Returns:
+        (起首套语, 文体标识, 结尾套语)
+        例如: ("奉天承运皇帝，敕曰：", "敕曰", "故敕。")
+    """
+    # 规则1: 恩赏/分封/大赦 → 制曰/诰曰
+    if any(a in actions for a in ("enfeoff", "amnesty")):
+        if "amnesty" in actions:
+            return ("奉天承运皇帝，诰曰：", "诰曰", "钦此。")
+        return ("奉天承运皇帝，制曰：", "制曰", "钦哉。")
+
+    # 规则2: 军事征伐/训练/固防/侦察 → 敕曰
+    if any(a in actions for a in ("march", "fortify", "scout", "train_troops", "ambush", "plunder")):
+        return ("奉天承运皇帝，敕曰：", "敕曰", "故敕。")
+
+    # 规则3: 细作/间谍 → 密敕
+    if any(a in actions for a in ("spy",)):
+        return ("奉天承运皇帝，密敕：", "密敕", "钦此。")
+
+    # 规则4: 内政建设 → 令曰
+    if any(a in actions for a in ("develop", "build", "relief", "tax", "convict_labor",
+                                   "cultural_policy", "medical", "sea_policy")):
+        return ("奉天承运皇帝，令曰：", "令曰", "钦此。")
+
+    # 规则5: 迁都 → 诏曰 (重大国策)
+    if "move_capital" in actions:
+        return ("奉天承运皇帝，诏曰：", "诏曰", "布告天下，咸使闻知。")
+
+    # 规则6: 征兵/买马为主（军事相关但偏扩军）→ 敕曰
+    if any(a in actions for a in ("recruit", "buy_horses")):
+        # 检查是否混合内政
+        if any(a in actions for a in ("develop", "build", "relief", "tax")):
+            return ("奉天承运皇帝，诏曰：", "诏曰", "钦此。")
+        return ("奉天承运皇帝，敕曰：", "敕曰", "故敕。")
+
+    # 规则7: 外交结盟/宣战/通商等 → 诏曰
+    if "diplomacy" in actions:
+        # 检查是否有 war 意图
+        if "宣战" in text or "开战" in text or "讨伐" in text:
+            return ("奉天承运皇帝，诏曰：", "诏曰", "布告天下，咸使闻知。")
+        return ("奉天承运皇帝，诏曰：", "诏曰", "钦此。")
+
+    # 默认：综合性 → 诏曰
+    return ("奉天承运皇帝，诏曰：", "诏曰", "钦此。")
+
+
+def _generate_local_edict_language(
+    edict_text: str,
+    actions: list[str],
+    params_list: list[dict],
+    faction_name: str,
+    world_state: dict,
+) -> str:
+    """
+    本地生成地道文言圣旨正文（无 LLM 依赖）。
+
+    根据政令类别选择合适的文体，生成符合明代圣旨规范的三段结构：
+    起首套语 → 正文敕谕 → 结尾套语
+    """
+    opening, style_name, closing = _select_edict_style(actions, params_list, edict_text)
+
+    # 提取资源信息
+    player_fid = world_state.get("player_faction_id", "")
+    player = world_state.get("factions", {}).get(player_fid, {})
+    treasury = player.get("treasury", 0)
+    grain = player.get("grain", 0)
+    troops = player.get("total_troops", 0)
+    season = world_state.get("current_season", "春")
+    year = world_state.get("current_year", 1351)
+
+    # 根据主要操作类型和文体生成正文
+    body_parts = []
+
+    # 帝王自称与缘起
+    if style_name == "敕曰":
+        body_parts.append(f"朕闻兵者国之大事，死生之地，存亡之道，不可不察。今{year}年{season}季，天下未定，四方未平。")
+    elif style_name == "令曰":
+        body_parts.append(f"朕惟民生为本，社稷之基。今{year}年{season}季，当务安民养士、实仓廪、固根本。")
+    elif style_name == "制曰":
+        body_parts.append(f"朕惟功懋懋赏，德懋懋官。治国之道，在赏罚分明、恩威并施。")
+    elif style_name == "诰曰":
+        body_parts.append(f"朕闻天心仁爱，以恤民为本。连年兵革，生灵涂炭，朕心恻然。")
+    elif style_name == "密敕":
+        body_parts.append(f"朕惟兵不厌诈，用间为上。今有秘计，不宜宣露于外廷。")
+    else:  # 诏曰
+        body_parts.append(f"朕承天命，统御万方。今{year}年{season}季，观天下大势，当有所为。")
+
+    # 具体敕令内容
+    category_map = {
+        "recruit": "征兵", "train_troops": "训练", "buy_horses": "购马",
+        "march": "出征", "fortify": "固防", "scout": "侦察",
+        "develop": "屯田", "build": "建造", "relief": "赈灾",
+        "tax": "税政", "convict_labor": "徭役", "cultural_policy": "文教",
+        "sea_policy": "海策", "medical": "医政",
+        "diplomacy": "邦交", "spy": "细作", "ambush": "伏击",
+        "plunder": "劫掠", "enfeoff": "分封", "amnesty": "大赦",
+        "move_capital": "迁都",
+    }
+
+    # 动词多样化
+    verb_map = {
+        "敕曰": ["着", "命", "敕", "谕"],
+        "诏曰": ["诏", "命", "着", "谕"],
+        "令曰": ["着", "命", "令", "饬令"],
+        "制曰": ["特授", "册封", "进爵", "特旨"],
+        "诰曰": ["特赐", "特旨恩赏", "恩准", "谕"],
+        "密敕": ["密令", "密遣", "密谕", "暗遣"],
+    }
+
+    for i, (action, params) in enumerate(zip(actions, params_list)):
+        verb = verb_map.get(style_name, ["着", "命"])[i % len(verb_map.get(style_name, ["着", "命"]))]
+        cat_name = category_map.get(action, action)
+
+        if action == "recruit":
+            amount = params.get("amount", 500)
+            body_parts.append(f"{verb}大都督府于各路招募精兵{amount}人，以实营伍。")
+        elif action == "train_troops":
+            amount = params.get("amount", 500)
+            body_parts.append(f"{verb}各营整饬军伍，精练士卒{amount}人，砺其锋刃。")
+        elif action == "buy_horses":
+            amount = params.get("amount", 100)
+            body_parts.append(f"{verb}市易司购办战马{amount}匹，以壮骑军。")
+        elif action == "march":
+            troops_count = params.get("troops", 1000)
+            target = params.get("to_tile", "敌境")
+            body_parts.append(f"{verb}征南将军率虎贲{troops_count}人，出师{target}，克日进讨。")
+        elif action == "fortify":
+            body_parts.append(f"{verb}工部督修城垣，加固防御，以备不虞。")
+        elif action == "scout":
+            body_parts.append(f"{verb}斥候营四出侦探，详查敌情地形。")
+        elif action == "develop":
+            dev_type = params.get("type", "farmland")
+            dev_labels = {"water": "水利", "granary": "粮仓", "clinic": "医馆", "farmland": "农田"}
+            body_parts.append(f"{verb}有司督行{dev_labels.get(dev_type, dev_type)}之政，以厚民生。")
+        elif action == "build":
+            building = params.get("building", "granary")
+            build_labels = {"granary": "粮仓", "armory": "军械所", "stable": "马场", "port": "港口",
+                          "clinic": "医馆", "wall": "城墙", "dock": "码头", "barracks": "征兵营"}
+            body_parts.append(f"{verb}工部监造{build_labels.get(building, building)}一所，限期竣工。")
+        elif action == "relief":
+            body_parts.append(f"{verb}户部开仓放粮，赈济灾民，以安民心。")
+        elif action == "tax":
+            tax_type = params.get("tax_type", "normal")
+            tax_labels = {"heavy": "加征税赋", "light": "轻徭薄赋", "normal": "税政如常"}
+            body_parts.append(f"{verb}户部{tax_labels.get(tax_type, tax_type)}。")
+        elif action == "cultural_policy":
+            body_parts.append(f"{verb}礼部开科取士，兴办学堂，以隆文教。")
+        elif action == "sea_policy":
+            body_parts.append(f"{verb}沿海有司整饬海防，经理海贸。")
+        elif action == "medical":
+            body_parts.append(f"{verb}太医院于各路设医馆，防治疫病。")
+        elif action == "diplomacy":
+            dip_type = params.get("diplomacy_type", "")
+            dip_labels = {"alliance": "缔结盟约", "war": "传檄讨伐", "truce": "遣使议和",
+                         "trade": "开通互市", "marriage": "遣使联姻", "tribute": "遣使纳贡"}
+            body_parts.append(f"{verb}礼部{dip_labels.get(dip_type, '遣使修好')}。")
+        elif action == "spy":
+            body_parts.append(f"{verb}密遣细作，潜入敌境，便宜行事。")
+        elif action == "ambush":
+            body_parts.append(f"{verb}于要路设伏，以逸待劳，击其不意。")
+        elif action == "plunder":
+            body_parts.append(f"{verb}轻骑出掠敌境，夺其粮秣，弱其根基。")
+        elif action == "convict_labor":
+            project = params.get("project", "筑城")
+            body_parts.append(f"{verb}有司征发民夫，{project}浚渠，以固根本。")
+        elif action == "enfeoff":
+            body_parts.append(f"{verb}分封功臣，以赏其勋，激励群臣。")
+        elif action == "amnesty":
+            body_parts.append(f"{verb}大赦天下，除谋逆不赦外，余皆释之。今年赋税悉数蠲免。")
+        elif action == "move_capital":
+            body_parts.append(f"{verb}有司筹备迁都事宜，择吉日徙都。")
+        else:
+            body_parts.append(f"{verb}有司依制施行{cat_name}之事。")
+
+    # 收束
+    if style_name == "敕曰":
+        body_parts.append("各部整军砺卒，限期克日，毋得迁延贻误。")
+    elif style_name == "令曰":
+        body_parts.append("所费银两，着户部如数拨付，不得减省。")
+    elif style_name in ("制曰", "诰曰"):
+        body_parts.append("布告遐迩，咸使闻知。")
+    elif style_name == "密敕":
+        body_parts.append("此令密勿泄露，违者以军法论处。")
+    else:
+        body_parts.append("布告天下，咸使闻知。")
+
+    # 兵力/资源警示（如有）
+    if "recruit" in actions and treasury < 2000:
+        body_parts.append(f"府库现有银{treasury}两，着户部量力而行，毋致亏空。")
+    if "march" in actions and grain < 2000:
+        body_parts.append(f"仓廪现有粮{grain}石，行军之际当节用粮秣。")
+    if troops < 1000 and "march" in actions:
+        body_parts.append(f"营伍现有兵{troops}人，征伐之际当审慎用兵。")
+
+    # 组装
+    body_text = "".join(body_parts)
+    return f"{opening}{body_text}{closing}"
+
+
+def _generate_local_resource_assessment(
+    actions: list[str],
+    params_list: list[dict],
+    world_state: dict,
+) -> str:
+    """
+    本地计算资源评估（无 LLM 依赖）。
+
+    逐条计算政令的预期资源消耗，对比当前库存，给出可行性评估。
+    """
+    player_fid = world_state.get("player_faction_id", "")
+    player = world_state.get("factions", {}).get(player_fid, {})
+    treasury = player.get("treasury", 0)
+    grain = player.get("grain", 0)
+    arms = player.get("arms", 0)
+    horses = player.get("horses", 0)
+    troops = player.get("total_troops", 0)
+
+    # 成本计算
+    cost_map = {
+        "recruit": lambda p: p.get("amount", 500) * 3,
+        "buy_horses": lambda p: p.get("amount", 100) * 5,
+        "train_troops": lambda p: p.get("amount", 500) * 1,
+        "develop": lambda p: 500,
+        "build": lambda p: {
+            "granary": 250, "armory": 800, "stable": 600, "port": 400,
+            "clinic": 200, "farmland": 300, "workshop": 500, "barracks": 350,
+            "beacon": 200, "temple": 400, "wall": 600, "dock": 400,
+        }.get(p.get("building", ""), 500),
+        "fortify": lambda p: 300,
+        "cultural_policy": lambda p: 800,
+        "sea_policy": lambda p: 1000 if p.get("policy_type") == "建水师" else 0,
+        "medical": lambda p: 400,
+        "enfeoff": lambda p: 1000,
+        "move_capital": lambda p: 3000,
+        "diplomacy": lambda p: {"alliance": 800, "truce": 300, "trade": 200,
+                                 "marriage": 500, "tribute": 500, "vassal": 1000, "war": 0}.get(
+                                     p.get("diplomacy_type", ""), 400),
+        "spy": lambda p: 200,
+        "ambush": lambda p: p.get("troops", 500) * 1 if "troops" in p else 500,
+        "plunder": lambda p: p.get("troops", 500) * 1 if "troops" in p else 500,
+        "convict_labor": lambda p: 0,
+    }
+
+    grain_cost_map = {
+        "march": lambda p: p.get("troops", 1000) * 2,
+        "train_troops": lambda p: p.get("amount", 500) // 2,
+        "ambush": lambda p: p.get("troops", 500) * 1 if "troops" in p else 500,
+        "plunder": lambda p: p.get("troops", 500) * 1 if "troops" in p else 500,
+        "move_capital": lambda p: 500,
+        "relief": lambda p: 100,
+    }
+
+    arms_cost_map = {
+        "recruit": lambda p: max(0, p.get("amount", 500) // 3),
+    }
+
+    lines = []
+    total_silver = 0
+    total_grain_cost = 0
+    total_arms = 0
+
+    for action, params in zip(actions, params_list):
+        silver = cost_map.get(action, lambda p: 0)(params)
+        grain_cost = grain_cost_map.get(action, lambda p: 0)(params)
+        arm_cost = arms_cost_map.get(action, lambda p: 0)(params)
+        total_silver += silver
+        total_grain_cost += grain_cost
+        total_arms += arm_cost
+
+    # 资源对比
+    silver_ok = treasury >= total_silver
+    grain_ok = grain >= total_grain_cost
+    arms_ok = arms >= total_arms
+
+    lines.append(f"【资源评估】府库银{treasury}两、粮{grain}石、军械{arms}件、战马{horses}匹、总兵力{troops}人")
+
+    cost_parts = []
+    if total_silver > 0:
+        status = "✓" if silver_ok else "✗不足"
+        cost_parts.append(f"银{total_silver}两{status}")
+    if total_grain_cost > 0:
+        status = "✓" if grain_ok else "✗不足"
+        cost_parts.append(f"粮{total_grain_cost}石{status}")
+    if total_arms > 0:
+        status = "✓" if arms_ok else "✗不足"
+        cost_parts.append(f"军械{total_arms}件{status}")
+
+    if cost_parts:
+        lines.append(f"预估消耗：{'，'.join(cost_parts)}")
+    else:
+        lines.append("预估消耗：无直接资源消耗")
+
+    # 余额预估
+    remaining_silver = treasury - total_silver
+    remaining_grain = grain - total_grain_cost
+    lines.append(f"施行后余额预估：银{max(0, remaining_silver)}两、粮{max(0, remaining_grain)}石")
+
+    # 赤字警告
+    warnings = []
+    if not silver_ok:
+        warnings.append(f"银两缺口{total_silver - treasury}两，建议削减规模或先充实府库")
+    if not grain_ok:
+        warnings.append(f"粮草缺口{total_grain_cost - grain}石，行军作战恐粮秣不继")
+    if not arms_ok:
+        warnings.append(f"军械缺口{total_arms - arms}件，建议先建/扩建军械所")
+
+    if warnings:
+        lines.append(f"⚠ 资源警示：{'；'.join(warnings)}")
+
+    # 季节因素
+    season = world_state.get("current_season", "春")
+    season_notes = {
+        "春": "（春：募兵恢复+7%、人口增长×1.6）",
+        "夏": "（夏：粮耗×1.1、洪蝗风险）",
+        "秋": "（秋：税收×1.3、粮仓产出×1.8、攻方×1.1）",
+        "冬": "（冬：粮耗×1.4、攻方×0.75、守方×1.15）",
+    }
+    lines.append(f"季节因素：{season}{season_notes.get(season, '')}")
+
+    return "\n".join(lines)
+
+
+def _generate_local_strategic_analysis(
+    edict_text: str,
+    actions: list[str],
+    world_state: dict,
+) -> dict:
+    """
+    本地战略推演分析（无 LLM 依赖）。
+
+    基于游戏状态数据进行基础的地缘分析、风险评估和策略建议。
+    """
+    player_fid = world_state.get("player_faction_id", "")
+    player = world_state.get("factions", {}).get(player_fid, {})
+    factions = world_state.get("factions", {})
+    tiles = world_state.get("tiles", {})
+    relations = world_state.get("relations", {})
+
+    treasury = player.get("treasury", 0)
+    grain = player.get("grain", 0)
+    total_troops = player.get("total_troops", 0)
+    stability = player.get("realm_stability", 50)
+    season = world_state.get("current_season", "春")
+
+    player_tiles = {tid: t for tid, t in tiles.items() if t.get("faction_id") == player_fid}
+    faction_name = player.get("name", "我方")
+
+    observations = []
+    risks = []
+    geo_impacts = []
+
+    # === 军事力量对比 ===
+    neighbors = []
+    for fid, f in factions.items():
+        if fid != player_fid and f.get("is_alive", False):
+            f_troops = f.get("total_troops", 0)
+            stance = relations.get(f"{player_fid}|{fid}", {}).get("stance", "neutral")
+            neighbors.append({
+                "name": f.get("name", fid),
+                "troops": f_troops,
+                "stance": stance,
+            })
+
+    # 最强敌对势力
+    hostile = [n for n in neighbors if n["stance"] == "war"]
+    if hostile:
+        strongest_hostile = max(hostile, key=lambda n: n["troops"])
+        if strongest_hostile["troops"] > total_troops * 1.5:
+            observations.append(f"⚠ 「{strongest_hostile['name']}」兵力({strongest_hostile['troops']}人)为我方({total_troops}人)的{strongest_hostile['troops']/max(1,total_troops):.1f}倍，正面交锋恐不利")
+            risks.append({
+                "type": "military",
+                "desc": f"与{strongest_hostile['name']}军力悬殊",
+                "probability": 0.6,
+                "impact": "high",
+                "mitigation": "建议以外交分化或固守待变",
+            })
+        elif strongest_hostile["troops"] < total_troops * 0.7:
+            observations.append(f"✓ 「{strongest_hostile['name']}」兵力({strongest_hostile['troops']}人)弱于我方，可考虑主动出击")
+
+    # === 资源可持续性 ===
+    if treasury < 1000:
+        observations.append(f"⚠ 府库空虚（仅{treasury}两），大规模行动将难以持续")
+        risks.append({
+            "type": "economic",
+            "desc": f"国库仅{treasury}两，可能不足以支撑军事行动",
+            "probability": 0.8,
+            "impact": "high",
+            "mitigation": "建议加征税赋或对富庶之地用兵劫掠",
+        })
+    elif treasury > 5000:
+        observations.append(f"✓ 府库充盈（{treasury}两），可支撑大规模用兵或建设")
+
+    if grain < 500:
+        observations.append(f"⚠ 仓廪不实（仅{grain}石），行军作战粮草难继")
+        risks.append({
+            "type": "economic",
+            "desc": f"粮草仅{grain}石，远征战事恐粮道不继",
+            "probability": 0.7,
+            "impact": "medium",
+            "mitigation": "建议屯田开发或建造粮仓",
+        })
+
+    # === 民心状况 ===
+    if stability < 30:
+        observations.append(f"⚠ 民心涣散（{stability}），征兵徭役将加剧动荡")
+        risks.append({
+            "type": "stability",
+            "desc": f"民心仅{stability}，若再征兵或征发徭役可能引发民变",
+            "probability": 0.5,
+            "impact": "critical",
+            "mitigation": "建议赈灾、减税或大赦以收民心",
+        })
+
+    # === 地缘形势 ===
+    neighbor_troops = sum(n["troops"] for n in neighbors)
+    our_tiles = len(player_tiles)
+    if neighbor_troops > total_troops * 3:
+        observations.append(f"⚠ 周边势力总兵力({neighbor_troops}人)远超我方({total_troops}人)，四面受敌之势")
+
+    # 邻国反应预测
+    for n in neighbors[:5]:
+        if n["stance"] == "war":
+            geo_impacts.append({
+                "faction": n["name"],
+                "reaction": "hostile",
+                "desc": f"正处于交战状态，可能趁我方行动时发起反攻",
+            })
+        elif n["stance"] == "neutral":
+            if "march" in actions and n["troops"] > total_troops * 0.5:
+                geo_impacts.append({
+                    "faction": n["name"],
+                    "reaction": "opportunistic",
+                    "desc": f"我方出兵后，{n['name']}可能趁虚而入",
+                })
+
+    # === 季节策略 ===
+    season_strategy = {
+        "春": "春季宜征兵屯田，扩充军备。春汛需防水患。",
+        "夏": "夏季宜加固水利、储备粮草。洪蝗高发需防备。",
+        "秋": "秋高气爽，宜出征扩张。税收最丰，宜大举用兵。",
+        "冬": "严冬不宜远征，宜休养生息、加固城防、储备粮草。",
+    }
+
+    # === 生成叙事 ===
+    risk_level = "low"
+    high_risks = [r for r in risks if r["impact"] in ("high", "critical")]
+    if any(r["impact"] == "critical" for r in risks):
+        risk_level = "critical"
+    elif len(high_risks) >= 2:
+        risk_level = "high"
+    elif len(high_risks) >= 1:
+        risk_level = "medium"
+
+    narrative_parts = [f"臣谨领圣意，业已完成战略推演。"]
+    if observations:
+        narrative_parts.append(f"当前态势：{'；'.join(observations[:4])}")
+    narrative_parts.append(f"{season_strategy.get(season, '')}")
+    if risk_level != "low":
+        narrative_parts.append(f"综合风险等级：{risk_level}，请陛下审慎裁决。")
+    else:
+        narrative_parts.append(f"综合评估：局势尚稳，此令可行。")
+
+    return {
+        "situation_analysis": "；".join(observations[:5]) if observations else f"当前{season}季，{faction_name}拥兵{total_troops}人，府库银{treasury}两。周边共{len(neighbors)}路势力。",
+        "key_observations": observations[:6],
+        "risk_matrix": risks[:5],
+        "overall_risk_level": risk_level,
+        "geopolitical_impacts": geo_impacts[:4],
+        "narrative": "\n".join(narrative_parts),
+        "season_strategy": season_strategy.get(season, ""),
+        "total_neighbor_troops": neighbor_troops,
+        "our_total_troops": total_troops,
+        "local_analysis": True,
+    }
 
 
 # ============================================================
@@ -1011,7 +1496,58 @@ def parse_edict_locally(edict_text: str, world_state: dict) -> dict:
     if original_text != edict_text:
         intent_str += f"（续接上令：{original_text[:20]}）"
 
-    edict_lang = f"奉天承运皇帝，诏曰：{original_text}钦此。"
+    # === 本地增强：圣旨文体 + 文言生成 ===
+    faction_name = player.get("name", "义军")
+    # 提取每个命令的参数列表用于文言生成
+    params_list = [cmd.get("params", {}) for cmd in commands]
+    edict_lang = _generate_local_edict_language(
+        edict_text=original_text,
+        actions=actions,
+        params_list=params_list,
+        faction_name=faction_name,
+        world_state=world_state,
+    )
+
+    # === 本地增强：资源评估 ===
+    resource_assessment = _generate_local_resource_assessment(
+        actions=actions,
+        params_list=params_list,
+        world_state=world_state,
+    )
+
+    # === 本地增强：战略推演分析 ===
+    strategic_analysis = _generate_local_strategic_analysis(
+        edict_text=original_text,
+        actions=actions,
+        world_state=world_state,
+    )
+
+    # === 本地增强：风险评估 ===
+    risk_warnings = []
+    risk_level = strategic_analysis.get("overall_risk_level", "low")
+    if risk_level in ("high", "critical"):
+        high_risks = [r for r in strategic_analysis.get("risk_matrix", []) if r.get("impact") in ("high", "critical")]
+        for r in high_risks[:3]:
+            risk_warnings.append(f"{r.get('desc', '')} — {r.get('mitigation', '')}")
+    if len(commands) > 5:
+        risk_warnings.append(f"单道圣旨拆解{len(commands)}条政令，建议分批施行以减风险")
+    risk_warning = "；".join(risk_warnings) if risk_warnings else ""
+
+    # === 本地增强：后续建议 ===
+    suggestions = []
+    season = world_state.get("current_season", "春")
+    if season == "秋" and "march" in actions:
+        suggestions.append("秋季攻方优势(+10%)，宜乘胜追击")
+    elif season == "冬" and "recruit" in actions:
+        suggestions.append("冬季征兵恢复慢，建议囤积资源待开春")
+    elif "march" in actions:
+        suggestions.append("关注出征后边境防务，防止其他势力趁虚而入")
+    if not suggestions:
+        suggestions.append("下一回合可根据执行效果调整策略")
+    follow_up_suggestion = "；".join(suggestions)
+
+    # === 增强叙事（使用战略推演分析中的叙事） ===
+    narrative = strategic_analysis.get("narrative", f"臣谨领圣意，已拟就{len(commands)}条政令，请陛下御览。")
 
     # 记录上下文
     try:
@@ -1021,21 +1557,23 @@ def parse_edict_locally(edict_text: str, world_state: dict) -> dict:
             intent=intent_str,
             summary=f"本地解析：{intent_str}",
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"圣旨上下文增强跳过: {e}")
 
     return {
         "intent_analysis": f"识别到圣旨包含以下意图：{intent_str}（共{len(actions)}类操作，生成{len(commands)}条指令）",
-        "narrative": f"臣谨领圣意，已拟就{len(commands)}条政令，请陛下御览。",
-        "resource_assessment": f"当前府库银{player.get('treasury', 0)}两、粮{player.get('grain', 0)}石、兵力{player.get('total_troops', 0)}人",
+        "narrative": narrative,
+        "resource_assessment": resource_assessment,
         "edict_language": edict_lang,
         "commands": commands,
         "invalid_commands": [],
-        "risk_warning": "（本地解析，请确认指令无误）" if len(commands) > 3 else "",
-        "follow_up_suggestion": "下一回合可根据执行效果调整策略",
+        "risk_warning": risk_warning,
+        "follow_up_suggestion": follow_up_suggestion,
         "summary": f"圣旨已解析为{len(commands)}条政令：{intent_str}",
         "ai_generated": False,
-        "raw_response": f"[本地解析 - 识别到{len(actions)}类操作]",
+        "raw_response": f"[本地解析增强版 - 识别到{len(actions)}类操作]",
+        "strategic_analysis": strategic_analysis,  # 附加战略推演结果
+        "edict_style": _select_edict_style(actions, params_list, original_text)[1],  # 记录所用文体
     }
 
 
@@ -1109,8 +1647,8 @@ def build_preprocess_hint(edict_text: str, world_state: dict) -> str:
         if continuity:
             lines.append(f"\n💡 策略建议：{continuity}")
 
-    except Exception:
-        pass  # 上下文不可用不影响主流程
+    except Exception as e:
+        logger.debug(f"意图连续性分析跳过: {e}")
 
     return "\n".join(lines) if len(lines) > 1 else ""
 

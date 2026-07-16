@@ -2,7 +2,7 @@
   <Teleport to="body">
     <transition name="modal">
       <div class="advisor-overlay" @click.self="$emit('close')" v-if="visible">
-        <div class="advisor-dialog">
+        <div class="advisor-dialog artifact-panel artifact-personnel">
           <!-- 标题栏 -->
           <div class="adv-header">
             <h2>策策问 · 谋臣献策</h2>
@@ -426,8 +426,6 @@ function scrollToBottom() {
 
 /* 弹窗主体 */
 .advisor-dialog {
-  background: var(--bg-panel);
-  border: 2px solid var(--border-main);
   width: 90vw;
   max-width: 700px;
   height: 80vh;

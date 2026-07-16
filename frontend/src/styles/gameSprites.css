@@ -1,0 +1,89 @@
+/**
+ * 游戏精灵图标系统 — Phase 2 视觉优化
+ *
+ * 使用 CSS background-image + background-position 实现 sprite sheet 图标。
+ * 当前阶段使用内联 SVG 作为精灵占位，后续替换为像素精灵图集。
+ *
+ * 用法：
+ *   <span class="sprite sprite-gold"></span>
+ *   <span class="sprite sprite-grain"></span>
+ */
+
+/* ========== 基础精灵容器 ========== */
+.sprite {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  vertical-align: middle;
+  flex-shrink: 0;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  image-rendering: auto;
+}
+
+/* 大号精灵（面板/弹窗用） */
+.sprite-lg {
+  width: 32px;
+  height: 32px;
+}
+
+/* 小号精灵（状态徽章用） */
+.sprite-sm {
+  width: 16px;
+  height: 16px;
+}
+
+/* ========== 资源图标 ========== */
+.sprite-gold {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='9' fill='%23D4A017' stroke='%23B8860B' stroke-width='1.5'/%3E%3Crect x='10' y='7' width='4' height='10' rx='1' fill='%23F0C040'/%3E%3Crect x='11' y='8' width='2' height='8' rx='0.5' fill='%23FFE4A0'/%3E%3C/svg%3E");
+}
+.sprite-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='5' y='5' width='14' height='15' rx='2' fill='%238BA870' stroke='%236B8E23' stroke-width='1'/%3E%3Cline x1='8' y1='5' x2='8' y2='20' stroke='%236B8E23' stroke-width='0.5' opacity='0.3'/%3E%3Cline x1='16' y1='5' x2='16' y2='20' stroke='%236B8E23' stroke-width='0.5' opacity='0.3'/%3E%3Cellipse cx='9' cy='17' rx='1.5' ry='1' fill='%23D4C060'/%3E%3Cellipse cx='12' cy='18' rx='1.5' ry='1' fill='%23D4C060'/%3E%3Cellipse cx='15' cy='17' rx='1.5' ry='1' fill='%23D4C060'/%3E%3C/svg%3E");
+}
+.sprite-prestige {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpolygon points='12,2 15,9 22,9 16.5,14 18.5,21 12,17 5.5,21 7.5,14 2,9 9,9' fill='%23D4A017' stroke='%23B8860B' stroke-width='1'/%3E%3Cpolygon points='12,2 15,9 22,9 16.5,14 12,17' fill='%23FFE4A0' opacity='0.4'/%3E%3C/svg%3E");
+}
+.sprite-troops {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 20 L6 14 L4 14 L4 8 L8 4 L12 4 L16 8 L20 14 L18 14 L18 20 L6 20Z' fill='%23808090' stroke='%23505060' stroke-width='1'/%3E%3Cline x1='8' y1='14' x2='16' y2='14' stroke='%23505060' stroke-width='1'/%3E%3Ccircle cx='9' cy='7' r='1.5' fill='%23D0D0E0'/%3E%3Ccircle cx='15' cy='7' r='1.5' fill='%23D0D0E0'/%3E%3C/svg%3E");
+}
+.sprite-horses {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 16 Q3 14 5 9 Q7 5 12 5 Q17 5 19 9 Q21 14 19 16 L17 16 L15 10 L9 10 L7 16 Z' fill='%238B6914' stroke='%236B4E0A' stroke-width='1'/%3E%3Cpath d='M12 5 Q14 3 16 4 Q14 5 12 5Z' fill='%23A0782C'/%3E%3Ccircle cx='10' cy='11' r='1' fill='%231A1A2E'/%3E%3C/svg%3E");
+}
+.sprite-arms {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='8' fill='%23908878' stroke='%23706858' stroke-width='1'/%3E%3Ccircle cx='12' cy='12' r='5' fill='%23B0A898'/%3E%3Ccircle cx='12' cy='12' r='2' fill='%23908878'/%3E%3Cline x1='12' y1='4' x2='12' y2='20' stroke='%23706858' stroke-width='0.5'/%3E%3Cline x1='4' y1='12' x2='20' y2='12' stroke='%23706858' stroke-width='0.5'/%3E%3C/svg%3E");
+}
+
+/* ========== 单位兵种图标 ========== */
+.sprite-infantry {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 22 L6 16 L7 10 L10 6 L14 6 L17 10 L18 16 L16 22Z' fill='%234A6FA5' stroke='%23335580' stroke-width='1'/%3E%3Crect x='10' y='4' width='4' height='3' rx='1' fill='%23335580'/%3E%3Cline x1='9' y1='12' x2='15' y2='12' stroke='%23335580' stroke-width='0.8'/%3E%3C/svg%3E");
+}
+.sprite-cavalry {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 18 Q2 15 4 10 Q6 6 10 6 Q14 6 18 8 L20 10 L18 12 L16 10 L14 12 L14 18Z' fill='%23C47A3A' stroke='%239A5520' stroke-width='1'/%3E%3Ccircle cx='7' cy='7' r='1.5' fill='%23E8D0B0'/%3E%3C/svg%3E");
+}
+.sprite-archer {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 22 L6 16 L8 10 L12 7 L16 10 L18 16 L16 22Z' fill='%234A8C3F' stroke='%23336622' stroke-width='1'/%3E%3Cpath d='M4 3 Q8 5 12 8 M20 3 Q16 5 12 8' fill='none' stroke='%236B8E23' stroke-width='1.5'/%3E%3Ccircle cx='12' cy='8' r='2' fill='%23336622'/%3E%3C/svg%3E");
+}
+.sprite-naval {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 14 L21 14 L19 18 L5 18Z' fill='%23336B87' stroke='%23224455' stroke-width='1'/%3E%3Cpath d='M6 6 L18 6 L16 14 L8 14Z' fill='%234495AA' stroke='%23336B87' stroke-width='1'/%3E%3Cline x1='7' y1='8' x2='17' y2='8' stroke='%23C8E8F0' stroke-width='0.5'/%3E%3C/svg%3E");
+}
+
+/* ========== 状态徽章 ========== */
+.sprite-marching {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpolygon points='2,8 13,4 13,12' fill='%234A90D9'/%3E%3C/svg%3E");
+}
+.sprite-siege {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='2' y='6' width='12' height='8' rx='1' fill='%23A0A0A0' stroke='%23707070' stroke-width='0.5'/%3E%3Cline x1='8' y1='6' x2='8' y2='2' stroke='%23707070'/%3E%3C/svg%3E");
+}
+.sprite-garrison {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='3' y='4' width='10' height='10' rx='0.5' fill='%236B8E23' stroke='%234A6A15' stroke-width='0.5'/%3E%3Cline x1='8' y1='4' x2='8' y2='2' stroke='%234A6A15'/%3E%3C/svg%3E");
+}
+.sprite-low-morale {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%23C43A3A'/%3E%3Ctext x='8' y='11' text-anchor='middle' font-size='10' fill='white' font-weight='bold'%3E!%3C/text%3E%3C/svg%3E");
+}
+.sprite-high-morale {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%234A9A3A'/%3E%3Ctext x='8' y='11' text-anchor='middle' font-size='10' fill='white' font-weight='bold'%3E!%3C/text%3E%3C/svg%3E");
+}
+.sprite-supply-cut {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%23908800'/%3E%3Cline x1='4' y1='4' x2='12' y2='12' stroke='white' stroke-width='2'/%3E%3C/svg%3E");
+}

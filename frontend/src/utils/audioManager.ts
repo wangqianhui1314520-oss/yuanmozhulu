@@ -21,11 +21,11 @@ export interface AudioTrack {
 
 // 内置BGM列表（用户可替换 public/data/map/bgm/ 下的文件）
 const DEFAULT_BGM: AudioTrack[] = [
-  { id: 'main_menu', src: '/bgm_main_menu.mp4', type: 'bgm', volume: 0.45 },
-  { id: 'gameplay', src: '/bgm_gameplay.mp4', type: 'bgm', volume: 0.4 },
-  { id: 'main_theme', src: '/data/map/bgm/main_theme.mp3', type: 'bgm', volume: 0.4 },
-  { id: 'war_drums', src: '/data/map/bgm/war_drums.mp3', type: 'bgm', volume: 0.35 },
-  { id: 'court_music', src: '/data/map/bgm/court_music.mp3', type: 'bgm', volume: 0.3 },
+  { id: 'main_menu', src: '/data/map/bgm/main_menu.mp4', type: 'bgm', volume: 0.45 },
+  { id: 'gameplay', src: '/data/map/bgm/gameplay.mp4', type: 'bgm', volume: 0.4 },
+  { id: 'main_theme', src: '/data/map/bgm/main_theme.wav', type: 'bgm', volume: 0.4 },
+  { id: 'war_drums', src: '/data/map/bgm/war_drums.wav', type: 'bgm', volume: 0.35 },
+  { id: 'court_music', src: '/data/map/bgm/court_music.wav', type: 'bgm', volume: 0.3 },
 ]
 
 // 势力 AI 配音映射 (V3.0 九大势力 · edge-tts 生成)
@@ -41,14 +41,19 @@ const FACTION_VOICE_MAP: Record<string, string> = {
   faction_mobei: '/data/map/voice/faction_mobei_intro.mp3',
 }
 
-// 音色配置缓存
+// 音色配置缓存（V4.0 双提供商：edge-tts + ElevenLabs）
 interface VoiceInfo {
   role: string
-  voice: string
+  voice_edge: string       // edge-tts 音色名
   rate: string
   pitch: string
   desc: string
   text: string
+  // ElevenLabs 扩展字段
+  voice_elevenlabs?: string
+  eleven_stability?: number
+  eleven_similarity?: number
+  eleven_style?: number
 }
 
 export class AudioManager {
@@ -66,9 +71,54 @@ export class AudioManager {
   private _voiceConfigCache: Record<string, VoiceInfo> = {}
   private _voicePreloadMap: Map<string, HTMLAudioElement> = new Map()
   private _generatingFactions: Set<string> = new Set()
+  private _userInteracted: boolean = false
+  private _interactionUnlocked: boolean = false
+  private _pendingBgmId: string | null = null
+  private _pendingBgmFadeIn: number = 2.0
 
   get masterVolume() { return this._masterVolume }
   get isMuted() { return this._isMuted }
+
+  /**
+   * 初始化音频管理器，绑定用户交互以解锁浏览器自动播放限制
+   * 应在应用入口处尽早调用（如 main.ts 或 App.vue onMounted）
+   */
+  init() {
+    if (this._interactionUnlocked) return
+    this._interactionUnlocked = true
+
+    const unlock = () => {
+      this._userInteracted = true
+      // 解锁后尝试播放之前因 NotAllowedError 搁置的 BGM
+      if (this._pendingBgmId) {
+        const id = this._pendingBgmId
+        const fi = this._pendingBgmFadeIn
+        this._pendingBgmId = null
+        this.playBgm(id, fi)
+      }
+    }
+
+    const events = ['click', 'touchstart', 'keydown', 'mousedown'] as const
+    const handler = () => {
+      unlock()
+      for (const evt of events) {
+        document.removeEventListener(evt, handler, true)
+      }
+    }
+    for (const evt of events) {
+      document.addEventListener(evt, handler, true)
+    }
+
+    // 如果文档已经交互过了（页面刷新等场景），直接标记
+    if (document.readyState === 'complete') {
+      setTimeout(() => {
+        if (!this._userInteracted) {
+          // 页面加载完成后自动尝试一次解锁
+          this._userInteracted = true
+        }
+      }, 500)
+    }
+  }
 
   /** 设置主音量 */
   setMasterVolume(v: number) {
@@ -160,6 +210,9 @@ export class AudioManager {
       return
     }
 
+    // 静音状态下不播放
+    if (this._isMuted) return
+
     // 淡出并销毁旧BGM播放器，防止内存泄漏
     if (this._bgmPlayer && !this._bgmPlayer.paused) {
       this._fadeOutAndStop(this._bgmPlayer, 1.0)
@@ -181,6 +234,18 @@ export class AudioManager {
       // 淡入
       this._fadeTo(player, (track.volume || this._bgmVolume) * (this._isMuted ? 0 : this._masterVolume), fadeIn)
     }).catch(err => {
+      // 浏览器自动播放策略限制 → 暂存，等用户交互后重试
+      if (err.name === 'NotAllowedError') {
+        console.warn('[AudioManager] BGM自动播放被浏览器阻止，等待用户交互后重试')
+        this._pendingBgmId = track.id
+        this._pendingBgmFadeIn = fadeIn
+        return
+      }
+      // 音频文件不存在或格式不支持
+      if (err.name === 'NotSupportedError') {
+        console.warn(`[AudioManager] BGM资源不可用: ${track.src}`, err)
+        return
+      }
       console.warn('[AudioManager] BGM播放失败:', err)
     })
   }
@@ -241,7 +306,7 @@ export class AudioManager {
       const { data: resp } = await axios.post('/api/audio/generate-voice', { faction_id: factionId }, { timeout: 30000 })
       // 后端统一返回 { code: 200/0, data: {...} } 格式
       if (resp && (resp.code === 200 || resp.code === 0) && resp.data?.generated) {
-        console.log(`[AudioManager] AI配音生成成功: ${factionId}`)
+        if (import.meta.env.DEV) console.log(`[AudioManager] AI配音生成成功: ${factionId}`)
         // 生成了就返回文件路径
         return FACTION_VOICE_MAP[factionId] || null
       }
@@ -319,7 +384,7 @@ export class AudioManager {
     if (played) return true
 
     // 本地文件不存在，从后端请求生成
-    console.log(`[AudioManager] 本地配音缺失，请求后端 AI 生成: ${factionId}`)
+    if (import.meta.env.DEV) console.log(`[AudioManager] 本地配音缺失，请求后端 AI 生成: ${factionId}`)
     const generatedSrc = await this._requestVoiceGeneration(factionId)
     if (generatedSrc) {
       const playedAfterGen = await playAudio(generatedSrc)

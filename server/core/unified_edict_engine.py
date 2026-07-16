@@ -34,6 +34,11 @@ from server.core.edict_engine import (
 
 logger = logging.getLogger("yuanmo.unified_edict")
 
+# AI 战略推演全局开关（可通过环境变量覆盖）
+import os as _os
+USE_AI_SIMULATION = _os.environ.get("EDICT_AI_SIMULATION", "true").lower() != "false"
+SIMULATION_MIN_CONFIDENCE = 0.3  # AI 推演最低置信度阈值
+
 
 # ============================================================
 # 意图分类 — 五大类 + 细分
@@ -884,56 +889,176 @@ async def process_unified_edict(
         if not use_ai:
             return result
 
-    # 7. AI 解析 + 执行
-    if use_ai and llm_client:
+    # 7. AI 解析 + 执行（4.0 增强：AI 战略推演管道优先）
+    simulation_used = False
+    commands = []
+    invalid = []
+
+    if use_ai and llm_client and USE_AI_SIMULATION:
+        # ===== 新增：AI 战略推演管道（阶段1+2） =====
         try:
-            ai_result = await call_ai_edict(
+            from server.core.strategic_simulation import (
+                simulate_strategic_consequences,
+                SIMULATION_MIN_CONFIDENCE as _SIM_MIN_CONF,
+            )
+
+            logger.info(f"启用AI战略推演管道: {edict_text[:50]}...")
+            strategic_plan = await simulate_strategic_consequences(
                 edict_text=edict_text,
                 world_state=world_state,
                 llm_client=llm_client,
                 edict_history=edict_history,
-                use_local_fallback=True,
             )
-            result["ai_analysis"] = {
-                "intent_analysis": ai_result.get("intent_analysis", ""),
-                "narrative": ai_result.get("narrative", ""),
-                "resource_assessment": ai_result.get("resource_assessment", ""),
-                "edict_language": ai_result.get("edict_language", ""),
-                "risk_warning": ai_result.get("risk_warning", ""),
-                "follow_up_suggestion": ai_result.get("follow_up_suggestion", ""),
-                "summary": ai_result.get("summary", ""),
-                "ai_generated": ai_result.get("ai_generated", False),
-                "hybrid_mode": ai_result.get("hybrid_mode", False),
-            }
-            commands = ai_result.get("commands", [])
-            invalid = ai_result.get("invalid_commands", [])
+
+            if strategic_plan.ai_confidence >= _SIM_MIN_CONF and strategic_plan.merged_commands:
+                # 推演成功，使用 AI 推演结果
+                simulation_used = True
+                commands = strategic_plan.merged_commands
+
+                # 富文本 AI 分析结果
+                geo_summary = ""
+                if strategic_plan.geopolitical_impacts:
+                    geo_parts = []
+                    for g in strategic_plan.geopolitical_impacts[:3]:
+                        geo_parts.append(f"{g.faction_name}: {g.description[:40]}")
+                    geo_summary = "；".join(geo_parts)
+
+                risk_summary = ""
+                if strategic_plan.risk_matrix:
+                    high_risks = [r for r in strategic_plan.risk_matrix if r.impact in ("high", "critical")]
+                    if high_risks:
+                        risk_summary = f"⚠ 高风险项: {'; '.join(r.description[:30] for r in high_risks[:3])}"
+
+                result["ai_analysis"] = {
+                    "intent_analysis": strategic_plan.intent_understanding or strategic_plan.situation_analysis,
+                    "narrative": strategic_plan.narrative or f"臣谨领圣意，已完成战略推演。共拟{len(strategic_plan.primary_plan)}步方案，当前回合即刻施行。",
+                    "resource_assessment": strategic_plan.resource_assessment,
+                    "edict_language": strategic_plan.edict_language,
+                    "risk_warning": risk_summary,
+                    "follow_up_suggestion": strategic_plan.follow_up_suggestion,
+                    "summary": f"AI战略推演完成（置信度{strategic_plan.ai_confidence:.0%}），主方案{len(strategic_plan.primary_plan)}步，备选{len(strategic_plan.alternative_plans)}个",
+                    "ai_generated": True,
+                    "hybrid_mode": False,
+                    "simulation_used": True,
+                }
+                # 附加推演详情
+                result["simulation"] = {
+                    "situation_analysis": strategic_plan.situation_analysis,
+                    "key_observations": strategic_plan.key_observations,
+                    "primary_plan_steps": [
+                        {"step": s.step, "description": s.description, "expected_effect": s.expected_effect}
+                        for s in strategic_plan.primary_plan
+                    ],
+                    "alternative_plans": [
+                        {"narrative": strategic_plan.alternative_narratives[i] if i < len(strategic_plan.alternative_narratives) else "",
+                         "steps": [{"description": s.description} for s in steps]}
+                        for i, steps in enumerate(strategic_plan.alternative_plans)
+                    ],
+                    "risk_matrix": [
+                        {"type": r.risk_type, "description": r.description,
+                         "probability": r.probability, "impact": r.impact}
+                        for r in strategic_plan.risk_matrix
+                    ],
+                    "overall_risk_level": strategic_plan.overall_risk_level,
+                    "geopolitical_impacts": [
+                        {"faction": g.faction_name, "reaction": g.reaction, "description": g.description}
+                        for g in strategic_plan.geopolitical_impacts
+                    ],
+                    "consequence_analysis": strategic_plan.consequence_analysis,
+                    "ai_confidence": strategic_plan.ai_confidence,
+                    "resource_projection": {
+                        "treasury": {"before": strategic_plan.resource_projection.treasury_before,
+                                     "after": strategic_plan.resource_projection.treasury_after},
+                        "grain": {"before": strategic_plan.resource_projection.grain_before,
+                                  "after": strategic_plan.resource_projection.grain_after},
+                        "troops": {"before": strategic_plan.resource_projection.troops_before,
+                                   "after": strategic_plan.resource_projection.troops_after},
+                    } if strategic_plan.resource_projection else None,
+                    "deficit_warning": strategic_plan.resource_projection.deficit_warning if strategic_plan.resource_projection else "",
+                }
+                logger.info(
+                    f"AI战略推演成功: 置信度{strategic_plan.ai_confidence:.0%}, "
+                    f"主方案{len(strategic_plan.primary_plan)}步, "
+                    f"指令{len(commands)}条"
+                )
+            else:
+                # 推演置信度过低，降级到原管道
+                logger.warning(
+                    f"AI战略推演置信度过低({strategic_plan.ai_confidence:.0%})，"
+                    f"降级到原有AI解析管道"
+                )
+                simulation_used = False
 
         except Exception as e:
-            logger.error(f"统一圣旨AI解析失败: {e}", exc_info=True)
-            # 降级到本地解析
+            logger.error(f"AI战略推演失败，降级到原有管道: {e}", exc_info=True)
+            simulation_used = False
+
+    # 原有管道：AI 解析 或 本地解析（当推演未使用或不可用时）
+    if not simulation_used:
+        if use_ai and llm_client:
+            try:
+                ai_result = await call_ai_edict(
+                    edict_text=edict_text,
+                    world_state=world_state,
+                    llm_client=llm_client,
+                    edict_history=edict_history,
+                    use_local_fallback=True,
+                )
+                result["ai_analysis"] = {
+                    "intent_analysis": ai_result.get("intent_analysis", ""),
+                    "narrative": ai_result.get("narrative", ""),
+                    "resource_assessment": ai_result.get("resource_assessment", ""),
+                    "edict_language": ai_result.get("edict_language", ""),
+                    "risk_warning": ai_result.get("risk_warning", ""),
+                    "follow_up_suggestion": ai_result.get("follow_up_suggestion", ""),
+                    "summary": ai_result.get("summary", ""),
+                    "ai_generated": ai_result.get("ai_generated", False),
+                    "hybrid_mode": ai_result.get("hybrid_mode", False),
+                }
+                commands = ai_result.get("commands", [])
+                invalid = ai_result.get("invalid_commands", [])
+
+            except Exception as e:
+                logger.error(f"统一圣旨AI解析失败: {e}", exc_info=True)
+                # 降级到本地解析（增强版）
+                local = parse_edict_locally(edict_text, world_state)
+                commands = local.get("commands", [])
+                invalid = []
+                result["ai_analysis"] = {
+                    "intent_analysis": f"AI服务暂不可用，以本地解析代行。{local.get('intent_analysis', '')}",
+                    "narrative": local.get("narrative", ""),
+                    "resource_assessment": local.get("resource_assessment", ""),
+                    "edict_language": local.get("edict_language", f"奉天承运皇帝，诏曰：{edict_text}钦此。"),
+                    "risk_warning": local.get("risk_warning", ""),
+                    "follow_up_suggestion": local.get("follow_up_suggestion", ""),
+                    "summary": local.get("summary", ""),
+                    "ai_generated": False,
+                    "hybrid_mode": False,
+                }
+                if local.get("strategic_analysis"):
+                    result["simulation"] = local["strategic_analysis"]
+                if local.get("edict_style"):
+                    result["edict_style"] = local["edict_style"]
+        else:
+            # 纯本地解析（增强版：含文体选择、文言生成、资源评估、战略推演）
             local = parse_edict_locally(edict_text, world_state)
             commands = local.get("commands", [])
             invalid = []
             result["ai_analysis"] = {
-                "intent_analysis": f"AI服务暂不可用，以本地解析代行。",
+                "intent_analysis": local.get("intent_analysis", "本地解析模式"),
                 "narrative": local.get("narrative", ""),
+                "resource_assessment": local.get("resource_assessment", ""),
                 "edict_language": local.get("edict_language", f"奉天承运皇帝，诏曰：{edict_text}钦此。"),
+                "risk_warning": local.get("risk_warning", ""),
+                "follow_up_suggestion": local.get("follow_up_suggestion", ""),
                 "summary": local.get("summary", ""),
                 "ai_generated": False,
-                "hybrid_mode": False,
             }
-    else:
-        # 纯本地解析
-        local = parse_edict_locally(edict_text, world_state)
-        commands = local.get("commands", [])
-        invalid = []
-        result["ai_analysis"] = {
-            "intent_analysis": "本地解析模式",
-            "narrative": local.get("narrative", ""),
-            "edict_language": local.get("edict_language", f"奉天承运皇帝，诏曰：{edict_text}钦此。"),
-            "summary": local.get("summary", ""),
-            "ai_generated": False,
-        }
+            # 传递战略推演结果
+            if local.get("strategic_analysis"):
+                result["simulation"] = local["strategic_analysis"]
+            if local.get("edict_style"):
+                result["edict_style"] = local["edict_style"]
 
     result["edict_language"] = result["ai_analysis"].get("edict_language", "")
 
@@ -1025,6 +1150,8 @@ async def batch_process_edicts(
     """
     results = []
     all_commands = []
+    # 复制一份 pending，避免修改外部引用，并在遍历中累积更新
+    _pending = list(pending_commands) if pending_commands else []
 
     for i, text in enumerate(texts):
         r = await process_unified_edict(
@@ -1033,11 +1160,15 @@ async def batch_process_edicts(
             world_state_obj=world_state_obj,
             round_engine=round_engine,
             llm_client=llm_client,
-            pending_commands=pending_commands,
+            pending_commands=_pending,
             use_ai=use_ai,
         )
         results.append(r)
-        all_commands.extend(r.get("commands", []))
+        cmds = r.get("commands", [])
+        all_commands.extend(cmds)
+        for cmd in cmds:
+            if cmd not in _pending:
+                _pending.append(cmd)
 
     return {
         "total": len(texts),

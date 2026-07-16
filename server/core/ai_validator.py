@@ -286,7 +286,7 @@ class AIValidator:
             return {"passed": False, "reason": f"地块 {tile_id} 不存在"}
 
         tt = self._tile_type_str(getattr(tile, 'tile_type', ''))
-        tile_owner = getattr(tile, 'owner_faction', '')
+        tile_owner = getattr(tile, 'faction_id', '')
 
         # 发展类：不适用于水域/山脉
         if ct in (CommandType.DEVELOP, CommandType.BUILD):
@@ -323,7 +323,7 @@ class AIValidator:
         if tile_id:
             tile = self.world.tiles.get(tile_id) if hasattr(self.world, 'tiles') else None
             if tile:
-                owner = getattr(tile, 'owner_faction', '')
+                owner = getattr(tile, 'faction_id', '')
                 # 非己方地块的操作限制
                 if owner and owner != fid:
                     allowed_on_foreign = [CommandType.MARCH, CommandType.SPY, CommandType.SCOUT, CommandType.PLUNDER, CommandType.AMBUSH]

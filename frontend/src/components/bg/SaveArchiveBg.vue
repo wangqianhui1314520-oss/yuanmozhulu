@@ -71,6 +71,7 @@ let dustMotes: DustMote[] = []
 let time = 0
 let W = 0
 let H = 0
+let dpr = 1
 
 onMounted(() => {
   initCanvas()
@@ -92,20 +93,30 @@ function onResize() {
 function initCanvas() {
   const c = canvas.value
   if (!c) return
-  c.width = window.innerWidth
-  c.height = window.innerHeight
+  dpr = Math.min(window.devicePixelRatio || 1, 2)
+  c.width = window.innerWidth * dpr
+  c.height = window.innerHeight * dpr
+  c.style.width = window.innerWidth + 'px'
+  c.style.height = window.innerHeight + 'px'
   W = c.width
   H = c.height
 
-  // 竹简条
+  const ctx = c.getContext('2d')
+  if (ctx) ctx.scale(dpr, dpr)
+
+  const iw = window.innerWidth
+  const ih = window.innerHeight
+
+  // 竹简条（V5.0 大屏下降采样，减少绘制数量）
   bambooSlips = []
   const slipWidth = 5
-  for (let x = 0; x < W; x += slipWidth + 1) {
+  const slipGap = iw > 1920 ? 3 : 1  // 4K屏间距更大
+  for (let x = 0; x < iw; x += slipWidth + slipGap) {
     bambooSlips.push({
       x,
       y: 0,
       width: slipWidth,
-      height: H,
+      height: ih,
       sway: Math.random() * Math.PI * 2,
       swaySpeed: 0.003 + Math.random() * 0.006,
       alpha: 0.03 + Math.random() * 0.04,
@@ -114,7 +125,7 @@ function initCanvas() {
 
   // 编绳
   bindingCords = []
-  for (let y = H * 0.2; y < H; y += H * 0.3) {
+  for (let y = ih * 0.2; y < ih; y += ih * 0.3) {
     bindingCords.push({
       y,
       sway: Math.random() * Math.PI * 2,
@@ -130,9 +141,9 @@ function initCanvas() {
 
   // 烛台
   candleGlows = [
-    { x: W * 0.08, y: H * 0.12, r: 60, flicker: 0, speed: 0.03, baseAlpha: 0.08 },
-    { x: W * 0.9, y: H * 0.1, r: 55, flicker: 1.5, speed: 0.035, baseAlpha: 0.07 },
-    { x: W * 0.07, y: H * 0.88, r: 65, flicker: 3, speed: 0.028, baseAlpha: 0.08 },
+    { x: iw * 0.08, y: ih * 0.12, r: 60, flicker: 0, speed: 0.03, baseAlpha: 0.08 },
+    { x: iw * 0.9, y: ih * 0.1, r: 55, flicker: 1.5, speed: 0.035, baseAlpha: 0.07 },
+    { x: iw * 0.07, y: ih * 0.88, r: 65, flicker: 3, speed: 0.028, baseAlpha: 0.08 },
   ]
 
   // 尘埃微粒
@@ -176,17 +187,21 @@ function animate() {
   if (!ctx) return
 
   time += 1
-  ctx.clearRect(0, 0, W, H)
+  ctx.save()
+  ctx.scale(dpr, dpr)
+  const iw = window.innerWidth
+  const ih = window.innerHeight
+  ctx.clearRect(0, 0, iw, ih)
 
   // 1. 竹简底色暖黄渐变
-  const baseGrad = ctx.createLinearGradient(0, 0, 0, H)
+  const baseGrad = ctx.createLinearGradient(0, 0, 0, ih)
   baseGrad.addColorStop(0, '#221d16')
   baseGrad.addColorStop(0.3, '#27221a')
   baseGrad.addColorStop(0.5, '#2a241c')
   baseGrad.addColorStop(0.7, '#27221a')
   baseGrad.addColorStop(1, '#1c1812')
   ctx.fillStyle = baseGrad
-  ctx.fillRect(0, 0, W, H)
+  ctx.fillRect(0, 0, iw, ih)
 
   // 2. 竹简条（竖纹肌理）
   for (const slip of bambooSlips) {
@@ -198,7 +213,7 @@ function animate() {
     grad.addColorStop(0.5, `rgba(184, 150, 62, ${slip.alpha})`)
     grad.addColorStop(1, `rgba(184, 150, 62, ${slip.alpha * 0.5})`)
     ctx.fillStyle = grad
-    ctx.fillRect(slip.x + offsetX, 0, slip.width, H)
+    ctx.fillRect(slip.x + offsetX, 0, slip.width, ih)
   }
 
   // 3. 编绳（横向暗线微动）
@@ -210,8 +225,8 @@ function animate() {
     ctx.lineWidth = 1.5
     ctx.beginPath()
     ctx.moveTo(0, swayY)
-    // 编绳略微波动
-    for (let x = 0; x <= W; x += 20) {
+    const cordStep = iw > 1920 ? 40 : 20
+    for (let x = 0; x <= iw; x += cordStep) {
       const wy = swayY + Math.sin(x * 0.02 + cord.sway) * 1.5
       ctx.lineTo(x, wy)
     }
@@ -226,7 +241,7 @@ function animate() {
     frag.life += 1
     frag.rotation += frag.rotSpeed
 
-    if (frag.y > H + 40 || frag.life > frag.maxLife) {
+    if (frag.y > ih + 40 || frag.life > frag.maxLife) {
       inkFragments[i] = createInkFragment()
       continue
     }
@@ -265,7 +280,7 @@ function animate() {
     const d = dustMotes[i]
     d.y += d.vy
     d.x += d.vx + Math.sin(time * 0.01 + i) * 0.15
-    if (d.y < -10 || d.y > H + 10 || d.x < -10 || d.x > W + 10) {
+    if (d.y < -10 || d.y > ih + 10 || d.x < -10 || d.x > iw + 10) {
       dustMotes[i] = createDustMote()
       continue
     }
@@ -276,12 +291,13 @@ function animate() {
   }
 
   // 7. 整体暗角
-  const vignette = ctx.createRadialGradient(W / 2, H / 2, W * 0.35, W / 2, H / 2, W * 0.8)
+  const vignette = ctx.createRadialGradient(iw / 2, ih / 2, iw * 0.35, iw / 2, ih / 2, iw * 0.8)
   vignette.addColorStop(0, 'rgba(0, 0, 0, 0)')
   vignette.addColorStop(1, 'rgba(0, 0, 0, 0.35)')
   ctx.fillStyle = vignette
-  ctx.fillRect(0, 0, W, H)
+  ctx.fillRect(0, 0, iw, ih)
 
+  ctx.restore()
   animId = requestAnimationFrame(animate)
 }
 </script>
@@ -290,7 +306,7 @@ function animate() {
 .bg-canvas {
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: -1;
   pointer-events: none;
   background: #221d16;
 }

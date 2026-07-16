@@ -16,6 +16,7 @@ from server.models.world_state import (
     SiegeRecord, PrisonerRecord, SiegeState, TreatyRecord,
 )
 from server.models.events import BattleEvent, EventType, EventSeverity
+from server.core.building_config import BUILDING_CONFIG
 
 logger = logging.getLogger("yuanmo.settle")
 
@@ -24,7 +25,7 @@ DEFAULTS = {
     "base_population_growth": 0.02,
     "base_tax_rate": 0.15,
     "refugee_threshold_morale": 30,
-    "famine_threshold_grain": 100,
+    "famine_threshold_grain": 150,  # 3.0 平衡：与 game_const.yaml 一致
     "water_works_effect": 0.15,
     "granary_capacity_per_level": 500,
     "clinic_plague_reduction": 0.3,
@@ -91,6 +92,9 @@ class SettleEngine:
         supply_engine.build_supply_network()
         result["supply_attrition"] = supply_engine.process_supply_attrition()
 
+        # 3.0: 天气生成提前到税收计算之前（修复旧天气被使用的时序错误）
+        self._generate_weather()
+
         # ================================================================
         # 3.0 新增：城建基建产出结算
         # ================================================================
@@ -102,8 +106,36 @@ class SettleEngine:
         # 3.0 新增：国策效果结算（民心、治安、徭役）
         # ================================================================
         from server.core.policy_system import PolicyEngine
-        policy_engine = PolicyEngine(self.world)
-        result["policy_effects"] = policy_engine.settle_policy_effects()
+        self._policy_engine = PolicyEngine(self.world)
+        result["policy_effects"] = self._policy_engine.settle_policy_effects()
+
+        # ================================================================
+        # 3.3 新增：官员俸禄结算（每回合从 treasury 扣除，欠薪降忠诚）
+        # ================================================================
+        from server.core.advanced_features import OfficialAdvancedEngine
+        official_engine = OfficialAdvancedEngine(self.world)
+        result["salary_paid"] = official_engine.pay_salaries()
+
+        # ================================================================
+        # 3.3 新增：附庸周期性纳贡（每12回合一缴）
+        # ================================================================
+        result["vassal_tribute"] = self._auto_vassal_tribute()
+
+        # ================================================================
+        # 3.3 新增：经济引擎统一结算（Faucet-Sink模型）
+        # 与现有循环并行运行，提供增强的经济数据（不破坏原有逻辑）
+        # ================================================================
+        try:
+            from server.core.economy_engine import EconomyEngine
+            self._economy = EconomyEngine(self.world, self.const)
+            econ_result = self._economy.settle_all()
+            result["economy"] = {
+                "health": econ_result.get("economy_health", {}),
+                "famine_alerts": econ_result.get("famine_alerts", []),
+            }
+        except Exception as e:
+            logger.warning(f"经济引擎初始化失败（降级到基础结算）: {e}")
+            self._economy = None
 
         for tile in self.world.tiles.values():
             if not tile.faction_id:
@@ -125,6 +157,7 @@ class SettleEngine:
             if weather_effects.get("troop_attrition", 0) > 0:
                 grain_cost += int(tile.troops * 0.01 * weather_effects["troop_attrition"])
             tile.grain = max(0, tile.grain - grain_cost)
+            faction.grain = max(0, faction.grain - grain_cost)  # v4.3.1: 势力级同步扣除粮耗
             result["grain_consumed"][tile.tile_id] = grain_cost
 
             # 人口变化
@@ -144,6 +177,7 @@ class SettleEngine:
                 elif self.world.current_season == Season.AUTUMN:
                     recovery_rate = 0.05   # 秋季正常恢复
                 tile.troops += int(tile.troops * recovery_rate) + 10
+                tile.troops = min(2000, tile.troops)
 
             # 饥荒判定
             if tile.grain <= self.const["famine_threshold_grain"] and tile.population > 1000:
@@ -160,6 +194,8 @@ class SettleEngine:
             faction.total_population = sum(t.population for t in tiles)
             faction.total_troops = sum(t.troops for t in tiles)
             faction.tile_count = len(tiles)
+            # 势力发展度 = 所属地块发展度平均值（结局系统依赖此字段）
+            faction.development_level = int(sum(t.development_level for t in tiles) / max(len(tiles), 1))
             faction.treasury = max(0, faction.treasury)
             faction.grain = max(0, faction.grain)
 
@@ -177,8 +213,10 @@ class SettleEngine:
             for t in tiles:
                 t.morale = max(0, min(100, t.morale + season_morale_bonus))
 
-            # 建筑效果结算（含四季修正）
+            # 建筑效果结算（含四季修正 + 科技树国策修饰）
             season = self.world.current_season
+            # 3.0: 预先计算该势力的科技树国策修饰符（避免每地块重复计算）
+            _tech_mod_cache: dict[str, dict] = {}
             for t in tiles:
                 # 粮仓：每级储粮上限+500，每回合自然产粮（春秋增产）
                 granary_cap = t.granary * self.const.get("granary_capacity_per_level", 500)
@@ -188,18 +226,27 @@ class SettleEngine:
                 elif season == Season.AUTUMN:
                     grain_base = 90   # 秋收时节，粮食大增
                 elif season == Season.WINTER:
-                    grain_base = 20   # 冬日存粮消耗
+                    grain_base = 20   # 冬日粮产最低
                 grain_produced = int(t.granary * grain_base)
+                # 3.0: 科技树国策粮产/土地肥力修饰
+                fid = t.faction_id
+                if fid and fid not in _tech_mod_cache:
+                    from server.core.policy_system import PolicyEngine
+                    faction_for_mod = self.world.factions.get(fid)
+                    _tech_mod_cache[fid] = PolicyEngine.get_tech_policy_modifiers(faction_for_mod) if faction_for_mod else {}
+                tech_mod = _tech_mod_cache.get(fid, {})
+                if tech_mod.get("grain_production", 0) > 0:
+                    grain_produced = int(grain_produced * (1.0 + tech_mod["grain_production"]))
+                if tech_mod.get("land_fertility", 0) > 0:
+                    grain_produced = int(grain_produced * (1.0 + tech_mod["land_fertility"]))
                 t.grain += grain_produced
                 faction.grain += grain_produced
-                # 储粮上限检查
+                # 储粮上限检查（溢出部分仅代表地块→势力调拨，不额外增加势力粮草）
                 if t.grain > granary_cap:
-                    overflow = t.grain - granary_cap
                     t.grain = granary_cap
-                    faction.grain += overflow  # 溢出存势力
 
-                # 军械所：每级每回合产军械（冬季减产）- 统一使用 building_system 的配置
-                from server.core.building_system import BUILDING_CONFIG
+
+                # 军械所：每级每回合产军械（冬季减产）- M-1: 统一使用 building_config
                 armory_config = BUILDING_CONFIG.get(BuildingType.ARMORY, {})
                 arms_per_level = armory_config.get("effects", {}).get("arms_per_level", 5)
                 winter_penalty = armory_config.get("effects", {}).get("winter_penalty", 0.33)
@@ -207,8 +254,30 @@ class SettleEngine:
                 if season == Season.WINTER:
                     arms_base = int(arms_per_level * (1 - winter_penalty))  # 冬季减产
                 arms_produced = getattr(t, 'armory', 0) * arms_base
+                # 3.0: 科技树国策军械产量加成
+                if tech_mod.get("arms_production", 0) > 0:
+                    arms_produced = int(arms_produced * (1.0 + tech_mod["arms_production"]))
                 # 修复：多地块循环时累加而非覆盖（faction.arms =  → faction.arms +=）
                 faction.arms = getattr(faction, 'arms', 0) + arms_produced
+
+                # 征兵营：每级每回合自动募兵（v4.3 fix: 此前缺失，仅建造时一次性募兵）
+                barracks_config = BUILDING_CONFIG.get(BuildingType.BARRACKS, {})
+                recruit_per_level = barracks_config.get("effects", {}).get("recruit_per_level", 15)
+                barracks_level = getattr(t, 'barracks', 0) or 0
+                if barracks_level > 0 and t.population > 100:
+                    # 季节修正：冬季征兵困难
+                    season_recruit_mult = 1.0
+                    if season == Season.WINTER:
+                        season_recruit_mult = 0.3
+                    elif season == Season.SPRING:
+                        season_recruit_mult = 1.2
+                    auto_recruit = int(barracks_level * recruit_per_level * season_recruit_mult)
+                    # 不能超过地块人口的15%
+                    max_recruit = int(t.population * 0.15)
+                    auto_recruit = min(auto_recruit, max_recruit)
+                    if auto_recruit > 0:
+                        t.troops += auto_recruit
+                        t.population = max(100, t.population - auto_recruit)
 
                 # 马场：每级每回合产战马（春夏产驹多）
                 horses_base = 2
@@ -220,26 +289,95 @@ class SettleEngine:
                 # 修复：多地块循环时累加而非覆盖
                 faction.horses = getattr(faction, 'horses', 0) + horses_produced
 
-                # 港口：贸易收入（秋冬季减少）
+                # 港口：贸易收入（秋冬季减少 + 科技树国策贸易加成）
                 port_income = 80
                 if season == Season.WINTER:
                     port_income = 40   # 冬季海路不畅
                 elif season == Season.SUMMER:
                     port_income = 100  # 夏季海运繁忙
                 if t.is_port:
+                    if tech_mod.get("trade_income", 0) > 0:
+                        port_income = int(port_income * (1.0 + tech_mod["trade_income"]))
                     faction.treasury += port_income
 
+            # ================================================================
+            # v4.3: 军费与建筑维护费扣除（Faucet-Sink Sink侧实现）
+            # ================================================================
+            # 军费：每兵 0.8 银两/回合（冬季×1.25取暖消耗）
+            season_mil_mult = 1.25 if season == Season.WINTER else 1.0
+            military_upkeep = int(faction.total_troops * 0.8 * season_mil_mult)
+            # 建筑维护费（使用 building_config 权威 upkeep 值）
+            building_upkeep = 0
+            for t in tiles:
+                buildings = getattr(t, 'buildings', {}) or {}
+                for bld_type, level in buildings.items():
+                    bld_cfg = BUILDING_CONFIG.get(bld_type, {})
+                    upkeep_rate = bld_cfg.get("upkeep", 20) if isinstance(bld_cfg, dict) else 20
+                    building_upkeep += level * upkeep_rate
+            total_upkeep = military_upkeep + building_upkeep
+            faction.treasury = max(0, faction.treasury - total_upkeep)
+
         # 天气生成（影响农业、行军）
-        self._generate_weather()
+        # 3.0: 天气已提前到税收循环之前生成，此调用保留以防其他代码依赖此位置
 
         # 天灾触发
         self._trigger_disasters(result)
 
         return result
 
+    def _auto_vassal_tribute(self) -> dict:
+        """附庸每12回合向宗主自动纳贡（3.3 新增闭环）"""
+        tribute_result = {"collected": [], "skipped": [], "total_collected": 0}
+        # 每势力每12回合缴纳一次（约每年）
+        if self.world.current_round % 12 != 0:
+            return tribute_result
+
+        for vassal_id, suzerain_id in list(self.world.vassal_relations.items()):
+            vassal = self.world.factions.get(vassal_id)
+            suzerain = self.world.factions.get(suzerain_id)
+            if not vassal or not suzerain or not vassal.is_alive or not suzerain.is_alive:
+                continue
+
+            # 纳贡额度：附庸国库的10%或至少50银两
+            tribute_amount = max(50, int(vassal.treasury * 0.10))
+            if vassal.treasury >= tribute_amount:
+                vassal.treasury -= tribute_amount
+                suzerain.treasury += tribute_amount
+                tribute_result["collected"].append({
+                    "vassal": vassal_id,
+                    "vassal_name": vassal.name,
+                    "suzerain": suzerain_id,
+                    "suzerain_name": suzerain.name,
+                    "amount": tribute_amount,
+                })
+                tribute_result["total_collected"] += tribute_amount
+                self.world.events_log.append({
+                    "event_id": f"vassal_tribute_{vassal_id}_{self.world.current_round}",
+                    "event_type": "tribute",
+                    "severity": "minor",
+                    "round": self.world.current_round,
+                    "title": f"【附庸纳贡】{vassal.name}向{suzerain.name}进贡",
+                    "description": f"缴纳银两{tribute_amount}两，以表臣服之意。",
+                })
+            else:
+                tribute_result["skipped"].append({
+                    "vassal": vassal_id,
+                    "vassal_name": vassal.name,
+                    "reason": "国库不足",
+                    "required": tribute_amount,
+                    "available": vassal.treasury,
+                })
+                # 附庸无法纳贡：降低宗主好感
+                key = self.world.relation_key(vassal_id, suzerain_id)
+                if key in self.world.relations:
+                    self.world.relations[key].attitude = max(-100,
+                        self.world.relations[key].attitude - 3)
+
+        return tribute_result
+
     def _calc_tax(self, tile: TileState, faction: FactionState) -> int:
         """计算地块税收（四季加成）"""
-        base = int(tile.population * self.const["base_tax_rate"] * 0.01)
+        base = int(tile.population * self.const["base_tax_rate"])
         morale_factor = tile.morale / 50.0
         tile_factor = {
             TileType.CITY: 2.0,
@@ -263,9 +401,12 @@ class SettleEngine:
             season_mult = 0.9   # 春耕投入，税赋略减
 
         tax = int(base * morale_factor * tile_factor * season_mult)
-        # 3.0: 国策/民心税收修正
-        from server.core.policy_system import PolicyEngine, MORALE_THRESHOLDS
-        policy_engine = PolicyEngine(self.world)
+        # 3.0: 国策/民心税收修正（复用 phase_settle 中创建的引擎实例，避免重复实例化 + 磁盘 I/O）
+        from server.core.policy_system import MORALE_THRESHOLDS, PolicyEngine
+        policy_engine = getattr(self, '_policy_engine', None)
+        if policy_engine is None:
+            policy_engine = PolicyEngine(self.world)
+            self._policy_engine = policy_engine
         if tile.morale <= MORALE_THRESHOLDS.get("tax_penalty", 50):
             tax = int(tax * 0.80)  # 民心低税收-20%
         tax_mult = policy_engine.get_tax_multiplier(tile)
@@ -279,10 +420,17 @@ class SettleEngine:
         faction_obj = self.world.factions.get(tile.faction_id)
         if faction_obj and getattr(faction_obj, 'tax_policy', 'normal') == 'heavy':
             tax = int(tax * 1.30)  # 重税+30%
+        # 3.0: 科技树国策税收修饰（tax_efficiency / treasury_income）
+        if faction_obj:
+            tech_mod = PolicyEngine.get_tech_policy_modifiers(faction_obj)
+            if tech_mod.get("tax_efficiency", 0) > 0:
+                tax = int(tax * (1.0 + tech_mod["tax_efficiency"]))
+            if tech_mod.get("treasury_income", 0) > 0:
+                tax += tech_mod["treasury_income"]
         return max(0, tax)
 
     def _calc_grain_consumption(self, tile: TileState) -> int:
-        """计算粮草消耗（四季加成）"""
+        """计算粮草消耗（四季 + 国策 + 科技独立修正）"""
         troops_consume = int(tile.troops * 0.05)
         pop_consume = int(tile.population * 0.005)
 
@@ -295,17 +443,27 @@ class SettleEngine:
         elif self.world.current_season == Season.SPRING:
             season_mult = 0.85  # 春季野菜补充，耗粮减少
 
-        # 3.0: 国策粮耗修正（军屯养兵-15%）
+        # 国策粮耗修正（军屯养兵-15%）
+        policy_mult = 1.0
         if tile.faction_id and tile.faction_id in self.world.faction_policies:
             if PolicyType.MILITARY_FARM in self.world.faction_policies[tile.faction_id]:
-                season_mult *= 0.85  # 粮耗-15%
+                policy_mult = 0.85  # 粮耗-15%
 
-        return int((troops_consume + pop_consume) * season_mult)
+        # 科技树国策驻军消耗减少
+        tech_mult = 1.0
+        faction_obj = self.world.factions.get(tile.faction_id)
+        if faction_obj:
+            from server.core.policy_system import PolicyEngine as _pe_grain
+            tech_mod = _pe_grain.get_tech_policy_modifiers(faction_obj)
+            if tech_mod.get("garrison_cost_reduction", 0) > 0:
+                tech_mult = 1.0 - tech_mod["garrison_cost_reduction"]
+
+        return int((troops_consume + pop_consume) * season_mult * policy_mult * tech_mult)
 
     def _calc_population_change(self, tile: TileState, faction: FactionState) -> int:
         """计算人口自然增长/减少（四季加成）"""
         base_growth = int(tile.population * self.const["base_population_growth"])
-        morale_bonus = (tile.morale - 50) * 0.005 * tile.population * 0.01
+        morale_bonus = (tile.morale - 50) * 0.005 * tile.population * 0.1
         water_bonus = int(tile.water_works * self.const["water_works_effect"] * tile.population * 0.01)
         clinic_bonus = int(tile.clinic * self.const["clinic_plague_reduction"] * tile.population * 0.01)
 
@@ -373,6 +531,33 @@ class SettleEngine:
                 base_growth += int(tile.population * 0.02)  # 轻徭薄赋+2%
             if PolicyType.REWARD_FARM_WAR in policies:
                 base_growth = int(base_growth * 0.90)  # 奖励耕战-10%
+
+        # 3.0: 科技树国策人口/抗灾/防疫/防洪修正
+        faction_obj = self.world.factions.get(tile.faction_id)
+        if faction_obj:
+            from server.core.policy_system import PolicyEngine
+            tech_mod = PolicyEngine.get_tech_policy_modifiers(faction_obj)
+            # 人口增长加成
+            if tech_mod.get("population_growth", 0) > 0:
+                base_growth += int(tile.population * tech_mod["population_growth"])
+            # 抗灾减损（降低干旱/蝗灾人口损失）
+            if tech_mod.get("famine_resistance", 0) > 0:
+                for i, d in enumerate(tile.disasters):
+                    if d in (DisasterType.DROUGHT, DisasterType.LOCUST):
+                        disaster_penalty += int(tile.population * 0.01 * tech_mod["famine_resistance"])
+                        break
+            # 防疫减损（降低瘟疫人口损失）
+            if tech_mod.get("plague_reduction", 0) > 0:
+                for d in tile.disasters:
+                    if d == DisasterType.PLAGUE:
+                        disaster_penalty += int(tile.population * 0.02 * tech_mod["plague_reduction"])
+                        break
+            # 防洪减损（降低洪灾人口损失）
+            if tech_mod.get("flood_reduction", 0) > 0:
+                for d in tile.disasters:
+                    if d == DisasterType.FLOOD:
+                        disaster_penalty += int(tile.population * 0.01 * tech_mod["flood_reduction"])
+                        break
 
         change = int((base_growth + morale_bonus + water_bonus + clinic_bonus) * season_mult + disaster_penalty)
         return max(-int(tile.population * 0.1), min(int(tile.population * 0.05), change))
@@ -505,6 +690,18 @@ class SettleEngine:
                     del self.world.officials[oid]
                 if fid in self.world.factions:
                     self.world.factions[fid].officials.clear()
+                # 3.0: 清理灭亡势力的围城和外交关系
+                for sid in list(self.world.siege_states.keys()):
+                    s = self.world.siege_states.get(sid)
+                    if s and (s.besieger == fid or s.defender == fid):
+                        self._end_siege(sid)
+                expire_keys = [
+                    k for k, r in self.world.relations.items()
+                    if r.faction_a == fid or r.faction_b == fid
+                ]
+                for k in expire_keys:
+                    self.world.relations[k].stance = DiplomaticStance.NEUTRAL
+                    self.world.relations[k].attitude = -100
                 continue
             avg_morale = sum(t.morale for t in tiles) / max(1, len(tiles))
             faction.realm_stability = int(avg_morale * 0.7 + faction.court_stability * 0.3)
@@ -516,6 +713,13 @@ class SettleEngine:
                     faction.realm_stability = max(0, faction.realm_stability - 2)
                 if "朝堂" in d.get("name", "") or "腐败" in d.get("name", ""):
                     faction.court_stability = max(0, faction.court_stability - 2)
+
+            # 3.0: 移除过期 debuff（有 expires_round 且已过期的自动清除）
+            active_round = self.world.current_round
+            faction.debuffs = [
+                d for d in faction.debuffs
+                if d.get("duration", 0) <= 0 or d.get("applied_round", 0) + d.get("duration", 0) > active_round
+            ]
 
             result["faction_updates"][fid] = {
                 "realm_stability": faction.realm_stability,
@@ -796,7 +1000,8 @@ class MarchEngine:
                 for tid, t in self.world.tiles.items():
                     if t.faction_id and t.faction_id != attacker_faction:
                         # Bug #13修复: 非己方地块标记为阻挡，防止穿越敌方领土
-                        blocked.add(self._tile_id_to_hex(tid))
+                        # V4.2 fix: tid 已是 "col,row" 字符串格式，A* 内部使用 to_key() 比较
+                        blocked.add(tid)
 
                 pf_result = a_star_pathfind(
                     start_coord=self._tile_id_to_hex(from_tile),
@@ -829,9 +1034,9 @@ class MarchEngine:
         }.get(to_t.tile_type, 1.0)
         result["turns_required"] = max(1, int(total_cost * terrain_mult))
 
-        # 粮草消耗（优先使用前端传入的 grain 参数）
+        # 粮草消耗（服务端权威计算，忽略前端 grain 参数防止作弊）
         grain_cost = int(troops * self.const["logistics_base_attrition"] * total_cost)
-        grain_to_consume = grain if grain > 0 else grain_cost
+        grain_to_consume = grain_cost
         if from_t.grain < grain_to_consume:
             result["message"] = f"粮草不足（需要：{grain_to_consume}，现有：{from_t.grain}）"
             return result
@@ -857,109 +1062,131 @@ class MarchEngine:
                     result = self._enter_siege(from_t, to_t, troops, attacker_faction, result, grain=grain)
                     return result
 
+                # 3.0: 防守方被动反制 — 邻近友军自动增援（不影响围城判定）
+                reinforce_total = 0
+                reinforce_details = []
+                def_neighbors = self._get_neighbor_set(to_tile)
+                for nid in def_neighbors:
+                    nt = self.world.tiles.get(nid)
+                    if not nt or nt.faction_id != to_t.faction_id or nid == to_tile:
+                        continue
+                    # 调拨上限：邻居兵力的20%，至少保留50人守备
+                    if nt.troops > 100:
+                        reinforce = min(int(nt.troops * 0.2), nt.troops - 50)
+                        if reinforce > 0:
+                            nt.troops -= reinforce
+                            to_t.troops += reinforce
+                            reinforce_total += reinforce
+                            reinforce_details.append(f"{nt.tile_name}+{reinforce}")
+                if reinforce_total > 0:
+                    logger.info(
+                        f"防守增援: {to_t.tile_name} 获邻近友军增援 {reinforce_total}人 "
+                        f"({', '.join(reinforce_details[:3])})"
+                    )
+
                 battle = self._resolve_battle(
                     attacker_faction, to_t.faction_id, troops,
                     to_t.troops, to_t.tile_type, to_t.fortification,
                 )
                 result["battle_result"] = battle
 
-            # 创建 BattleEvent 记录
-            event_id = self._create_battle_event(
-                attacker_faction, to_t.faction_id, to_t.tile_id, to_t.tile_name,
-                troops, to_t.troops, battle, to_t.tile_type.value if hasattr(to_t.tile_type, 'value') else str(to_t.tile_type),
-                is_siege=False,
-            )
-            result["event_id"] = event_id
-
-            if battle["winner"] == attacker_faction:
-                # 占领
-                old_faction = to_t.faction_id
-                old_faction_name = ""
-                if old_faction:
-                    old_f = self.world.get_faction(old_faction)
-                    old_faction_name = old_f.name if old_f else old_faction
-                new_f = self.world.get_faction(attacker_faction)
-                new_faction_name = new_f.name if new_f else attacker_faction
-
-                to_t.faction_id = attacker_faction
-                to_t.troops = battle["attacker_remaining"]
-                to_t.morale = max(10, to_t.morale - 20)
-                to_t.siege_state = None
-
-                # v3.0: 汇报战争分数（攻占地块）
-                self._report_war_score(
-                    attacker_faction, old_faction,
-                    is_victory=True, is_capital=to_t.is_capital,
-                    tile_name=to_t.tile_name, troops=troops,
-                    round_num=self.world.current_round,
+                # 创建 BattleEvent 记录
+                event_id = self._create_battle_event(
+                    attacker_faction, to_t.faction_id, to_t.tile_id, to_t.tile_name,
+                    troops, to_t.troops, battle, to_t.tile_type.value if hasattr(to_t.tile_type, 'value') else str(to_t.tile_type),
+                    is_siege=False,
                 )
+                result["event_id"] = event_id
 
-                # 声望与民心调整：攻城略地，威震天下
-                if new_f:
-                    new_f.reputation = min(100, new_f.reputation + 2)
-                if old_f:
-                    old_f.reputation = max(0, old_f.reputation - 3)
-                    old_f.realm_stability = max(0, old_f.realm_stability - 5)
-
-                # 记录地盘变更
-                self._record_tile_change(
-                    tile=to_t,
-                    old_faction_id=old_faction,
-                    new_faction_id=attacker_faction,
-                    old_faction_name=old_faction_name,
-                    new_faction_name=new_faction_name,
-                    change_type="conquer",
-                    troops_involved=troops,
-                    battle_result="victory",
-                )
-
-                # 首都战利品
-                if to_t.is_capital:
-                    faction = self.world.get_faction(attacker_faction)
-                    if faction:
-                        faction.treasury += self.const["capital_loot_treasury"]
-                        faction.grain += self.const["capital_loot_grain"]
-                        result["message"] = f"攻占都城{to_t.tile_name}！缴获银{self.const['capital_loot_treasury']}两、粮{self.const['capital_loot_grain']}石"
-
-                # 俘虏捕获
-                prisoners = self._capture_prisoners(old_faction, attacker_faction)
-                result["captured_prisoners"] = prisoners
-
-                # field_recruiter 特技：就地征募降卒
-                field_recruiter_active = False
-                try:
-                    # 检查进攻方是否有拥有field_recruiter特技的武将
-                    from server.core.general_engine import GeneralEngine
-                    ge = GeneralEngine(self.world)
-                    atk_generals = ge.get_faction_generals(attacker_faction)
-                    for g in atk_generals:
-                        for t in g.tactics:
-                            if t.value == "field_recruiter":
-                                field_recruiter_active = True
+                if battle["winner"] == attacker_faction:
+                    # 占领
+                    old_faction = to_t.faction_id
+                    old_faction_name = ""
+                    if old_faction:
+                        old_f = self.world.get_faction(old_faction)
+                        old_faction_name = old_f.name if old_f else old_faction
+                    new_f = self.world.get_faction(attacker_faction)
+                    new_faction_name = new_f.name if new_f else attacker_faction
+    
+                    to_t.faction_id = attacker_faction
+                    to_t.troops = battle["attacker_remaining"]
+                    to_t.morale = max(10, to_t.morale - 20)
+                    to_t.siege_state = None
+    
+                    # v3.0: 汇报战争分数（攻占地块）
+                    self._report_war_score(
+                        attacker_faction, old_faction,
+                        is_victory=True, is_capital=to_t.is_capital,
+                        tile_name=to_t.tile_name, troops=troops,
+                        round_num=self.world.current_round,
+                    )
+    
+                    # 声望与民心调整：攻城略地，威震天下
+                    if new_f:
+                        new_f.reputation = min(100, new_f.reputation + 2)
+                    if old_f:
+                        old_f.reputation = max(0, old_f.reputation - 3)
+                        old_f.realm_stability = max(0, old_f.realm_stability - 5)
+    
+                    # 记录地盘变更
+                    self._record_tile_change(
+                        tile=to_t,
+                        old_faction_id=old_faction,
+                        new_faction_id=attacker_faction,
+                        old_faction_name=old_faction_name,
+                        new_faction_name=new_faction_name,
+                        change_type="conquer",
+                        troops_involved=troops,
+                        battle_result="victory",
+                    )
+    
+                    # 首都战利品
+                    if to_t.is_capital:
+                        faction = self.world.get_faction(attacker_faction)
+                        if faction:
+                            faction.treasury += self.const["capital_loot_treasury"]
+                            faction.grain += self.const["capital_loot_grain"]
+                            result["message"] = f"攻占都城{to_t.tile_name}！缴获银{self.const['capital_loot_treasury']}两、粮{self.const['capital_loot_grain']}石"
+    
+                    # 俘虏捕获
+                    prisoners = self._capture_prisoners(old_faction, attacker_faction)
+                    result["captured_prisoners"] = prisoners
+    
+                    # field_recruiter 特技：就地征募降卒
+                    field_recruiter_active = False
+                    try:
+                        # 检查进攻方是否有拥有field_recruiter特技的武将
+                        from server.core.general_engine import GeneralEngine
+                        ge = GeneralEngine(self.world)
+                        atk_generals = ge.get_faction_generals(attacker_faction)
+                        for g in atk_generals:
+                            for t in g.tactics:
+                                if t.value == "field_recruiter":
+                                    field_recruiter_active = True
+                                    break
+                            if field_recruiter_active:
                                 break
-                        if field_recruiter_active:
-                            break
-                except Exception as e:
-                    logger.debug(f"[Settle] field_recruiter特技检查失败（非致命）: {e}", exc_info=True)
-                    pass
-
-                if field_recruiter_active:
-                    captured_troops = int(battle.get("defender_losses", 0) * 0.25)
-                    if captured_troops > 0:
-                        to_t.troops += captured_troops
-                        result["field_recruiter_troops"] = captured_troops
-                        result["message"] = (result.get("message", "") +
-                            f" 就地征募降卒{captured_troops}人")
-
-                result["success"] = True
-                result["tile_captured"] = True
-                result["tile_name"] = to_t.tile_name
-                result["old_faction"] = old_faction_name
-                result["new_faction"] = new_faction_name
-                result["diplomacy_changed"] = True  # 3.2: 标记外交关系已变更
-                result["new_stance"] = "war"
-                if not result["message"]:
-                    result["message"] = f"攻占{to_t.tile_name}！"
+                    except Exception as e:
+                        logger.debug(f"[Settle] field_recruiter特技检查失败（非致命）: {e}", exc_info=True)
+                        pass
+    
+                    if field_recruiter_active:
+                        captured_troops = int(battle.get("defender_losses", 0) * 0.25)
+                        if captured_troops > 0:
+                            to_t.troops += captured_troops
+                            result["field_recruiter_troops"] = captured_troops
+                            result["message"] = (result.get("message", "") +
+                                f" 就地征募降卒{captured_troops}人")
+    
+                    result["success"] = True
+                    result["tile_captured"] = True
+                    result["tile_name"] = to_t.tile_name
+                    result["old_faction"] = old_faction_name
+                    result["new_faction"] = new_faction_name
+                    result["diplomacy_changed"] = True  # 3.2: 标记外交关系已变更
+                    result["new_stance"] = "war"
+                    if not result["message"]:
+                        result["message"] = f"攻占{to_t.tile_name}！"
                 else:
                     # 战败或平局处理
                     from_t.troops += battle["attacker_remaining"]
@@ -967,11 +1194,11 @@ class MarchEngine:
                     battle_def_remaining = battle.get("defender_remaining", 0)
                     if battle_def_remaining >= 0:
                         to_t.troops = battle_def_remaining
-
+    
                     loser = attacker_faction
                     if battle["winner"]:
                         loser = attacker_faction if battle["winner"] != attacker_faction else to_t.faction_id
-
+    
                     # v3.0: 汇报战争分数（战败/平局）
                     win_faction = battle["winner"] if battle["winner"] else None
                     is_defeat = win_faction and win_faction != attacker_faction
@@ -981,12 +1208,12 @@ class MarchEngine:
                         tile_name=to_t.tile_name, troops=troops,
                         round_num=self.world.current_round,
                     )
-
+    
                     if battle["winner"] is None:
                         result["message"] = f"进攻{to_t.tile_name}未分胜负，残兵退回。"
                     else:
                         result["message"] = f"进攻{to_t.tile_name}失败，残兵退回。"
-
+    
                     # 战败声望惩罚
                     atk_f = self.world.get_faction(attacker_faction)
                     if atk_f:
@@ -1140,44 +1367,47 @@ class MarchEngine:
             logger.debug(f"[WarScore] 汇报失败（非致命）: {e}")
 
     def _get_neighbor_set(self, tile_id: str) -> set:
-        """获取地块的邻接 ID 集合"""
+        """获取地块的邻接 ID 集合 (V4.2 fix: 使用 TileState.neighbors 字段)"""
         neighbors = set()
         tile = self.world.tiles.get(tile_id)
         if not tile:
             return neighbors
-        # 尝试邻接矩阵
-        if hasattr(self.world, 'adjacency') and self.world.adjacency:
+        # 主路径：使用地块自带的 neighbors 列表（从 map_full.json 加载，格式 "col,row"）
+        if tile.neighbors:
+            neighbors.update(tile.neighbors)
+        # 回退：尝试 world.adjacency（向后兼容）
+        if not neighbors and hasattr(self.world, 'adjacency') and self.world.adjacency:
             neighbors.update(self.world.adjacency.get(tile_id, []))
-        # 回退：六边形坐标
-        if not neighbors and hasattr(tile, 'col') and hasattr(tile, 'row'):
-            for dq, dr in self._HEX_DIRECTIONS:
-                n_key = f"hex_{tile.col + dq}_{tile.row + dr}"
-                if n_key in self.world.tiles:
-                    neighbors.add(n_key)
         return neighbors
 
     @staticmethod
     def _tile_id_to_hex(tile_id: str):
-        """tile_id → (col, row). 支持 \"q,r\" 和 \"hex_q_r\" 两种格式"""
-        from collections import namedtuple
-        HexCoord = namedtuple('HexCoord', ['q', 'r'])
+        """tile_id → HexCoord. 支持 \"col,row\" 和 \"hex_col_row\" 两种格式
+        
+        V4.2 fix: 使用 server.map.hex_grid.HexCoord 确保与 A* 寻路兼容（具有 to_key/neighbors/distance_to 方法）
+        """
+        from server.map.hex_grid import HexCoord
         try:
             raw = str(tile_id).replace("hex_", "")
             if "," in raw:
                 parts = raw.split(",")
             else:
                 parts = raw.split("_")
-            return HexCoord(q=int(parts[0]), r=int(parts[1]))
+            return HexCoord(col=int(parts[0]), row=int(parts[1]))
         except (ValueError, IndexError):
             import logging
             _log = logging.getLogger(__name__)
             _log.warning(f"[Settle] tile_id解析失败，回退到(0,0): {tile_id}")
-            return HexCoord(q=0, r=0)
+            return HexCoord(col=0, row=0)
 
     @staticmethod
     def _hex_to_tile_id(coord) -> str:
-        """(q, r) → tile_id (逗号分隔格式)"""
-        return f"{coord.q},{coord.r}"
+        """HexCoord → tile_id (逗号分隔 offset 坐标格式)
+        
+        V4.2 fix: 使用 coord.col/coord.row（offset坐标）而非 coord.q/coord.r（axial坐标），
+        与 tiles 字典的 "col,row" key 格式一致
+        """
+        return f"{coord.col},{coord.row}"
 
     def _remove_from_coalition_stub(self, faction_id: str, coalition_id: str):
         """从联邦中移除势力（简化版，供 MarchEngine 内部使用）"""
@@ -1257,9 +1487,12 @@ class MarchEngine:
         grain_loss = int(tile.grain * self.const["siege_grain_consumption_per_round"])
         tile.grain = max(0, tile.grain - grain_loss)
 
-        # 城墙损伤
+        # 城墙损伤（累积浮点值，达到1点才扣除城防）
         siege.wall_damage += self.const["siege_wall_damage_per_round"]
-        tile.fortification = max(0, tile.fortification - int(siege.wall_damage))
+        damage_int = int(siege.wall_damage)
+        if damage_int > 0:
+            tile.fortification = max(0, tile.fortification - damage_int)
+            siege.wall_damage -= damage_int
 
         # 守军减员
         def_loss = int(siege.defender_troops * self.const["siege_defender_attrition"])
@@ -1441,11 +1674,23 @@ class MarchEngine:
                 # 四季倍率
                 season_mult = 1.0
                 if self.world.current_season == Season.WINTER:
-                    season_mult = 0.75
+                    season_mult = 0.85  # v4.1: 原0.75，与简化引擎冬季修正保持统一
                 elif self.world.current_season == Season.SUMMER:
                     season_mult = 0.9
                 elif self.world.current_season == Season.AUTUMN:
                     season_mult = 1.1
+                
+                # v4.3: LLM战斗态势审阅 — 应用势力级战斗士气修正
+                atk_faction = self.world.factions.get(attacker_fid)
+                def_faction = self.world.factions.get(defender_fid)
+                atk_morale_shift = (atk_faction.combat_morale_shift 
+                                    if atk_faction and hasattr(atk_faction, 'combat_morale_shift') else 0)
+                def_morale_shift = (def_faction.combat_morale_shift 
+                                    if def_faction and hasattr(def_faction, 'combat_morale_shift') else 0)
+                # 士气势修正转化为战力倍率: 每±1士气 ≈ ±1%战力
+                atk_morale_mult = 1.0 + atk_morale_shift * 0.01
+                def_morale_mult = 1.0 + def_morale_shift * 0.01
+                season_mult *= (atk_morale_mult / def_morale_mult)
                 
                 terrain_str = terrain.value if hasattr(terrain, 'value') else str(terrain)
                 unit_counter_result = uce.resolve_legion_battle(
@@ -1492,23 +1737,36 @@ class MarchEngine:
 
         fort_bonus = 1.0 + fortification * self.const["fortification_defense_bonus"]
 
-        # 四季战斗修正
+        # v3.3 防御倍率硬上限：防止城墙+关隘+地形无限叠加
+        # 5级城墙(+75%) x 关隘(+70%) 原可达 2.975x，现限制为 2.5x
+        from server.core.combat_modifiers import apply_defense_cap
+        raw_defense = terrain_bonus * fort_bonus
+        defense_mult = apply_defense_cap(raw_defense)
+        if raw_defense > defense_mult:
+            logger.debug(f"[Battle] 防御倍率从 {raw_defense:.2f}x 限制为 {defense_mult:.2f}x")
+
+        # 四季战斗修正（v4.1 调优值，与 _estimate_battle 公用常量一致）
+        WINTER_ATK_MULT = 0.85   # 冬季进攻方削弱（原0.75，缓解统一窗口过窄）
+        WINTER_DEF_MULT = 1.10   # 守城方冬季优势（原1.15）
+        SUMMER_MULT = 0.9        # 酷暑行军略削弱
+        AUTUMN_MULT = 1.1        # 秋高气爽，适合用兵
+
         atk_season_mult = 1.0
         def_season_mult = 1.0
         if self.world.current_season == Season.WINTER:
-            atk_season_mult = 0.75  # 冬季进攻方大幅削弱（粮草、冻伤）
-            def_season_mult = 1.15  # 守城方冬季优势（城防取暖）
+            atk_season_mult = WINTER_ATK_MULT
+            def_season_mult = WINTER_DEF_MULT
         elif self.world.current_season == Season.SUMMER:
-            atk_season_mult = 0.9   # 酷暑行军略削弱
+            atk_season_mult = SUMMER_MULT
         elif self.world.current_season == Season.AUTUMN:
-            atk_season_mult = 1.1   # 秋高气爽，适合用兵
+            atk_season_mult = AUTUMN_MULT
 
         atk_power = atk_troops * atk_season_mult * (0.8 + random.random() * 0.4)
-        def_power = def_troops * def_season_mult * terrain_bonus * fort_bonus * (0.7 + random.random() * 0.6)
+        def_power = def_troops * def_season_mult * defense_mult * (0.7 + random.random() * 0.6)
 
         if atk_power > def_power * 1.2:
             winner = attacker_fid
-            atk_remaining = int(atk_troops * (0.4 + random.random() * 0.3))
+            atk_remaining = int(atk_troops * (0.5 + random.random() * 0.25))  # v4.1: 原0.4~0.7→0.5~0.75
             def_remaining = 0
         elif def_power > atk_power * 1.2:
             winner = defender_fid
@@ -1653,6 +1911,9 @@ class MarchEngine:
             ),
         }
         self.world.tile_changes.append(change)
+        # 3.0: 保留最近500条领土变更记录，防止无限增长
+        if len(self.world.tile_changes) > 500:
+            self.world.tile_changes = self.world.tile_changes[-500:]
 
     @staticmethod
     def _build_change_narrative(tile_name: str, old_name: str, new_name: str,
@@ -1740,25 +2001,35 @@ class MarchEngine:
 
     def _estimate_battle(self, atk_troops: int, def_troops: int,
                          terrain: TileType, fortification: int) -> dict:
-        """预估战斗结果（四季修正）"""
+        """预估战斗结果（四季修正 + 防御倍率上限）"""
         terrain_bonus = {
             TileType.MOUNTAIN: 1.5, TileType.CITY: 1.4,
             TileType.PASS: 1.6, TileType.PORT: 1.3, TileType.COAST: 1.1,
         }.get(terrain, 1.0)
         fort_bonus = 1.0 + fortification * self.const["fortification_defense_bonus"]
 
-        # 四季修正（与 _resolve_battle 一致）
+        # v3.3 防御倍率硬上限
+        from server.core.combat_modifiers import apply_defense_cap
+        defense_mult = apply_defense_cap(terrain_bonus * fort_bonus)
+
+        # 四季修正（与 _resolve_battle 保持一致，v4.1 调优值）
+        # 公共常量：冬季进攻 0.85 / 守城 1.10，夏季 0.9，秋季 1.1
+        WINTER_ATK_MULT = 0.85
+        WINTER_DEF_MULT = 1.10
+        SUMMER_MULT = 0.9
+        AUTUMN_MULT = 1.1
+
         atk_season_mult = 1.0
         def_season_mult = 1.0
         if self.world.current_season == Season.WINTER:
-            atk_season_mult = 0.75
-            def_season_mult = 1.15
+            atk_season_mult = WINTER_ATK_MULT
+            def_season_mult = WINTER_DEF_MULT
         elif self.world.current_season == Season.SUMMER:
-            atk_season_mult = 0.9
+            atk_season_mult = SUMMER_MULT
         elif self.world.current_season == Season.AUTUMN:
-            atk_season_mult = 1.1
+            atk_season_mult = AUTUMN_MULT
 
-        def_effective = def_troops * def_season_mult * terrain_bonus * fort_bonus
+        def_effective = def_troops * def_season_mult * defense_mult
         atk_effective = atk_troops * atk_season_mult
         ratio = atk_effective / max(1, def_effective)
 
@@ -2121,7 +2392,13 @@ class DiplomacyEngine:
         key = self.world.relation_key(faction_a, faction_b)
         rel = self.world.relations.get(key)
         if not rel:
-            return {"success": False, "message": "关系不存在"}
+            # 3.0: 关系不存在时自动创建（与 DeepDiplomacy 行为一致）
+            a, b = sorted([faction_a, faction_b])
+            rel = RelationState(
+                faction_a=a, faction_b=b,
+                stance=DiplomaticStance.NEUTRAL, attitude=0,
+            )
+            self.world.relations[key] = rel
 
         try:
             stance = DiplomaticStance(new_stance)
@@ -2133,6 +2410,12 @@ class DiplomacyEngine:
         # 检查过渡合法性
         if not self._is_valid_stance_transition(old, stance):
             return {"success": False, "message": f"不能从{old.value}直接变为{stance.value}"}
+
+        # 3.0: 停战冷却期内禁止宣战
+        if stance == DiplomaticStance.WAR and old == DiplomaticStance.TRUCE:
+            if rel.treaty_expiry > self.world.current_round:
+                remaining = rel.treaty_expiry - self.world.current_round
+                return {"success": False, "message": f"停战条约尚未到期（剩余{remaining}回合）"}
 
         # 扣除成本：各种姿态变更的成本均已映射到 _diplo_costs
         cost_key = f"propose_{stance.value}" if stance != DiplomaticStance.WAR else "declare_war"

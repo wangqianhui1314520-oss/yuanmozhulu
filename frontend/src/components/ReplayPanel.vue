@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <div class="replay-overlay" @click.self="$emit('close')" v-if="visible">
-      <div class="replay-dialog animate-fade-in">
+      <div class="replay-dialog animate-fade-in artifact-panel artifact-codex">
         <div class="replay-header">
           <h2>🎬 观战回放</h2>
           <span class="replay-subtitle">对局录影 · 复盘推演</span>
@@ -169,7 +169,7 @@ async function loadRealSnapshots() {
       currentStep.value = result.snapshots.length - 1 // 默认显示最新
       return
     }
-  } catch (_) { /* 后端不可用 */ }
+  } catch (_) { console.warn('加载回放数据失败:', _) }
   
   // 后端无数据时使用 store 中的 _round_snapshots（如果有的话从 advanceTurn 返回）
   loadError.value = '暂无回放数据，请先进行游戏。'
@@ -347,15 +347,11 @@ onUnmounted(() => {
 }
 
 .replay-dialog {
-  background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-panel) 100%);
-  border: 2px solid var(--text-dim);
-  border-radius: 3px;
   width: 90vw;
   max-width: 750px;
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
 }
 
 .replay-header {

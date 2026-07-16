@@ -286,3 +286,136 @@ class A7RoyalAgent(BaseAgent):
             "heirs": heir_list,
             "evaluation": response[:400],
         }
+
+    # ========== 4.0 AI王朝管理：储位决策+联姻+历练 ==========
+
+    async def manage_dynasty(
+        self, faction_id: str, world_state: dict, clients: dict
+    ) -> dict:
+        """
+        AI王朝管理 — 储位人选、联姻决策、皇子历练任务
+
+        Args:
+            faction_id: 势力ID
+            world_state: 世界状态
+            clients: LLM客户端
+
+        Returns:
+            {
+                "heir_selection": {"chosen": "皇子名", "reasoning": "理由"},
+                "marriage_proposals": [{"prince": "皇子名", "target_faction": "势力ID", "bride": "公主名"}],
+                "prince_assignments": [{"prince": "皇子名", "task": "边关监军/地方历练/从文习政"}],
+                "court_stability": "稳定/紧张/危机",
+                "reasoning": "王朝管理思路"
+            }
+        """
+        client: TencentHunyuanClient = clients.get("advisor")
+        if not client:
+            return self._fallback_dynasty_management(faction_id, world_state)
+
+        faction = world_state.get("factions", {}).get(faction_id, {})
+        faction_name = faction.get("name", faction_id)
+        ruler_name = faction.get("ruler_name", faction_id)
+        ruler_age = faction.get("ruler_age", 40)
+        heirs = faction.get("heirs", [])
+        neighbors = faction.get("neighbors", [])
+        realm_stability = faction.get("realm_stability", 50)
+
+        heir_text = ""
+        for i, h in enumerate(heirs):
+            heir_text += (
+                f"  {i+1}. {h.get('name', '?')} "
+                f"(年龄{h.get('age', '?')} 能力{h.get('ability', '?')} "
+                f"嫡庶:{h.get('status', '?')})\n"
+            )
+
+        neighbor_text = ""
+        for nid in neighbors:
+            nf = world_state.get("factions", {}).get(nid, {})
+            relations = world_state.get("relations", {})
+            stance = "中立"
+            for rkey, rel in relations.items():
+                if (rel.get("faction_a") == faction_id and rel.get("faction_b") == nid) or \
+                   (rel.get("faction_b") == faction_id and rel.get("faction_a") == nid):
+                    stance = rel.get("status", "neutral")
+                    break
+            neighbor_text += (
+                f"  {nf.get('name', nid)}：{stance} | "
+                f"兵力{nf.get('troops', '?')}\n"
+            )
+
+        # 提取默认值，避免 f-string 表达式内出现反斜杠（Python 3.11 限制）
+        default_heir_text = '  尚无皇子\n'
+        prompt = (
+            f"你是{faction_name}的宗正卿，负责宗室管理与王朝传承。\n\n"
+            f"【君主】{ruler_name}（{ruler_age}岁）\n"
+            f"【民心】{realm_stability}/100\n"
+            f"【继承人】\n{heir_text or default_heir_text}\n"
+            f"【邻国】\n{neighbor_text}\n\n"
+            "请做出以下决策：\n"
+            "1. 谁应为储君（立嫡立长还是立贤）？\n"
+            "2. 是否需要联姻巩固外交？与谁联姻（需有适龄公主/皇子）？\n"
+            "3. 各成年皇子应派往何处历练（边关/地方/朝堂）？\n\n"
+            "注意：不可无皇子而空谈立储，不可无适龄子女而谈联姻。\n\n"
+            "输出格式（严格JSON）：\n"
+            '{"heir_selection":{"chosen":"皇子名","reasoning":"选择理由"},'
+            '"marriage_proposals":[{"royal":"皇子/公主名","target_faction":"势力ID"}],'
+            '"prince_assignments":[{"prince":"皇子名","task":"边关监军/地方历练/从文习政"}],'
+            '"court_stability":"稳定/紧张/危机",'
+            '"reasoning":"王朝管理思路(60字内)"}'
+        )
+
+        try:
+            raw = await client.chat_role(
+                prompt=prompt,
+                system_prompt=(
+                    "你是宗正卿，掌管宗室事务。你须在维护礼法（嫡长子继承）"
+                    "与务实治国（立贤）之间权衡。联姻需考虑外交利益。"
+                ),
+                temperature=0.6,
+            )
+            import re
+            try:
+                plan = json.loads(raw)
+            except json.JSONDecodeError:
+                m = re.search(r'\{[\s\S]*"heir_selection"[\s\S]*\}', raw)
+                plan = json.loads(m.group()) if m else {}
+
+            logger.info(
+                f"A7 王朝管理 [{faction_name}]: "
+                f"储君{plan.get('heir_selection', {}).get('chosen', '未定')} "
+                f"联姻{len(plan.get('marriage_proposals', []))}桩"
+            )
+            return {
+                "heir_selection": plan.get("heir_selection", {}),
+                "marriage_proposals": plan.get("marriage_proposals", []),
+                "prince_assignments": plan.get("prince_assignments", []),
+                "court_stability": plan.get("court_stability", "稳定"),
+                "reasoning": plan.get("reasoning", ""),
+            }
+        except Exception as e:
+            logger.warning(f"A7 王朝管理LLM失败 {faction_name}: {e}")
+            return self._fallback_dynasty_management(faction_id, world_state)
+
+    def _fallback_dynasty_management(self, faction_id: str, world_state: dict) -> dict:
+        """降级王朝管理"""
+        faction = world_state.get("factions", {}).get(faction_id, {})
+        heirs = faction.get("heirs", [])
+        chosen = ""
+        if heirs:
+            # 嫡长子优先
+            for h in heirs:
+                if h.get("status") == "嫡出":
+                    chosen = h.get("name", "")
+                    break
+            if not chosen:
+                chosen = heirs[0].get("name", "")
+
+        return {
+            "heir_selection": {"chosen": chosen, "reasoning": "降级：嫡长子优先"},
+            "marriage_proposals": [],
+            "prince_assignments": [],
+            "court_stability": "稳定",
+            "reasoning": "降级王朝管理",
+            "_source": "fallback",
+        }

@@ -1,0 +1,42 @@
+<template>
+<div id="root" data-composition-id="01-chaos" data-width="1920" data-height="1080">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&display=swap');
+  #root { width: 1920px; height: 1080px; overflow: hidden; position: relative; }
+  .clip { position: absolute; }
+  .bg { inset: 0; background: #0D0D0D; }
+  .cha {
+    position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 900;
+    color: #DAA520; text-align: center; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    font-size: 180px; opacity: 0;
+  }
+  .cha.slam { font-size: 320px; color: #DAA520; }
+  .bar { position: absolute; bottom: 0; left: 0; height: 8px; background: #8B0000; width: 0%; }
+</style>
+<div class="clip bg" data-start="0" data-duration="6" data-track-index="0"></div>
+<div class="cha" id="c1" style="font-size:140px">天</div>
+<div class="cha" id="c2" style="font-size:180px">下</div>
+<div class="cha" id="c3" style="font-size:220px">大</div>
+<div class="cha slam" id="c4">乱</div>
+<div class="bar" id="bar"></div>
+<script>
+(function(){
+  const t = gsap.timeline({ paused: true });
+  t.to("#bar", { width: "25%", duration: 1.5, ease: "power3.out" }, 0)
+   .fromTo("#c1", { opacity:0, scale:2 }, { opacity:1, scale:1, duration:0.6, ease:"power3.out" }, 0.1)
+   .to("#bar", { width: "50%", duration: 0.3 }, 1.5)
+   .fromTo("#c2", { opacity:0, scale:2 }, { opacity:1, scale:1, duration:0.5, ease:"power3.out" }, 1.5)
+   .to("#c1", { opacity:0, duration:0.2 }, 2.0)
+   .to("#bar", { width: "75%", duration: 0.5 }, 3.0)
+   .fromTo("#c3", { opacity:0, scale:3 }, { opacity:1, scale:1, duration:0.5, ease:"power3.out" }, 3.0)
+   .to("#c2", { opacity:0, duration:0.2 }, 3.5)
+   .to("#bar", { width: "100%", duration: 0.8 }, 4.5)
+   .fromTo("#c4", { opacity:0, scale:5, rotation: -4 }, { opacity:1, scale:1, rotation: -4, duration:0.7, ease:"power2.out" }, 4.5)
+   .to("#c3", { opacity:0, duration:0.2 }, 5.2)
+   .to("#c4", { scale:1.15, duration:0.5, ease:"sine.inOut" }, 5.5);
+  window.__timelines = window.__timelines || {};
+  window.__timelines["01-chaos"] = t;
+})();
+</script>
+</div>
+</template>

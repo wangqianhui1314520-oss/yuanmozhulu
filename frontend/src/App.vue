@@ -66,13 +66,24 @@ onUnmounted(() => {
 </script>
 
 <style>
-.page-fade-enter-active,
-.page-fade-leave-active {
-  transition: opacity 0.3s ease;
+/* ============================================================
+   页面过渡动画 · 古风卷轴式切换
+   ============================================================ */
+.page-fade-enter-active {
+  transition: all 0.45s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
-.page-fade-enter-from,
+.page-fade-leave-active {
+  transition: all 0.3s ease-in;
+}
+.page-fade-enter-from {
+  opacity: 0;
+  transform: translateY(12px) scale(0.98);
+  filter: blur(2px);
+}
 .page-fade-leave-to {
   opacity: 0;
+  transform: translateY(-8px);
+  filter: blur(1px);
 }
 
 /* V4.1 全局错误邸报横幅 */
@@ -121,8 +132,49 @@ onUnmounted(() => {
   background: rgba(184, 150, 62, 0.15);
 }
 
+/* ============================================================
+   全局古风过渡动画集
+   ============================================================ */
+
+/* 淡入动画 —— 用于面板/弹窗 */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 上滑淡入 —— 用于卡片/列表 */
+@keyframes slideUpFadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 缩放弹入 —— 用于弹窗 */
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* 错误横幅滑入 */
 @keyframes slideDown {
   from { transform: translateY(-100%); }
   to { transform: translateY(0); }
 }
+
+/* 全局可用的动画类 */
+.animate-fade-in {
+  animation: fadeIn 0.35s ease;
+}
+.animate-slide-up {
+  animation: slideUpFadeIn 0.4s ease;
+}
+.animate-scale-in {
+  animation: scaleIn 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* 交错动画延迟 */
+.animate-stagger > *:nth-child(1) { animation-delay: 0s; }
+.animate-stagger > *:nth-child(2) { animation-delay: 0.08s; }
+.animate-stagger > *:nth-child(3) { animation-delay: 0.16s; }
+.animate-stagger > *:nth-child(4) { animation-delay: 0.24s; }
+.animate-stagger > *:nth-child(5) { animation-delay: 0.32s; }
 </style>

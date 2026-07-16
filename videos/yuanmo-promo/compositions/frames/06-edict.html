@@ -1,0 +1,56 @@
+<template>
+<div id="root" data-composition-id="06-edict" data-width="1920" data-height="1080">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&display=swap');
+  #root { width: 1920px; height: 1080px; overflow: hidden; position: relative; }
+  .clip { position: absolute; }
+  .parch { inset: 0; background: #E8D5B7; }
+  .scroll { position: absolute; top: 10%; left: 15%; width: 70%; height: 80%;
+    border: 3px solid #8B0000; background: rgba(255,255,255,0.3); opacity: 0; }
+  .edict { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 900;
+    color: #1A1A2E; font-size: 80px; opacity: 0; text-align: center; width: 400px;
+    top: 30%; left: 50%; }
+  .seal { position: absolute; width: 120px; height: 120px; border: 4px solid #DAA520;
+    border-radius: 6px; background: rgba(139,0,0,0.15); opacity: 0;
+    top: 60%; left: 70%; }
+  .seal-text { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 900;
+    color: #DAA520; font-size: 36px; text-align: center; width: 120px; opacity: 0; }
+  .final { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 900;
+    color: #DAA520; font-size: 120px; top: 40%; left: 50%; opacity: 0; text-align: center; width: 800px; }
+  .bar { position: absolute; bottom: 0; left: 0; height: 8px; background: #8B0000; width: 0%; }
+  .dark-over { position: absolute; inset: 0; background: #0D0D0D; opacity: 0; }
+</style>
+<div class="clip parch" data-start="0" data-duration="7" data-track-index="0"></div>
+<div class="dark-over" id="dark"></div>
+<div class="scroll" id="scroll"></div>
+<div class="edict" id="e1">朕</div>
+<div class="edict" id="e2" style="top:43%">命</div>
+<div class="edict" id="e3" style="top:56%">北伐</div>
+<div class="seal" id="seal"></div>
+<div class="seal-text" id="stext" style="top:65%;left:70%;text-align:center">受命<br>于天</div>
+<div class="final" id="final">千军万马</div>
+<div class="bar" id="bar"></div>
+<script>
+(function(){
+  const t = gsap.timeline({ paused: true });
+  t.to("#bar",{width:"30%",duration:1},0)
+   .fromTo("#scroll",{opacity:0,scaleY:0.1},{opacity:1,scaleY:1,duration:0.8,ease:"power3.out",transformOrigin:"top center"},0.5)
+   .to("#bar",{width:"45%",duration:1.5},1.5)
+   .fromTo("#e1",{opacity:0,y:20},{opacity:1,y:0,duration:0.5},2.0)
+   .fromTo("#e2",{opacity:0,y:20},{opacity:1,y:0,duration:0.5},2.7)
+   .fromTo("#e3",{opacity:0,y:20},{opacity:1,y:0,duration:0.5},3.4)
+   .to("#bar",{width:"70%",duration:1},4.0)
+   .fromTo("#seal",{opacity:0,scale:3,rotation:15},{opacity:1,scale:1,rotation:0,duration:0.7,ease:"back.out(1.4)"},5.0)
+   .fromTo("#stext",{opacity:0},{opacity:1,duration:0.4},5.2)
+   .to("#bar",{width:"85%",duration:0.5},5.5)
+   .to("#dark",{opacity:1,duration:0.6},5.8)
+   .to("#scroll,#e1,#e2,#e3,#seal,#stext",{opacity:0,duration:0.4},5.8)
+   .fromTo("#final",{opacity:0,scale:3},{opacity:1,scale:1,duration:0.7,ease:"power4.out"},6.0)
+   .to("#final",{scale:1.08,duration:0.4,ease:"sine.inOut"},6.5)
+   .to("#bar",{width:"100%",duration:0.3},6.7);
+  window.__timelines = window.__timelines || {};
+  window.__timelines["06-edict"] = t;
+})();
+</script>
+</div>
+</template>

@@ -443,7 +443,7 @@ class CivilAI:
         """检查是否为边境地块"""
         for nid in getattr(tile, 'neighbors', []):
             n_tile = self.world.tiles.get(nid) if hasattr(self.world, 'tiles') else None
-            if n_tile and getattr(n_tile, 'owner_faction', '') != fid:
+            if n_tile and getattr(n_tile, 'faction_id', '') != fid:
                 return True
         return False
 

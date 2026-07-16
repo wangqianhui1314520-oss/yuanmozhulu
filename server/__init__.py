@@ -1,1 +1,5 @@
-"""元末逐鹿 3.0 服务端"""
+"""元末逐鹿 4.0 服务端"""
+__version__ = "4.0.0"
+SAVE_VERSION = "4.0"
+AGENT_VERSION = "4.0"
+API_VERSION = "4.0.0"

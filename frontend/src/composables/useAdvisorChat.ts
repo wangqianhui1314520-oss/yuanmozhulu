@@ -518,7 +518,7 @@ export function useAdvisorChat() {
 
   // ---- 游戏开局时自动加载 ----
   watch(() => store.isGameStarted, async (started) => {
-    if (started) {
+    if (started && store.playerFactionId) {
       await loadNPCs(undefined, store.playerFactionId)
       await loadFactionAdvisers(store.playerFactionId)
       restoreConversations()

@@ -1,0 +1,46 @@
+<template>
+<div id="root" data-composition-id="10-destiny" data-width="1920" data-height="1080">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&display=swap');
+  #root { width: 1920px; height: 1080px; overflow: hidden; position: relative; }
+  .clip { position: absolute; }
+  .bg { inset: 0; background: #8B0000; }
+  .big { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 900;
+    color: #DAA520; text-align: center; width: 500px;
+    text-shadow: 3px 3px 0 rgba(13,13,13,0.25), 6px 6px 0 rgba(13,13,13,0.2), 9px 9px 0 rgba(13,13,13,0.15); }
+  .choice { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 700;
+    color: #E8D5B7; font-size: 32px; opacity: 0; text-align: center; width: 250px; }
+  .glow-bg { position: absolute; top: 35%; left: 50%; transform: translate(-50%,-50%);
+    width: 600px; height: 600px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(218,165,32,0.35) 0%, transparent 70%); opacity: 0; }
+  .bar { position: absolute; bottom: 0; left: 0; height: 8px; background: #0D0D0D; width: 0%; }
+</style>
+<div class="clip bg" data-start="0" data-duration="6" data-track-index="0"></div>
+<div class="glow-bg" id="glow"></div>
+<div class="big" id="tian" style="font-size:280px;top:25%;left:33%;opacity:0">天</div>
+<div class="big" id="ming" style="font-size:380px;top:28%;left:30%;opacity:0;transform:rotate(-6deg)">命</div>
+<div class="choice" id="c1" style="top:68%;left:20%">北伐中原<br>一统天下</div>
+<div class="choice" id="c2" style="top:68%;left:68%">偏安一隅<br>苟且偷生</div>
+<div class="bar" id="bar"></div>
+<script>
+(function(){
+  const t=gsap.timeline({paused:true});
+  t.to("#bar",{width:"30%",duration:2},0)
+   .fromTo("#tian",{opacity:0,scale:3},{opacity:1,scale:1,duration:1,ease:"power4.out"},0.2)
+   .to("#tian",{scale:1.08,duration:1,ease:"sine.inOut"},1.2)
+   .to("#bar",{width:"55%",duration:1.5},2.0)
+   .to("#tian",{y:-40,scale:0.9,opacity:0.6,duration:0.8},2.3)
+   .fromTo("#glow",{opacity:0},{opacity:1,duration:1},2.5)
+   .fromTo("#ming",{opacity:0,scale:5,rotation:-12},{opacity:1,scale:1,rotation:-6,duration:1,ease:"power4.out"},2.5)
+   .to("#ming",{scale:1.15,duration:1.5,ease:"sine.inOut"},3.5)
+   .to("#bar",{width:"80%",duration:2},4.0)
+   .fromTo("#c1",{opacity:0,x:-40},{opacity:1,x:0,duration:0.6},4.5)
+   .fromTo("#c2",{opacity:0,x:40},{opacity:1,x:0,duration:0.6},4.8)
+   .to("#ming",{scale:1.08,duration:0.5,ease:"sine.inOut"},5.2)
+   .to("#bar",{width:"100%",duration:0.5},5.5);
+  window.__timelines=window.__timelines||{};
+  window.__timelines["10-destiny"]=t;
+})();
+</script>
+</div>
+</template>

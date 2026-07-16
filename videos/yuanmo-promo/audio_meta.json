@@ -1,0 +1,13 @@
+{
+  "bgm": null,
+  "voices": [
+    {
+      "file": "audio/narration_full.mp3",
+      "provider": "edge-tts",
+      "voice": "zh-CN-YunxiNeural",
+      "total_duration_s": 98.25
+    }
+  ],
+  "sfx": [],
+  "narration_file": "audio/narration_full.mp3"
+}

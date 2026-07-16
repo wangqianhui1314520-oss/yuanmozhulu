@@ -1,0 +1,74 @@
+<template>
+<div id="root" data-composition-id="08-ai" data-width="1920" data-height="1080">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&display=swap');
+  #root { width: 1920px; height: 1080px; overflow: hidden; position: relative; }
+  .clip { position: absolute; }
+  .bg { inset: 0; background: #0D0D0D; }
+  .center-ai { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 900;
+    color: #DAA520; font-size: 140px; top: 42%; left: 50%; transform: translate(-50%,-50%); opacity: 0; }
+  .glow { position: absolute; top: 42%; left: 50%; transform: translate(-50%,-50%);
+    width: 300px; height: 300px; border-radius: 50%; background: radial-gradient(circle, rgba(218,165,32,0.2) 0%, transparent 70%); opacity: 0; }
+  .node { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 700;
+    color: #E8D5B7; font-size: 24px; opacity: 0; text-align: center; width: 100px; }
+  .line { position: absolute; height: 1px; background: rgba(218,165,32,0.4); opacity: 0; transform-origin: left center; }
+  .tech { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 700;
+    color: #DAA520; font-size: 32px; opacity: 0; text-align: center; width: 500px; left: 50%; }
+  .bar { position: absolute; bottom: 0; left: 0; height: 8px; background: #8B0000; width: 0%; }
+</style>
+<div class="clip bg" data-start="0" data-duration="7" data-track-index="0"></div>
+<div class="glow" id="glow"></div>
+<div class="center-ai" id="ai">AI</div>
+<div class="tech" id="t1" style="top:72%;">MCTS · 博弈树推演</div>
+<div class="tech" id="t2" style="top:80%;">兰彻斯特 · 战斗方程</div>
+<div id="nodes"></div>
+<div id="lines"></div>
+<div class="bar" id="bar"></div>
+<script>
+(function(){
+  const factions=["朱元璋","陈友谅","张士诚","方国珍","王保保","李思齐","明玉珍","陈友定","何真","纳哈出"];
+  const cx=960, cy=420, rx=620, ry=280;
+  const nodeContainer=document.getElementById('nodes');
+  const lineContainer=document.getElementById('lines');
+  const t=gsap.timeline({paused:true});
+  t.to("#bar",{width:"25%",duration:2},0)
+   .fromTo("#ai",{opacity:0,scale:3},{opacity:1,scale:1,duration:1,ease:"power4.out"},0.3)
+   .fromTo("#glow",{opacity:0},{opacity:0.8,duration:1.5},0.5)
+   .to("#bar",{width:"55%",duration:2.5},2.0);
+  factions.forEach((f,i)=>{
+    const angle=(i/factions.length)*Math.PI*2 - Math.PI/2;
+    const x=cx+rx*Math.cos(angle), y=cy+ry*Math.sin(angle);
+    const nd=document.createElement('div');
+    nd.className='node';
+    nd.id='nd'+i;
+    nd.style.left=(x-50)+'px';
+    nd.style.top=(y-15)+'px';
+    nd.textContent=f;
+    nodeContainer.appendChild(nd);
+    t.fromTo("#nd"+i,{opacity:0,scale:0.3},{opacity:1,scale:1,duration:0.45,ease:"back.out(1.2)"},2.0+i*0.15);
+    // draw line from center to node
+    const ln=document.createElement('div');
+    ln.className='line';
+    ln.id='ln'+i;
+    const dx=x-cx, dy=y-cy;
+    const len=Math.sqrt(dx*dx+dy*dy);
+    const ang=Math.atan2(dy,dx)*180/Math.PI;
+    ln.style.width=len+'px';
+    ln.style.left=cx+'px';
+    ln.style.top=cy+'px';
+    ln.style.transform='rotate('+ang+'deg)';
+    lineContainer.appendChild(ln);
+    t.fromTo("#ln"+i,{opacity:0,scaleX:0},{opacity:1,scaleX:1,duration:0.3},2.3+i*0.15);
+  });
+  t.to("#bar",{width:"80%",duration:1.5},5.0)
+   .fromTo("#t1",{opacity:0,y:20},{opacity:1,y:0,duration:0.5},5.2)
+   .fromTo("#t2",{opacity:0,y:20},{opacity:1,y:0,duration:0.5},5.7)
+   .to("#glow",{opacity:1,scale:1.3,duration:0.8},6.0)
+   .to("#ai",{scale:1.15,duration:0.5},6.0)
+   .to("#bar",{width:"100%",duration:0.5},6.5);
+  window.__timelines=window.__timelines||{};
+  window.__timelines["08-ai"]=t;
+})();
+</script>
+</div>
+</template>

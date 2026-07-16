@@ -179,7 +179,7 @@ class GameInitializer:
             current_season=Season.SPRING,
             player_faction_id=player_faction_id,  # 核心规则：标记玩家操控势力
             game_mode=game_mode,
-            version="3.2",
+            version="4.0",
         )
 
         # 1. 生成势力

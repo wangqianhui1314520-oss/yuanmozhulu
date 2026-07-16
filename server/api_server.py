@@ -452,6 +452,7 @@ async def _rebuild_clients_with_key(api_key: str):
             "advisor": TencentHunyuanClient(runtime.advisor),
             "law": TencentHunyuanClient(runtime.law),
             "enemy": TencentHunyuanClient(runtime.enemy),
+            "edict": TencentHunyuanClient(runtime.edict),
         }
         _sess().llm_available = True
         _sess().api_key = api_key
@@ -1124,7 +1125,16 @@ async def update_runtime_config(request: dict):
 
         await init_llm_clients()
         get_session_manager().set_llm_defaults(_default_llm_clients, _default_llm_available)
-        # 热更新后同步 LLM 可用性到 RoundEngine，避免 AI 空转
+
+        # 同步更新当前会话的 LLM 客户端（会话创建时是 dict() 拷贝，不会自动跟随全局默认值变化）
+        _sess().llm_clients = dict(_default_llm_clients)
+        _sess().llm_available = _default_llm_available
+
+        # 若玩家已提供自定义 API Key（通过 /api/config/player-key），保留它
+        if _sess().api_key:
+            await _rebuild_clients_with_key(_sess().api_key)
+
+        # 热更新后同步 LLM 客户端到 RoundEngine，确保下回合使用新模型
         if _sess().round_engine:
             _sess().round_engine.set_llm_clients(_sess().llm_clients, available=_sess().llm_available)
         return ApiResponse.success(existing, "配置已热更新")
@@ -1153,6 +1163,8 @@ async def test_llm_connection(request: Request):
         models_to_test = ["advisor", "law", "enemy"]
     # 用户可选的逐模型 API Key 覆盖（测试用，不持久化）
     provided_api_keys: dict = body.get("api_keys", {}) or {}
+    # 用户可选的逐模型完整配置覆盖（模型名/api地址/温度/maxTokens，测试用不持久化）
+    provided_model_configs: dict = body.get("model_configs", {}) or {}
 
     results = {}
     all_passed = True
@@ -1185,31 +1197,39 @@ async def test_llm_connection(request: Request):
         # 优先使用用户刚填写的 API Key，否则用存储配置中的 Key
         api_key = provided_api_keys.get(model_key) or getattr(model_cfg, "api_key", "")
 
+        # 用户通过前端 UI 填写的模型配置（连通性测试即时生效，无需先保存）
+        cfg_override = provided_model_configs.get(model_key, {})
+        display_model_name = cfg_override.get("model_name") or model_name
+        display_api_base = cfg_override.get("api_base") or api_base
+        test_temperature = cfg_override.get("temperature", getattr(model_cfg, "temperature", 0.7))
+        test_max_tokens = cfg_override.get("max_tokens", getattr(model_cfg, "max_tokens", 4096))
+
         if not api_key:
             results[model_key] = {
                 "status": "not_configured",
-                "model_name": model_name,
+                "model_name": display_model_name,
                 "latency_ms": 0,
                 "error": f"未配置API Key",
-                "api_base": api_base,
+                "api_base": display_api_base,
             }
             continue
 
         any_configured = True
 
-        # 如果用户提供了与存储不同的 Key，创建临时客户端进行测试
+        # 判断是否需要创建临时客户端（用户修改了 API Key 或模型配置）
+        has_cfg_override = bool(cfg_override)
+        use_temp_client = bool(provided_api_keys.get(model_key)) or has_cfg_override
         client = None
-        use_temp_client = bool(provided_api_keys.get(model_key))
         if use_temp_client:
             from server.infra.llm_client.config import LLMConfig
             from server.infra.llm_client.hunyuan_client import TencentHunyuanClient
             temp_config = LLMConfig(
                 provider=getattr(model_cfg, "provider", "hunyuan"),
-                api_base=getattr(model_cfg, "api_base", ""),
+                api_base=display_api_base,
                 api_key=api_key,
-                model_name=model_name,
-                temperature=getattr(model_cfg, "temperature", 0.7),
-                max_tokens=getattr(model_cfg, "max_tokens", 4096),
+                model_name=display_model_name,
+                temperature=test_temperature,
+                max_tokens=test_max_tokens,
             )
             try:
                 client = TencentHunyuanClient(temp_config)
@@ -1221,10 +1241,10 @@ async def test_llm_connection(request: Request):
         if not client:
             results[model_key] = {
                 "status": "warning",
-                "model_name": model_name,
+                "model_name": display_model_name,
                 "latency_ms": 0,
                 "error": "LLM客户端未初始化，无法测试",
-                "api_base": api_base,
+                "api_base": display_api_base,
             }
             all_passed = False
             continue
@@ -1258,37 +1278,37 @@ async def test_llm_connection(request: Request):
             if response_text:
                 results[model_key] = {
                     "status": "ok",
-                    "model_name": model_name,
+                    "model_name": display_model_name,
                     "latency_ms": latency,
                     "response_preview": response_text[:80],
-                    "api_base": api_base,
+                    "api_base": display_api_base,
                 }
             else:
                 results[model_key] = {
                     "status": "no_response",
-                    "model_name": model_name,
+                    "model_name": display_model_name,
                     "latency_ms": latency,
                     "error": "模型返回空内容",
-                    "api_base": api_base,
+                    "api_base": display_api_base,
                 }
                 all_passed = False
         except asyncio.TimeoutError:
             results[model_key] = {
                 "status": "timeout",
-                "model_name": model_name,
+                "model_name": display_model_name,
                 "latency_ms": 15000,
                 "error": "请求超时（15秒）",
-                "api_base": api_base,
+                "api_base": display_api_base,
             }
             all_passed = False
         except Exception as e:
             latency = round((time.time() - t0) * 1000)
             results[model_key] = {
                 "status": "error",
-                "model_name": model_name,
+                "model_name": display_model_name,
                 "latency_ms": latency,
                 "error": f"{type(e).__name__}: {str(e)[:200]}",
-                "api_base": api_base,
+                "api_base": display_api_base,
             }
             all_passed = False
 
@@ -2570,7 +2590,7 @@ async def parse_edict(request: dict):
 
     if _sess().llm_available:
         try:
-            client = _sess().llm_clients.get("advisor")
+            client = _sess().llm_clients.get("edict") or _sess().llm_clients.get("advisor")
             if not client:
                 return ApiResponse.server_error("AI顾问未配置")
             prompt = (
@@ -2689,8 +2709,8 @@ async def execute_edict(body: EdictExecuteRequest):
     if _sess().llm_available:
         try:
             from server.core.edict_engine import call_ai_edict
-            advisor_client = _sess().llm_clients.get("advisor")
-            if not advisor_client:
+            edict_client = _sess().llm_clients.get("edict") or _sess().llm_clients.get("advisor")
+            if not edict_client:
                 return ApiResponse.server_error("AI顾问未配置")
             
             # 构建圣旨历史上下文（最近10条）
@@ -2706,7 +2726,7 @@ async def execute_edict(body: EdictExecuteRequest):
             ai_analysis = await call_ai_edict(
                 edict_text=cleaned_text,
                 world_state=world_dict,
-                llm_client=advisor_client,
+                llm_client=edict_client,
                 edict_history=edict_history,
             )
         except Exception as e:
@@ -2924,8 +2944,8 @@ async def nl_process_edict(body: EdictProcessRequest):
             "failed": d.get("failed_count", 0),
         })
 
-    # 获取 LLM 客户端
-    llm_client = _sess().llm_clients.get("advisor") if use_ai else None
+    # 获取 LLM 客户端（优先圣旨专用客户端，fallback advisor）
+    llm_client = (_sess().llm_clients.get("edict") or _sess().llm_clients.get("advisor")) if use_ai else None
 
     from server.core.unified_edict_engine import (
         process_unified_edict, split_multi_edict, batch_process_edicts,

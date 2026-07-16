@@ -72,7 +72,7 @@ function getEndingClass(title: string) {
 
 <template>
   <div v-if="visible" class="history-overlay" @click.self="emit('close')">
-    <div class="history-panel">
+    <div class="history-panel artifact-panel artifact-codex">
       <div class="panel-header">
         <h3>📜 历史长河</h3>
         <div class="header-info">
@@ -162,7 +162,7 @@ function getEndingClass(title: string) {
 
 <style scoped>
 .history-overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6); }
-.history-panel { width: 640px; max-height: 82vh; background: linear-gradient(135deg, #1a1a2e, #16213e); border: 1px solid #4a5568; border-radius: 12px; display: flex; flex-direction: column; color: #e2e8f0; font-size: 13px; }
+.history-panel { width: 640px; max-width: 95vw; max-height: 82vh; display: flex; flex-direction: column; color: #e2e8f0; font-size: 13px; box-shadow: inset 3px 0 0 var(--wuxing-metal); }
 .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #2d3748; }
 .panel-header h3 { margin: 0; font-size: 16px; }
 .header-info { display: flex; align-items: center; gap: 12px; }

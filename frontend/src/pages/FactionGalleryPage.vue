@@ -41,7 +41,13 @@
           <!-- 左侧：肖像占位区 + AI 美术标签 -->
           <div class="fgc-portrait">
             <div class="portrait-placeholder" :style="{ borderColor: f.color }">
-              <span class="portrait-emblem">{{ f.emblem }}</span>
+              <img
+                v-if="getFactionEmblem(f.id)"
+                :src="getFactionEmblem(f.id)"
+                class="portrait-emblem-img"
+                :alt="f.name"
+              />
+              <span v-else class="portrait-emblem">{{ f.emblem }}</span>
               <span class="portrait-name">{{ f.name }}</span>
             </div>
             <div class="portrait-ai-badge" title="AI生成概念图">AI</div>
@@ -140,6 +146,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { getFactionEmblem } from '@/utils/factionEmblems'
 
 interface FactionCard {
   id: string; name: string; title: string; emblem: string
@@ -457,6 +464,11 @@ function fmtNum(n: number): string {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
 }
 .portrait-emblem { font-size: 48px; opacity: 0.6; font-weight: bold; }
+.portrait-emblem-img {
+  width: 64px; height: 64px;
+  opacity: 0.7;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+}
 .portrait-name { font-size: 20px; letter-spacing: 6px; opacity: 0.7; }
 .portrait-ai-badge {
   position: absolute; top: 8px; right: 8px;

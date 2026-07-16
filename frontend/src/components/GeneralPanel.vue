@@ -116,7 +116,7 @@ async function saveDispatch() {
     })
     message.value = data.message || `${selectedGeneral.value.name}已配属至${selectedLegion.value.name}`
     await loadData()
-  } catch (e: any) { message.value = e?.response?.data?.message || '分配失败' }
+  } catch (e: any) { console.warn('分配将领失败:', e); message.value = e?.response?.data?.message || '分配失败' }
 }
 
 async function disbandLegion(legionId: string) {
@@ -126,7 +126,7 @@ async function disbandLegion(legionId: string) {
     message.value = data.message || '军团已解散'
     if (selectedLegion.value?.legion_id === legionId) selectedLegion.value = null
     await loadData()
-  } catch (e: any) { message.value = '解散失败' }
+  } catch (e: any) { console.warn('解散军团失败:', e); message.value = '解散失败' }
 }
 
 async function removeSubcommander(legionId: string, generalId: string) {
@@ -134,7 +134,7 @@ async function removeSubcommander(legionId: string, generalId: string) {
     await API.removeSubcommander({ legion_id: legionId, general_id: generalId })
     message.value = '副将已移除'
     await loadData()
-  } catch (e: any) { message.value = '移除失败' }
+  } catch (e: any) { console.warn('移除副将失败:', e); message.value = '移除失败' }
 }
 
 const availableGenerals = computed(() => generals.value.filter((g: any) => g.alive && !g.is_assigned))
@@ -175,7 +175,7 @@ function getTacticLabel(t: string) {
 
 <template>
   <div v-if="visible" class="general-panel-overlay" @click.self="emit('close')">
-    <div class="general-panel">
+    <div class="general-panel artifact-panel artifact-personnel">
       <div class="panel-header">
         <h3>🏯 武将统御</h3>
         <button @click="emit('close')" class="close-btn">✕</button>
@@ -419,11 +419,10 @@ function getTacticLabel(t: string) {
   background: rgba(0,0,0,0.6);
 }
 .general-panel {
-  width: 720px; max-height: 85vh;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  border: 1px solid #4a5568; border-radius: 12px;
+  width: 720px; max-width: 95vw; max-height: 85vh;
   display: flex; flex-direction: column;
   color: #e2e8f0; font-size: 13px;
+  box-shadow: inset 3px 0 0 var(--wuxing-wood);
 }
 .panel-header {
   display: flex; justify-content: space-between; align-items: center;

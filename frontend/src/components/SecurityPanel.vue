@@ -1,5 +1,5 @@
 <template>
-  <div class="security-panel" v-if="visible">
+  <div class="security-panel artifact-panel artifact-secret" v-if="visible">
     <!-- 顶部标题栏 -->
     <div class="panel-header">
       <div class="header-left">
@@ -139,10 +139,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { apiClient } from '@/services/api'
 
-defineProps<{ visible: boolean }>()
+const props = defineProps<{ visible: boolean }>()
 defineEmits<{ close: [] }>()
 
 const loading = ref(false)
@@ -152,10 +152,10 @@ let _timer: ReturnType<typeof setInterval> | null = null
 
 const updateTime = computed(() => {
   if (!dashboard.value) return ''
-  const ts = dashboard.value.ioa.risk_profile.timestamp
-    || dashboard.value.ioa.risk_profile.overall_score ? Date.now() : 0
+  // 优先使用后端返回的仪表盘生成时间戳，回退到当前时间
+  const ts = dashboard.value.ioa.timestamp || Date.now() / 1000
   if (!ts) return ''
-  return new Date(ts * 1000 || Date.now()).toLocaleTimeString('zh-CN')
+  return new Date(ts * 1000).toLocaleTimeString('zh-CN')
 })
 
 const riskLevel = computed(() => {
@@ -190,7 +190,7 @@ function riskCardClass(score: number): string {
 }
 
 function trendLabel(t: string): string {
-  const map: Record<string, string> = { rising: '&#x2191; 上升', falling: '&#x2193; 下降', stable: '&#x2194; 稳定' }
+  const map: Record<string, string> = { rising: '\u2191 上升', falling: '\u2193 下降', stable: '\u2194 稳定' }
   return map[t] ?? t
 }
 
@@ -223,6 +223,17 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (_timer) clearInterval(_timer)
+  _timer = null
+})
+
+// 面板可见性控制轮询启停
+watch(() => props.visible, (v) => {
+  if (v) {
+    refresh()  // 面板打开时立即刷新
+    if (!_timer) _timer = setInterval(refresh, 15000)
+  } else {
+    if (_timer) { clearInterval(_timer); _timer = null }
+  }
 })
 </script>
 
@@ -233,12 +244,10 @@ onUnmounted(() => {
   left: 50%;
   transform: translateX(-50%);
   width: 720px;
+  max-width: 95vw;
   max-height: 80vh;
-  background: linear-gradient(135deg, #1a1614 0%, #24201c 100%);
-  border: 1px solid #443F38;
-  border-radius: 6px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
   z-index: 1000;
+  box-shadow: inset 3px 0 0 var(--wuxing-metal);
   display: flex;
   flex-direction: column;
   font-family: "STKaiti", "KaiTi", serif;

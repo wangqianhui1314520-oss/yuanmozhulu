@@ -338,7 +338,9 @@ def find_nearest_faction_tile(
     faction_tiles: set[str],
 ) -> tuple[Optional[HexCoord], int]:
     """
-    找到距离指定坐标最近的势力领土
+    找到距离指定坐标最近的势力领土 (V4.2: BFS环形搜索替代全量遍历)
+    
+    策略: 以coord为中心，由近到远环形搜索匹配的faction_tiles
     
     Returns:
         (nearest_coord, distance) 或 (None, inf)
@@ -346,18 +348,50 @@ def find_nearest_faction_tile(
     if not faction_tiles:
         return None, float('inf')
     
-    best_coord = None
-    best_dist = float('inf')
+    # 小规模势力直接遍历更快（<30个地块）
+    if len(faction_tiles) < 30:
+        best_coord = None
+        best_dist = float('inf')
+        for key in faction_tiles:
+            col, row = _parse_tile_key(key)
+            target = HexCoord(col, row)
+            dist = coord.distance_to(target)
+            if dist < best_dist:
+                best_dist = dist
+                best_coord = target
+        return best_coord, int(best_dist)
     
-    for key in faction_tiles:
-        col, row = _parse_tile_key(key)
-        target = HexCoord(col, row)
-        dist = coord.distance_to(target)
-        if dist < best_dist:
-            best_dist = dist
-            best_coord = target
+    # 大势力：BFS环形搜索（从中心向外扩散）
+    from server.map.hex_grid import GRID_ROWS, GRID_MAX_COLS
+    from collections import deque
     
-    return best_coord, int(best_dist)
+    visited = {coord.to_key()}
+    queue = deque([(coord, 0)])
+    AXIAL_DIRS = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
+    
+    aq_start, ar_start = coord.to_axial()
+    
+    while queue:
+        current, dist = queue.popleft()
+        current_key = current.to_key()
+        
+        if current_key in faction_tiles:
+            return current, dist
+        
+        if dist > 50:  # 安全边界
+            break
+            
+        for dq, dr in AXIAL_DIRS:
+            nq, nr = current._axial_q + dq, current._axial_r + dr
+            nc = HexCoord.from_axial(nq, nr)
+            nk = nc.to_key()
+            if nk not in visited:
+                visited.add(nk)
+                # 仅在有效坐标范围内搜索
+                if 0 <= nc.row < GRID_ROWS and 0 <= nc.col < GRID_MAX_COLS:
+                    queue.append((nc, dist + 1))
+    
+    return None, float('inf')
 
 
 # ============================================================

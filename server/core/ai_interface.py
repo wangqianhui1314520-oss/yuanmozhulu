@@ -132,7 +132,7 @@ class AIInterface:
             for nid in getattr(t, 'neighbors', []):
                 n_tile = self.world.tiles.get(nid) if hasattr(self.world, 'tiles') else None
                 if n_tile:
-                    n_fid = getattr(n_tile, 'owner_faction', '')
+                    n_fid = getattr(n_tile, 'faction_id', '')
                     if n_fid and n_fid != faction_id:
                         neighbors[n_fid] = neighbors.get(n_fid, 0) + 1
 
@@ -396,7 +396,7 @@ class AIInterface:
             tile_id=getattr(tile, 'tile_id', ''),
             tile_name=getattr(tile, 'tile_name', ''),
             tile_type=self._tile_type_str(getattr(tile, 'tile_type', 'farmland')),
-            owner_faction=getattr(tile, 'owner_faction', ''),
+            owner_faction=getattr(tile, 'faction_id', ''),
             troops=getattr(tile, 'troops', 0),
             development=getattr(tile, 'development_level', 20),
             fortification=getattr(tile, 'fortification', 0),

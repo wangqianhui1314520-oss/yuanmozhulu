@@ -196,3 +196,128 @@ class A4EspionageAgent(BaseAgent):
                 cleaned.append(r)
 
         return cleaned
+
+    # ========== 4.0 AI间谍策略制定 ==========
+
+    async def plan_spy_strategy(
+        self, faction_id: str, world_state: dict, clients: dict,
+        available_spies: list[dict] = None,
+    ) -> dict:
+        """
+        AI自主制定完整谍报计划
+
+        Args:
+            faction_id: 势力ID
+            world_state: 世界状态
+            clients: LLM客户端
+            available_spies: 可用密探列表
+
+        Returns:
+            {
+                "priority_targets": [{"faction_id": "...", "reason": "..."}],
+                "intel_types": ["military", "economic", "diplomatic"],
+                "actions": [{"type": "...", "target": "...", "spy": "...", "budget": int}],
+                "risk_assessment": "总体风险评估",
+                "reasoning": "谍报战略思路"
+            }
+        """
+        client: TencentHunyuanClient = clients.get("enemy")
+        if not client:
+            return self._fallback_spy_strategy(faction_id, world_state)
+
+        faction = world_state.get("factions", {}).get(faction_id, {})
+        faction_name = faction.get("name", faction_id)
+        treasury = faction.get("treasury", 0)
+        neighbors = faction.get("neighbors", [])
+
+        # 邻国情报
+        rival_info = ""
+        for nid in neighbors:
+            nf = world_state.get("factions", {}).get(nid, {})
+            spy_nets = world_state.get("spy_networks", {})
+            infiltration = 0
+            for net_id, net_data in spy_nets.items():
+                if isinstance(net_data, dict):
+                    if net_data.get("owner_faction") == faction_id and net_data.get("target_faction") == nid:
+                        infiltration = net_data.get("infiltration", 0)
+                        break
+            rival_info += (
+                f"  {nf.get('name', nid)}：兵力{nf.get('troops', '?')} "
+                f"渗透度{infiltration}%\n"
+            )
+
+        spy_text = ""
+        if available_spies:
+            for s in available_spies:
+                spy_text += f"  {s.get('name', '?')}（等级{s.get('level', 1)}）\n"
+
+        prompt = (
+            f"你是{faction_name}的谍报总管，负责制定本回合的间谍行动计划。\n\n"
+            f"【可用预算】{min(treasury // 5, 2000)}两\n"
+            f"【可用密探】\n{spy_text or '  无专属密探，需从普通细作中选派'}\n"
+            f"【目标势力情报】\n{rival_info}\n\n"
+            f"请制定本回合谍报计划：\n"
+            f"1. 优先渗透哪个势力？为什么？\n"
+            f"2. 主要窃取哪类情报（军事/经济/外交/科技）？\n"
+            f"3. 是否执行高风险行动（刺杀/破坏/离间）？\n"
+            f"4. 风险评估\n\n"
+            f"注意：渗透度越高，高风险行动成功概率越大。"
+            f"但失败可能导致渗透度大幅下降甚至密探暴露。\n\n"
+            f"输出格式（严格JSON）：\n"
+            f'{{"priority_targets":[{{"faction_id":"ID","reason":"理由"}}],'
+            f'"intel_types":["military","economic","diplomatic"],'
+            f'"actions":[{{"type":"infiltrate|steal|sabotage|assassinate|discord|rumor","target":"势力ID","spy":"密探名","budget":数字}}],'
+            f'"risk_assessment":"风险评估(40字内)",'
+            f'"reasoning":"谍报战略思路(60字内)"}}'
+        )
+
+        try:
+            raw = await client.chat_fast(
+                prompt=prompt,
+                system_prompt=(
+                    "你是元末乱世中的谍报总管。你需权衡风险与收益，"
+                    "在刺探情报和保全密探之间做出选择。"
+                    "不可同时执行超过3项高风险行动。"
+                ),
+                temperature=0.7,
+            )
+            import re
+            try:
+                plan = json.loads(raw)
+            except json.JSONDecodeError:
+                m = re.search(r'\{[\s\S]*"priority_targets"[\s\S]*\}', raw)
+                plan = json.loads(m.group()) if m else {}
+
+            logger.info(
+                f"A4 谍报策略 [{faction_name}]: "
+                f"目标{len(plan.get('priority_targets', []))}个 "
+                f"行动{len(plan.get('actions', []))}项"
+            )
+            return {
+                "priority_targets": plan.get("priority_targets", []),
+                "intel_types": plan.get("intel_types", ["military"]),
+                "actions": plan.get("actions", []),
+                "risk_assessment": plan.get("risk_assessment", "常规风险"),
+                "reasoning": plan.get("reasoning", ""),
+            }
+        except Exception as e:
+            logger.warning(f"A4 谍报策略LLM失败 {faction_name}: {e}")
+            return self._fallback_spy_strategy(faction_id, world_state)
+
+    def _fallback_spy_strategy(self, faction_id: str, world_state: dict) -> dict:
+        """降级谍报策略"""
+        faction = world_state.get("factions", {}).get(faction_id, {})
+        neighbors = faction.get("neighbors", [])
+        targets = []
+        for nid in neighbors[:3]:
+            nf = world_state.get("factions", {}).get(nid, {})
+            targets.append({"faction_id": nid, "reason": f"邻国{nf.get('name', nid)}基础渗透"})
+        return {
+            "priority_targets": targets,
+            "intel_types": ["military"],
+            "actions": [{"type": "infiltrate", "target": nid, "spy": "普通细作", "budget": 100}
+                        for nid in neighbors[:2]],
+            "risk_assessment": "保守渗透，低风险",
+            "reasoning": "降级：优先邻国基础渗透",
+            "_source": "fallback",
+        }

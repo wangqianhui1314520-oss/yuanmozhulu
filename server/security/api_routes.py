@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from fastapi import APIRouter, Request
 
@@ -20,6 +21,9 @@ from .audit_logger import get_audit_logger
 from .edgeone_rules import get_edgeone_policy
 
 router = APIRouter(prefix="/api/security", tags=["security"])
+
+# IP地址格式校验正则
+_IP_PATTERN = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
 
 
 # ============================================================
@@ -40,6 +44,7 @@ async def security_dashboard():
 
     return ApiResponse.success({
         "ioa": {
+            "timestamp": dashboard.timestamp,
             "risk_profile": dashboard.risk_profile.__dict__,
             "top_threats": dashboard.top_threats,
             "anomaly_count_1h": dashboard.anomaly_count_1h,
@@ -169,6 +174,7 @@ async def security_stats():
     detector = get_anomaly_detector()
     anonymizer = get_anonymizer()
     audit = get_audit_logger()
+    anomaly_report = detector.get_report()
 
     return ApiResponse.success({
         "ioa": ioa.export_stats(),
@@ -176,7 +182,7 @@ async def security_stats():
         "anonymizer": anonymizer.get_stats(),
         "audit": audit.get_stats(),
         "anomaly_report": {
-            "total_alerts": len(detector.export_alerts(99999)),
+            "total_alerts": anomaly_report.total_alerts,
         },
     })
 
@@ -226,6 +232,8 @@ async def unblock_ip(request: Request):
     try:
         body = await request.json()
         ip = body.get("ip", "")
+        if not ip or not isinstance(ip, str) or not _IP_PATTERN.match(ip):
+            return ApiResponse.error(400, f"无效的IP地址: {ip}")
         ioa = get_ioa_engine()
         if ip in ioa._blocked_ips:
             ioa._blocked_ips.discard(ip)

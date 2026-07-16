@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <div class="settings-overlay" @click.self="$emit('close')" v-if="visible">
-      <div class="settings-dialog animate-fade-in">
+      <div class="settings-dialog animate-fade-in artifact-panel artifact-memorial">
         <div class="settings-header">
           <h2>⚙ 游戏设置</h2>
           <button v-audio class="settings-close" @click="$emit('close')">✕</button>
@@ -24,6 +24,45 @@
         <div class="settings-body">
           <!-- AI模型配置 -->
           <div v-if="activeTab === 'ai'" class="settings-section">
+            <!-- 预设方案：一键切换 -->
+            <div class="config-card preset-card">
+              <h4>⚡ 预设方案</h4>
+              <p class="config-desc">一键切换模型配置，点击即应用。越快的模型圣旨/回合等待时间越短。</p>
+              <div class="preset-grid">
+                <button
+                  v-for="p in speedPresets"
+                  :key="p.id"
+                  class="preset-btn"
+                  :class="{ active: activePreset === p.id }"
+                  @click="applyPreset(p.id)"
+                >
+                  <span class="preset-icon">{{ p.icon }}</span>
+                  <span class="preset-name">{{ p.name }}</span>
+                  <span class="preset-speed">{{ p.speed }}</span>
+                  <span class="preset-desc">{{ p.desc }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- API 提供商切换 -->
+            <div class="config-card provider-card">
+              <h4>🔌 API 提供商</h4>
+              <p class="config-desc">切换 API 服务商将自动更新地址和推荐模型。使用自己的 API Key 可绕过代理延迟。</p>
+              <div class="provider-row">
+                <button
+                  v-for="prov in providers"
+                  :key="prov.id"
+                  class="provider-btn"
+                  :class="{ active: activeProvider === prov.id }"
+                  @click="switchProvider(prov.id)"
+                >
+                  <span class="prov-name">{{ prov.name }}</span>
+                  <span class="prov-speed">{{ prov.speed }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 三个模型组的详细配置 -->
             <div class="config-card" v-for="model in aiModels" :key="model.id">
               <h4>{{ model.name }}</h4>
               <p class="config-desc">{{ model.desc }}</p>
@@ -33,7 +72,36 @@
               </div>
               <div class="config-row">
                 <label>模型名称</label>
-                <input type="text" v-model="model.modelName" class="config-input" />
+                <div class="model-select-group">
+                  <select v-model="model.modelName" class="config-select model-select" @change="onModelSelect(model)">
+                    <option v-for="opt in getModelOptions(model.id)" :key="opt.value" :value="opt.value">
+                      {{ opt.label }}
+                    </option>
+                    <option value="__custom__">自定义...</option>
+                  </select>
+                  <input
+                    v-if="model.modelName === '__custom__' || !getModelOptions(model.id).some(o => o.value === model.modelName)"
+                    type="text"
+                    v-model="model.modelName"
+                    class="config-input model-input"
+                    placeholder="输入模型名称..."
+                    @focus="model.modelName = model.modelName === '__custom__' ? '' : model.modelName"
+                  />
+                </div>
+              </div>
+              <div class="config-row">
+                <label>API Key</label>
+                <div class="key-input-group">
+                  <input
+                    :type="model.showKey ? 'text' : 'password'"
+                    v-model="model.apiKey"
+                    class="config-input"
+                    :placeholder="model.apiKey ? maskApiKey(model.apiKey) : (activeProvider === 'codebuddy' ? '使用服务器默认Key（留空）' : '输入你的 API Key')"
+                  />
+                  <button class="key-toggle" @click="model.showKey = !model.showKey" :title="model.showKey ? '隐藏' : '显示'">
+                    {{ model.showKey ? '🙈' : '👁' }}
+                  </button>
+                </div>
               </div>
               <div class="config-row">
                 <label>温度 (0-2)</label>
@@ -43,6 +111,9 @@
               <div class="config-row">
                 <label>最大Token</label>
                 <input type="number" v-model.number="model.maxTokens" class="config-input short" />
+                <span class="token-hint" v-if="model.maxTokens <= 1024">⚡快</span>
+                <span class="token-hint" v-else-if="model.maxTokens <= 4096">— 中</span>
+                <span class="token-hint" v-else>🐢 慢</span>
               </div>
             </div>
             <div class="config-actions">
@@ -81,7 +152,36 @@
               </div>
               <div class="config-row">
                 <label>模型名称</label>
-                <input type="text" v-model="edictLLM.modelName" class="config-input" />
+                <div class="model-select-group">
+                  <select v-model="edictLLM.modelName" class="config-select model-select">
+                    <option v-for="opt in getModelOptions('edict')" :key="opt.value" :value="opt.value">
+                      {{ opt.label }}
+                    </option>
+                    <option value="__custom__">自定义...</option>
+                  </select>
+                  <input
+                    v-if="edictLLM.modelName === '__custom__' || !getModelOptions('edict').some(o => o.value === edictLLM.modelName)"
+                    type="text"
+                    v-model="edictLLM.modelName"
+                    class="config-input model-input"
+                    placeholder="输入模型名称..."
+                    @focus="edictLLM.modelName = edictLLM.modelName === '__custom__' ? '' : edictLLM.modelName"
+                  />
+                </div>
+              </div>
+              <div class="config-row">
+                <label>API Key</label>
+                <div class="key-input-group">
+                  <input
+                    :type="edictLLM.showKey ? 'text' : 'password'"
+                    v-model="edictLLM.apiKey"
+                    class="config-input"
+                    :placeholder="edictLLM.apiKey ? maskApiKey(edictLLM.apiKey) : '输入你的 API Key（留空使用服务器默认）'"
+                  />
+                  <button class="key-toggle" @click="edictLLM.showKey = !edictLLM.showKey" :title="edictLLM.showKey ? '隐藏' : '显示'">
+                    {{ edictLLM.showKey ? '🙈' : '👁' }}
+                  </button>
+                </div>
               </div>
               <div class="config-row">
                 <label>温度 (0-2)</label>
@@ -94,7 +194,7 @@
               </div>
               <div class="config-row toggle-row">
                 <label>AI解析开关</label>
-                <button v-audio class="toggle-btn" :class="{ on: edictLLM.useAI }" @click="edictLLM.useAI = !edictLLM.useAI; saveEdictConfig()">
+                <button v-audio class="toggle-btn" :class="{ on: edictLLM.useAI }" @click="edictLLM.useAI = !edictLLM.useAI; debouncedSaveEdictConfig()">
                   {{ edictLLM.useAI ? '启用' : '仅本地' }}
                 </button>
               </div>
@@ -123,40 +223,91 @@
               <h4>音量控制</h4>
               <div class="config-row">
                 <label>总音量</label>
-                <input type="range" min="0" max="100" v-model.number="audioSettings.masterVolume" class="config-range" @change="saveAudioSettings" />
+                <input type="range" min="0" max="100" v-model.number="audioSettings.masterVolume" class="config-range" @change="onAudioChange" />
                 <span class="range-val">{{ audioSettings.masterVolume }}%</span>
               </div>
               <div class="config-row">
-                <label>UI音效</label>
-                <input type="range" min="0" max="100" v-model.number="audioSettings.uiVolume" class="config-range" @change="saveAudioSettings" />
-                <span class="range-val">{{ audioSettings.uiVolume }}%</span>
+                <label>背景音乐</label>
+                <input type="range" min="0" max="100" v-model.number="audioSettings.bgmVolume" class="config-range" @change="onAudioChange" />
+                <span class="range-val">{{ audioSettings.bgmVolume }}%</span>
               </div>
               <div class="config-row">
-                <label>战斗音效</label>
-                <input type="range" min="0" max="100" v-model.number="audioSettings.battleVolume" class="config-range" @change="saveAudioSettings" />
-                <span class="range-val">{{ audioSettings.battleVolume }}%</span>
+                <label>音效</label>
+                <input type="range" min="0" max="100" v-model.number="audioSettings.sfxVolume" class="config-range" @change="onAudioChange" />
+                <span class="range-val">{{ audioSettings.sfxVolume }}%</span>
+              </div>
+              <div class="config-row">
+                <label>语音</label>
+                <input type="range" min="0" max="100" v-model.number="audioSettings.voiceVolume" class="config-range" @change="onAudioChange" />
+                <span class="range-val">{{ audioSettings.voiceVolume }}%</span>
               </div>
             </div>
             <div class="config-card">
               <h4>开关设置</h4>
               <div class="config-row toggle-row">
-                <label>剧情旁白</label>
-                <button v-audio class="toggle-btn" :class="{ on: audioSettings.narrationOn }" @click="audioSettings.narrationOn = !audioSettings.narrationOn; saveAudioSettings()">
-                  {{ audioSettings.narrationOn ? '开' : '关' }}
-                </button>
-              </div>
-              <div class="config-row toggle-row">
-                <label>AI朗读</label>
-                <button v-audio class="toggle-btn" :class="{ on: audioSettings.aiReadOn }" @click="audioSettings.aiReadOn = !audioSettings.aiReadOn; saveAudioSettings()">
-                  {{ audioSettings.aiReadOn ? '开' : '关' }}
+                <label>背景音乐</label>
+                <button v-audio class="toggle-btn" :class="{ on: audioSettings.bgmOn }" @click="audioSettings.bgmOn = !audioSettings.bgmOn; onAudioChange()">
+                  {{ audioSettings.bgmOn ? '开' : '关' }}
                 </button>
               </div>
               <div class="config-row toggle-row">
                 <label>全局静音</label>
-                <button v-audio class="toggle-btn" :class="{ on: audioSettings.muted }" @click="audioSettings.muted = !audioSettings.muted; saveAudioSettings()">
+                <button v-audio class="toggle-btn" :class="{ on: audioSettings.muted }" @click="audioSettings.muted = !audioSettings.muted; onAudioChange()">
                   {{ audioSettings.muted ? '静音' : '正常' }}
                 </button>
               </div>
+            </div>
+
+            <!-- TTS 语音提供商 -->
+            <div class="config-card">
+              <h4>🎙 语音合成引擎</h4>
+              <p class="config-desc">选择角色配音的 TTS 提供商。ElevenLabs 音质更佳，需自备 API Key。</p>
+              <div class="provider-row">
+                <button
+                  class="provider-btn"
+                  :class="{ active: ttsProvider === 'edge' }"
+                  @click="ttsProvider = 'edge'; persistTtsSettings()"
+                >
+                  <span class="prov-name">Edge TTS</span>
+                  <span class="prov-speed">免费</span>
+                </button>
+                <button
+                  class="provider-btn"
+                  :class="{ active: ttsProvider === 'elevenlabs' }"
+                  @click="ttsProvider = 'elevenlabs'; persistTtsSettings()"
+                >
+                  <span class="prov-name">ElevenLabs</span>
+                  <span class="prov-speed">高品质</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- ElevenLabs API Key 配置 -->
+            <div class="config-card" v-if="ttsProvider === 'elevenlabs'">
+              <h4>🔑 ElevenLabs API Key</h4>
+              <p class="config-desc">
+                前往 <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank" class="link">elevenlabs.io → API Keys</a> 创建 Key 后填入。
+                免费账户每月 10,000 字符额度。
+              </p>
+              <div class="config-row">
+                <label>API Key</label>
+                <div class="key-input-group">
+                  <input
+                    :type="elevenKeyVisible ? 'text' : 'password'"
+                    v-model="elevenLabsKey"
+                    class="config-input"
+                    :placeholder="elevenLabsKey ? maskApiKey(elevenLabsKey) : '输入 ElevenLabs API Key（sk_...）'"
+                  />
+                  <button class="key-toggle" @click="elevenKeyVisible = !elevenKeyVisible" :title="elevenKeyVisible ? '隐藏' : '显示'">
+                    {{ elevenKeyVisible ? '🙈' : '👁' }}
+                  </button>
+                </div>
+              </div>
+              <div class="config-actions">
+                <button class="cfg-btn cfg-save" @click="saveElevenLabsKey">保存 Key</button>
+                <button class="cfg-btn cfg-reset" @click="clearElevenLabsKey">清除</button>
+              </div>
+              <p class="status-msg" v-if="ttsStatusMsg">{{ ttsStatusMsg }}</p>
             </div>
           </div>
 
@@ -248,6 +399,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGameStore } from '@/stores/gameStore'
 import { healthCheck, getRuntimeConfig, updateRuntimeConfig, getDefaultConfig, testLLMConnection, exportSaveFile, importSaveFile, clearAllSaves as apiClearAll, listSaves, getEdictLLMConfig, updateEdictLLMConfig } from '@/services/api'
+import { audioManager } from '@/utils/audioManager'
 
 defineProps<{ visible: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -278,18 +430,136 @@ const tabs = [
 ]
 
 const aiModels = reactive([
-  { id: 'advisor', name: '主谋臣模型', desc: '用于君主对话、谋臣献策、廷议辩论', apiBase: 'https://api.lkeap.cloud.tencent.com/v3', modelName: 'hunyuan-role', temperature: 0.7, maxTokens: 4096 },
-  { id: 'law', name: '战略推演模型', desc: '用于年度战略推演、合纵连横判定', apiBase: 'https://api.lkeap.cloud.tencent.com/v3', modelName: 'hunyuan-standard-256k', temperature: 0.6, maxTokens: 8192 },
-  { id: 'enemy', name: '敌方AI模型', desc: '用于灾害判定、战斗结算、贪腐检查', apiBase: 'https://api.lkeap.cloud.tencent.com/v3', modelName: 'hunyuan-turbo', temperature: 0.65, maxTokens: 2048 },
+  { id: 'advisor', name: '主谋臣模型', desc: '用于君主对话、谋臣献策、廷议辩论', apiBase: 'https://copilot.tencent.com/v2', modelName: 'deepseek-v3', temperature: 0.7, maxTokens: 4096, apiKey: '', showKey: false },
+  { id: 'law', name: '战略推演模型', desc: '用于年度战略推演、合纵连横判定', apiBase: 'https://copilot.tencent.com/v2', modelName: 'deepseek-v3', temperature: 0.6, maxTokens: 8192, apiKey: '', showKey: false },
+  { id: 'enemy', name: '敌方AI模型', desc: '用于灾害判定、战斗结算、贪腐检查', apiBase: 'https://copilot.tencent.com/v2', modelName: 'deepseek-v3', temperature: 0.65, maxTokens: 2048, apiKey: '', showKey: false },
 ])
 
+// ========== 预设方案 ==========
+const activePreset = ref('standard')
+const speedPresets = [
+  { id: 'fast', icon: '⚡', name: '极速模式', speed: '~5-15秒/操作', desc: '回合推进最快，适合快速游玩。模型输出较短，AI叙事可能稍简。' },
+  { id: 'standard', icon: '⚖', name: '标准模式', speed: '~10-35秒/操作', desc: '平衡速度与质量，推荐日常使用。' },
+  { id: 'quality', icon: '🎨', name: '沉浸模式', speed: '~20-60秒/操作', desc: '最大化 AI 叙事质量和策略深度，回合最慢但体验最佳。' },
+]
+
+// ========== API 提供商 ==========
+const activeProvider = ref('codebuddy')
+const providers = [
+  { id: 'codebuddy', name: 'CodeBuddy 代理', speed: '中等', apiBase: 'https://copilot.tencent.com/v2' },
+  { id: 'deepseek', name: 'DeepSeek 官方', speed: '较快', apiBase: 'https://api.deepseek.com/v1' },
+  { id: 'openai', name: 'OpenAI 官方', speed: '较快', apiBase: 'https://api.openai.com/v1' },
+]
+
+// 每个提供商的默认模型名（用于切换时回退）
+const PROVIDER_DEFAULT_MODEL: Record<string, string> = {
+  codebuddy: 'deepseek-v3',
+  deepseek: 'deepseek-chat',
+  openai: 'gpt-4o-mini',
+}
+
+// ========== 模型选项（按提供商+分组分级） ==========
+const MODEL_CATALOG: Record<string, Array<{ value: string; label: string; speed: string }>> = {
+  codebuddy: [
+    { value: 'deepseek-v3', label: 'DeepSeek-V3 — 标准', speed: '中' },
+    { value: 'deepseek-v3-flash', label: 'DeepSeek-V3 Flash — 快速', speed: '快' },
+    { value: 'deepseek-v3.2', label: 'DeepSeek-V3.2 — 新版', speed: '中' },
+    { value: 'deepseek-v4-flash', label: 'DeepSeek-V4 Flash — 最新', speed: '快' },
+    { value: 'hunyuan-turbo', label: '混元 Turbo — 腾讯快速', speed: '快' },
+    { value: 'hunyuan-2.0-instruct', label: '混元 2.0 — 腾讯增强', speed: '中' },
+    { value: 'hunyuan-2.0-instruct-20251111', label: '混元 2.0 Instruct — 长版', speed: '中' },
+    { value: 'glm-5', label: 'GLM-5 — 智谱', speed: '中' },
+    { value: 'kimi-k2.6', label: 'Kimi K2.6 — 月之暗面', speed: '中' },
+  ],
+  deepseek: [
+    { value: 'deepseek-chat', label: 'DeepSeek-Chat (V3) — 推荐', speed: '快' },
+    { value: 'deepseek-reasoner', label: 'DeepSeek-R1 — 深度推理', speed: '慢' },
+    { value: 'deepseek-v3', label: 'DeepSeek-V3 — 经典', speed: '中' },
+  ],
+  openai: [
+    { value: 'gpt-4o', label: 'GPT-4o — 多模态', speed: '中' },
+    { value: 'gpt-4o-mini', label: 'GPT-4o Mini — 快速', speed: '快' },
+    { value: 'gpt-4.1', label: 'GPT-4.1 — 强力', speed: '慢' },
+    { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini — 平衡', speed: '中' },
+    { value: 'o4-mini', label: 'o4-mini — 推理', speed: '中' },
+  ],
+}
+
+// 各模型组在不同预设下的推荐参数
+const PRESET_CONFIGS: Record<string, Record<string, { modelName: string; maxTokens: number; temperature: number }>> = {
+  fast: {
+    advisor: { modelName: 'deepseek-chat', maxTokens: 2048, temperature: 0.5 },
+    law: { modelName: 'deepseek-chat', maxTokens: 2048, temperature: 0.4 },
+    enemy: { modelName: 'deepseek-chat', maxTokens: 1024, temperature: 0.5 },
+  },
+  standard: {
+    advisor: { modelName: 'deepseek-v3', maxTokens: 4096, temperature: 0.7 },
+    law: { modelName: 'deepseek-v3', maxTokens: 4096, temperature: 0.6 },
+    enemy: { modelName: 'deepseek-v3', maxTokens: 2048, temperature: 0.65 },
+  },
+  quality: {
+    advisor: { modelName: 'deepseek-v3', maxTokens: 8192, temperature: 0.8 },
+    law: { modelName: 'deepseek-v3', maxTokens: 8192, temperature: 0.7 },
+    enemy: { modelName: 'deepseek-v3', maxTokens: 4096, temperature: 0.7 },
+  },
+}
+
+function getModelOptions(modelId: string) {
+  const providerModels = MODEL_CATALOG[activeProvider.value] || MODEL_CATALOG['codebuddy']
+  // 合并当前模型的实际值，确保已选模型始终在列表中
+  const current = modelId === 'edict' ? edictLLM : aiModels.find(m => m.id === modelId)
+  const currentName = modelId === 'edict' ? edictLLM.modelName : (current as any)?.modelName
+  const hasCurrent = providerModels.some(o => o.value === currentName)
+  if (currentName && !hasCurrent) {
+    return [...providerModels, { value: currentName, label: `${currentName} (当前)`, speed: '?' }]
+  }
+  return providerModels
+}
+
+function onModelSelect(model: typeof aiModels[number]) {
+  // select 变更时不做额外处理，v-model 已绑定
+}
+
+function applyPreset(presetId: string) {
+  activePreset.value = presetId
+  const configs = PRESET_CONFIGS[presetId]
+  if (!configs) return
+  for (const model of aiModels) {
+    const cfg = configs[model.id]
+    if (cfg) {
+      model.modelName = cfg.modelName
+      model.maxTokens = cfg.maxTokens
+      model.temperature = cfg.temperature
+    }
+  }
+  // 极速模式默认推荐 DeepSeek 官方 API
+  if (presetId === 'fast' && activeProvider.value === 'codebuddy') {
+    switchProvider('deepseek')
+  }
+}
+
+function switchProvider(providerId: string) {
+  activeProvider.value = providerId
+  const prov = providers.find(p => p.id === providerId)
+  if (!prov) return
+  const defaultModel = PROVIDER_DEFAULT_MODEL[providerId] || 'deepseek-v3'
+  for (const model of aiModels) {
+    model.apiBase = prov.apiBase
+    // 如果当前模型不在新提供商的目录里，切换到默认模型
+    const catalogModels = (MODEL_CATALOG[providerId] || []).map(o => o.value)
+    if (!catalogModels.includes(model.modelName)) {
+      model.modelName = defaultModel
+    }
+  }
+}
+
 const audioSettings = reactive({
-  masterVolume: 80,
-  uiVolume: 60,
-  battleVolume: 70,
-  narrationOn: true,
-  aiReadOn: false,
   muted: false,
+  masterVolume: 70,
+  bgmVolume: 50,
+  sfxVolume: 60,
+  voiceVolume: 80,
+  bgmOn: true,
 })
 
 const displaySettings = reactive({
@@ -311,8 +581,61 @@ const edictLLM = reactive({
   temperature: 0.4,
   maxTokens: 4096,
   useAI: true,
+  apiKey: '',
+  showKey: false,
 })
 const edictStatusMsg = ref('')
+
+// ========== TTS 语音提供商 & ElevenLabs Key ==========
+const ttsProvider = ref<'edge' | 'elevenlabs'>('edge')
+const elevenLabsKey = ref('')
+const elevenKeyVisible = ref(false)
+const ttsStatusMsg = ref('')
+
+function loadTtsSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('yuanmo_tts_settings') || '{}')
+    ttsProvider.value = saved.provider || 'edge'
+    // 从统一 Key 存储读取 elevenlabs key
+    const savedKeys = JSON.parse(localStorage.getItem('yuanmo_llm_api_keys') || '{}')
+    elevenLabsKey.value = savedKeys?.elevenlabs || ''
+  } catch { /* ignore */ }
+}
+
+function persistTtsSettings() {
+  try {
+    localStorage.setItem('yuanmo_tts_settings', JSON.stringify({ provider: ttsProvider.value }))
+  } catch { /* ignore */ }
+}
+
+function saveElevenLabsKey() {
+  if (!elevenLabsKey.value.trim()) {
+    ttsStatusMsg.value = '✗ API Key 不能为空'
+    return
+  }
+  if (!elevenLabsKey.value.startsWith('sk_')) {
+    ttsStatusMsg.value = '⚠ Key 格式似乎不正确（应以 sk_ 开头），但仍会保存'
+  }
+  try {
+    const savedKeys = JSON.parse(localStorage.getItem('yuanmo_llm_api_keys') || '{}')
+    savedKeys['elevenlabs'] = elevenLabsKey.value.trim()
+    localStorage.setItem('yuanmo_llm_api_keys', JSON.stringify(savedKeys))
+    persistTtsSettings()
+    ttsStatusMsg.value = '✓ ElevenLabs API Key 已保存（仅存本地浏览器，不会上传服务器）'
+  } catch {
+    ttsStatusMsg.value = '✗ 保存失败，请检查浏览器存储空间'
+  }
+}
+
+function clearElevenLabsKey() {
+  elevenLabsKey.value = ''
+  try {
+    const savedKeys = JSON.parse(localStorage.getItem('yuanmo_llm_api_keys') || '{}')
+    delete savedKeys['elevenlabs']
+    localStorage.setItem('yuanmo_llm_api_keys', JSON.stringify(savedKeys))
+    ttsStatusMsg.value = '✓ API Key 已清除'
+  } catch { /* ignore */ }
+}
 
 onMounted(async () => {
   try {
@@ -357,17 +680,30 @@ onMounted(async () => {
     }
   }
 
-  // 加载音频设置（本地持久化）
-  const savedAudio = localStorage.getItem('yuanmo_audio')
-  if (savedAudio) {
-    try { Object.assign(audioSettings, JSON.parse(savedAudio)) } catch { console.warn('音频设置解析失败') }
+  // 加载本地存储的API Key（仅客户端，安全考虑不存服务端）
+  const savedApiKeys = localStorage.getItem('yuanmo_llm_api_keys')
+  if (savedApiKeys) {
+    try {
+      const keys = JSON.parse(savedApiKeys)
+      for (const model of aiModels) {
+        if (keys[model.id]) model.apiKey = keys[model.id]
+      }
+      if (keys['edict']) edictLLM.apiKey = keys['edict'] || ''
+    } catch { console.warn('API Key加载失败') }
   }
+
+  // 加载音频设置（统一存储，与 FloatPanels 兼容）
+  loadAudioSettings()
+  // 加载 TTS 提供商设置
+  loadTtsSettings()
 
   // 加载画面设置（本地持久化）
   const savedDisplay = localStorage.getItem('yuanmo_display')
   if (savedDisplay) {
     try { Object.assign(displaySettings, JSON.parse(savedDisplay)) } catch { console.warn('画面设置解析失败') }
   }
+  // 立即应用画面设置
+  applyDisplaySettings()
 
   // 加载存档设置（本地持久化）
   const savedSaveSettings = localStorage.getItem('yuanmo_save_settings')
@@ -394,16 +730,52 @@ onMounted(async () => {
   }
 })
 
-// 持久化音频设置
+// 持久化音频设置（统一使用 yuanmo_audio_panel，与 FloatPanels 兼容）
+const AUDIO_STORAGE_KEY = 'yuanmo_audio_panel'
+
+function loadAudioSettings() {
+  try {
+    // 兼容旧版 yuanmo_audio key
+    const oldSaved = localStorage.getItem('yuanmo_audio')
+    if (oldSaved) {
+      const old = JSON.parse(oldSaved)
+      Object.assign(audioSettings, {
+        masterVolume: old.masterVolume ?? 70,
+        muted: old.muted ?? false,
+      })
+      localStorage.removeItem('yuanmo_audio')  // 迁移后删除旧 key
+    }
+    const saved = localStorage.getItem(AUDIO_STORAGE_KEY)
+    if (saved) {
+      Object.assign(audioSettings, JSON.parse(saved))
+    }
+  } catch { /* ignore */ }
+}
+
 function saveAudioSettings() {
-  localStorage.setItem('yuanmo_audio', JSON.stringify({
-    masterVolume: audioSettings.masterVolume,
-    uiVolume: audioSettings.uiVolume,
-    battleVolume: audioSettings.battleVolume,
-    narrationOn: audioSettings.narrationOn,
-    aiReadOn: audioSettings.aiReadOn,
+  localStorage.setItem(AUDIO_STORAGE_KEY, JSON.stringify({
     muted: audioSettings.muted,
+    masterVolume: audioSettings.masterVolume,
+    bgmVolume: audioSettings.bgmVolume,
+    sfxVolume: audioSettings.sfxVolume,
+    voiceVolume: audioSettings.voiceVolume,
+    bgmOn: audioSettings.bgmOn,
   }))
+}
+
+function onAudioChange() {
+  saveAudioSettings()
+  // 立即应用到 audioManager
+  audioManager.setMuted(audioSettings.muted)
+  audioManager.setMasterVolume(audioSettings.masterVolume / 100)
+  audioManager.setBgmVolume(audioSettings.bgmVolume / 100)
+  audioManager.setSfxVolume(audioSettings.sfxVolume / 100)
+  audioManager.setVoiceVolume(audioSettings.voiceVolume / 100)
+  if (audioSettings.bgmOn) {
+    audioManager.resumeBgm()
+  } else {
+    audioManager.pauseBgm()
+  }
 }
 
 // 持久化画面设置
@@ -415,12 +787,33 @@ function saveDisplaySettings() {
     darkMode: displaySettings.darkMode,
     autoCollapseSidebar: displaySettings.autoCollapseSidebar,
   }))
+  applyDisplaySettings()
+}
+
+function applyDisplaySettings() {
   // 应用缩放
+  const scale = parseFloat(displaySettings.scale) || 1
+  const appEl = document.getElementById('app')
+  if (appEl) {
+    appEl.style.transform = scale !== 1 ? `scale(${scale})` : ''
+    appEl.style.transformOrigin = 'top left'
+  }
+  // 应用暗色/浅色主题（与 main.css 中 .theme-light 类名对齐）
   if (displaySettings.darkMode) {
     document.documentElement.classList.add('dark-theme')
+    document.documentElement.classList.remove('theme-light')
   } else {
     document.documentElement.classList.remove('dark-theme')
+    document.documentElement.classList.add('theme-light')
   }
+  // 应用动画开关
+  if (!displaySettings.animationsOn) {
+    document.documentElement.classList.add('no-anim')
+  } else {
+    document.documentElement.classList.remove('no-anim')
+  }
+  // 应用 tooltip 延迟
+  document.documentElement.style.setProperty('--tooltip-delay', `${displaySettings.tooltipDelay}ms`)
 }
 
 // 持久化存档设置
@@ -428,6 +821,10 @@ function saveSaveSettings() {
   localStorage.setItem('yuanmo_save_settings', JSON.stringify({
     autoSaveInterval: saveSettings.autoSaveInterval,
   }))
+  // 同步到后端
+  import('@/services/api').then((api) => {
+    api.default.post('/config/runtime', { auto_save_interval: saveSettings.autoSaveInterval }).catch(() => {})
+  })
 }
 
 /** 模型角色中文名映射 */
@@ -435,6 +832,28 @@ const MODEL_LABELS: Record<string, string> = {
   advisor: '主谋臣',
   law: '战略推演',
   enemy: '敌方AI',
+}
+
+/** 脱敏显示 API Key（仅显示前4+后4字符） */
+function maskApiKey(key: string): string {
+  if (!key || key.length <= 8) return key ? '****' : ''
+  return key.slice(0, 4) + '****' + key.slice(-4)
+}
+
+/** 持久化 API Key 到本地存储 */
+function persistApiKeys() {
+  let keys: Record<string, string> = {}
+  // 先读取已有 keys（保留 elevenlabs 等非 LLM 的 key）
+  try {
+    keys = JSON.parse(localStorage.getItem('yuanmo_llm_api_keys') || '{}')
+  } catch { /* ignore */ }
+  for (const m of aiModels) {
+    if (m.apiKey) keys[m.id] = m.apiKey
+    else delete keys[m.id]
+  }
+  if (edictLLM.apiKey) keys['edict'] = edictLLM.apiKey
+  else delete keys['edict']
+  localStorage.setItem('yuanmo_llm_api_keys', JSON.stringify(keys))
 }
 
 /** 状态图标映射 */
@@ -455,7 +874,19 @@ async function testConnection() {
   testingModel.value = true
 
   try {
-    const result = await testLLMConnection()
+    // 将用户在 UI 填写的完整模型配置一起发送给后端（模型名/api地址/apiKey/温度/maxTokens）
+    const apiKeys: Record<string, string> = {}
+    const modelConfigs: Record<string, any> = {}
+    for (const m of aiModels) {
+      if (m.apiKey) apiKeys[m.id] = m.apiKey
+      modelConfigs[m.id] = {
+        model_name: m.modelName,
+        api_base: m.apiBase,
+        temperature: m.temperature,
+        max_tokens: m.maxTokens,
+      }
+    }
+    const result = await testLLMConnection(undefined, apiKeys, modelConfigs)
     modelTestResults.value = result.results || {}
     if (result.configured && result.passed) {
       statusMsg.value = '✓ 全部模型连通正常'
@@ -474,6 +905,7 @@ async function testConnection() {
 
 async function saveConfig() {
   statusMsg.value = '正在保存...'
+  persistApiKeys()
   try {
     const payload: Record<string, any> = {}
     for (const m of aiModels) {
@@ -483,16 +915,29 @@ async function saveConfig() {
         temperature: m.temperature,
         max_tokens: m.maxTokens,
       }
+      if (m.apiKey) {
+        payload[m.id].api_key = m.apiKey
+      }
     }
     await updateRuntimeConfig(payload)
+
+    // 同时同步每个模型的 API Key 到后端（支持不同提供商使用不同 Key）
+    for (const m of aiModels) {
+      if (m.apiKey) {
+        try {
+          const { default: api } = await import('@/services/api')
+          await api.post('/config/player-api-key', { api_key: m.apiKey, model_role: m.id })
+        } catch { /* 非阻塞 */ }
+      }
+    }
+
     statusMsg.value = '✓ 配置已保存并热更新（无需重启）'
   } catch {
     console.warn('运行时配置保存失败，降级到本地存储')
-    // 降级：保存到本地存储
     localStorage.setItem('yuanmo_ai_config', JSON.stringify(aiModels.map(m => ({
       id: m.id, apiBase: m.apiBase, modelName: m.modelName, temperature: m.temperature, maxTokens: m.maxTokens,
     }))))
-    statusMsg.value = '✓ 配置已保存到本地（后端不可用）'
+    statusMsg.value = '✓ 配置已保存到本地（后端不可用，API Key 已本地存储）'
   }
 }
 
@@ -519,16 +964,26 @@ async function resetConfig() {
   }
 }
 
+// debounce 工具：圣旨AI开关切换防抖（避免每次点击立即触发 API 保存）
+let _edictDebounceTimer: ReturnType<typeof setTimeout> | null = null
+function debouncedSaveEdictConfig() {
+  if (_edictDebounceTimer) clearTimeout(_edictDebounceTimer)
+  _edictDebounceTimer = setTimeout(() => saveEdictConfig(), 800)
+}
+
 // 圣旨AI配置保存/重置
 async function saveEdictConfig() {
   edictStatusMsg.value = '正在保存...'
+  persistApiKeys()
   try {
-    await updateEdictLLMConfig({
+    const payload: Record<string, any> = {
       api_base: edictLLM.apiBase,
       model_name: edictLLM.modelName,
       temperature: edictLLM.temperature,
       max_tokens: edictLLM.maxTokens,
-    })
+    }
+    if (edictLLM.apiKey) payload.api_key = edictLLM.apiKey
+    await updateEdictLLMConfig(payload)
     edictStatusMsg.value = '✓ 圣旨AI配置已保存并即时热生效'
     localStorage.setItem('yuanmo_edict_llm', JSON.stringify({
       apiBase: edictLLM.apiBase, modelName: edictLLM.modelName,
@@ -541,7 +996,7 @@ async function saveEdictConfig() {
       temperature: edictLLM.temperature, maxTokens: edictLLM.maxTokens,
       useAI: edictLLM.useAI,
     }))
-    edictStatusMsg.value = '✓ 已保存到本地（后端不可用时降级）'
+    edictStatusMsg.value = '✓ 已保存到本地（后端不可用时降级，API Key 已本地存储）'
   }
 }
 
@@ -633,8 +1088,11 @@ function goHome() {
   // 游戏中：提示进度丢失
   if (store.currentRound > 1 && !confirm('返回首页将丢失当前进度，是否继续？')) return
   // 先导航到首页（组件存活时执行），再关闭设置面板
-  router.push({ name: 'home' }).catch(() => {
-    // NavigationDuplicated 等已由 Vue Router 内部处理
+  router.push({ name: 'home' }).catch((err: any) => {
+    // NavigationDuplicated：已在首页，正常忽略
+    if (err?.name !== 'NavigationDuplicated') {
+      console.error('返回首页导航失败:', err)
+    }
   })
   emit('close')
 }
@@ -652,15 +1110,11 @@ function goHome() {
 }
 
 .settings-dialog {
-  background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-panel) 100%);
-  border: 2px solid var(--text-dim);
-  border-radius: 3px;
   width: 90vw;
   max-width: 600px;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
 }
 
 .settings-header {
@@ -726,6 +1180,156 @@ function goHome() {
   margin-bottom: 12px;
 }
 
+/* ========== 预设方案卡片 ========== */
+.preset-card {
+  background: linear-gradient(135deg, rgba(139, 0, 0, 0.06) 0%, rgba(240, 228, 204, 0.6) 100%);
+  border-color: rgba(139, 0, 0, 0.15);
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.preset-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 6px;
+  background: rgba(240, 228, 204, 0.4);
+  border: 1px solid var(--text-dim);
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: "SimSun", serif;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.preset-btn:hover {
+  background: rgba(139, 0, 0, 0.08);
+  border-color: rgba(139, 0, 0, 0.3);
+}
+
+.preset-btn.active {
+  background: rgba(139, 0, 0, 0.12);
+  border-color: #8b0000;
+  box-shadow: 0 0 8px rgba(139, 0, 0, 0.15);
+}
+
+.preset-icon {
+  font-size: 20px;
+}
+
+.preset-name {
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--text-main);
+  letter-spacing: 2px;
+}
+
+.preset-speed {
+  font-size: 10px;
+  color: #5b8c5a;
+  font-family: "Courier New", monospace;
+}
+
+.preset-desc {
+  font-size: 10px;
+  color: var(--text-dim);
+  line-height: 1.3;
+  margin-top: 2px;
+}
+
+/* ========== 提供商卡片 ========== */
+.provider-card {
+  background: linear-gradient(135deg, rgba(26, 58, 92, 0.06) 0%, rgba(240, 228, 204, 0.6) 100%);
+  border-color: rgba(74, 138, 176, 0.15);
+}
+
+.provider-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.provider-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 10px;
+  background: rgba(240, 228, 204, 0.4);
+  border: 1px solid var(--text-dim);
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: "SimSun", serif;
+  transition: all 0.2s;
+}
+
+.provider-btn:hover {
+  background: rgba(74, 138, 176, 0.08);
+  border-color: rgba(74, 138, 176, 0.3);
+}
+
+.provider-btn.active {
+  background: rgba(74, 138, 176, 0.12);
+  border-color: #4a8ab0;
+  box-shadow: 0 0 6px rgba(74, 138, 176, 0.15);
+}
+
+.prov-name {
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--text-main);
+  letter-spacing: 1px;
+}
+
+.prov-speed {
+  font-size: 10px;
+  color: #5b8c5a;
+  font-family: "Courier New", monospace;
+}
+
+/* ========== 模型选择器 ========== */
+.model-select-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.model-select {
+  padding: 4px 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--text-dim);
+  border-radius: 2px;
+  font-family: "SimSun", serif;
+  font-size: 12px;
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.model-select:focus {
+  border-color: #8b0000;
+  outline: none;
+}
+
+.model-input {
+  margin-top: 0;
+}
+
+.token-hint {
+  font-size: 10px;
+  font-family: "Courier New", monospace;
+  color: var(--text-dim);
+  min-width: 32px;
+  text-align: center;
+}
+
 .config-card h4 {
   font-size: 14px;
   font-weight: normal;
@@ -768,6 +1372,37 @@ function goHome() {
 .config-input.short {
   flex: 0;
   width: 80px;
+}
+
+.key-input-group {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.key-input-group .config-input {
+  flex: 1;
+}
+
+.key-toggle {
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--text-dim);
+  border-radius: 2px;
+  background: var(--bg-card);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.key-toggle:hover {
+  background: var(--bg-hover);
 }
 
 .config-range {

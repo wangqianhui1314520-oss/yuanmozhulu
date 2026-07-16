@@ -656,6 +656,7 @@ def get_territory_graph() -> Dict[str, List[str]]:
     
     用于外交接壤判定和武将自主作战的邻接查询。
     自动从六边形网格邻接表生成，格式为 {tile_id: [neighbor_tile_ids]}。
+    key 格式: "col,row"（与 TileState.tile_id / world.tiles 字典键格式一致）
     
     注意：此函数返回 dict 格式（轻量级），与 server.core.territory_graph.TerritoryGraph
     （CK3风格全功能图）不同。此处用于简单邻接查询（已包含try/except的降级逻辑）。
@@ -664,13 +665,8 @@ def get_territory_graph() -> Dict[str, List[str]]:
         from server.map.adjacency import build_adjacency_table
         from server.map.territory_mask import INCLUDED_HEXES
         # 仅构建疆域遮罩内的邻接关系
-        adj_raw = build_adjacency_table(tile_set=INCLUDED_HEXES if INCLUDED_HEXES else None)
-        # 转换键格式: "col,row" → "tile_col_row"
-        result = {}
-        for key, neighbors in adj_raw.items():
-            tile_id = f"tile_{key.replace(',', '_')}"
-            result[tile_id] = [f"tile_{n.replace(',', '_')}" for n in neighbors]
-        return result
+        # V4.2 fix: 直接返回 "col,row" 格式键，与 diplomacy_deep/general_engine 中的 tile_id 一致
+        return build_adjacency_table(tile_set=INCLUDED_HEXES if INCLUDED_HEXES else None)
     except Exception:
         # 回退：返回空图，调用方已有 try/except
         return {}

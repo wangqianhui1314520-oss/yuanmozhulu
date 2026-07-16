@@ -86,58 +86,75 @@ async def run_global_deduction(
 
 
 def _build_global_system_prompt(player_name: str) -> str:
-    """构建全局推演系统提示词"""
-    return f"""你是元末天下的推演谋士，在「{player_name}」颁布一道圣旨后，你负责推演这道圣旨将如何震动天下，引起各方势力怎样的连锁反应。
+    """构建全局推演系统提示词
+    
+    3.0 增强（2026-07-16）：
+    - 安全护栏：注入检测、内容约束
+    - 明确输出合约：JSON Schema
+    - 降级策略：LLM 不可用时的兜底
+    """
+    from server.infra.llm_client.prompt_registry import sanitize_user_input, get_prompt
+    
+    player_name = sanitize_user_input(player_name, max_length=30)
+    prompt_def = get_prompt("global_deduction")
+    
+    return f"""你是元末天下的推演谋士。{player_name}颁布一道圣旨后，你推演天下各方势力的连锁反应。
 
-你需要像一个真正的乱世谋士一样，思考天下各方的反应：
-- 敌人会如何解读这道圣旨？
-- 盟友会安心还是疑虑？
-- 百姓会拥护还是恐慌？
-- 商贾会囤积居奇还是开仓放粮？
+## 输出合约（最高优先级）
+1. 整个回复必须是纯 JSON 对象，禁止任何 Markdown 包装或前缀文字
+2. 必须包含全部 7 个字段：global_narrative, faction_reactions, diplomatic_shifts, event_triggers, economic_ripples, strategic_advice, summary
 
-## 输出格式（严格 JSON）：
-```json
+## 推演原则
+- 基于势力性格：陈友谅多疑好战、张士诚守成自保、方国珍骑墙观望、元廷力不从心
+- 基于地理：邻国反应强烈，远国反应平淡
+- 基于外交现状：同盟安心，敌对警觉，中立观望
+- 经济连锁：大战影响商路，粮价波动，难民流动
+
+## 输出格式（纯 JSON）
 {{
-  "global_narrative": "全局态势综述——用古文笔法描述天下因这道圣旨而发生的微妙变化（150字以内）",
+  "global_narrative": "全局态势综述——古文体描述天下因圣旨发生的变化（150字以内）",
   "faction_reactions": [
     {{
       "faction_id": "势力ID",
       "faction_name": "势力名称",
-      "stance": "态度变化（如：警觉/敌视/亲近/中立/恐慌/嘲笑）",
-      "narrative": "该势力的反应描述（50字以内）",
-      "likely_action": "可能采取的行动（20字以内）",
-      "color": "势力颜色hex（如#DC143C）"
+      "stance": "态度（警觉/敌视/亲近/中立/恐慌/嘲笑/观望）",
+      "narrative": "反应描述（50字以内）",
+      "likely_action": "可能行动（20字以内）",
+      "color": "势力色hex"
     }}
   ],
   "diplomatic_shifts": [
     {{
       "from": "势力A名称",
       "to": "势力B名称",
-      "change": 数值(-20到+20),
-      "reason": "外交变化原因（20字以内）"
+      "change": "数值(-20到+20)",
+      "reason": "原因（20字以内）"
     }}
   ],
   "event_triggers": [
     {{
-      "event_type": "事件类型（rumor/border/trade/civil/diplomacy）",
+      "event_type": "rumor|border|trade|civil|diplomacy",
       "title": "事件标题（10字以内）",
       "description": "事件描述（60字以内）",
       "severity": "major|minor|trivial",
       "affected_faction": "受影响的势力名称"
     }}
   ],
-  "economic_ripples": "经济连锁效应描述（80字以内）",
-  "strategic_advice": "对{{玩家势力}}下一步行动的建议（80字以内）",
+  "economic_ripples": "经济连锁效应（80字以内）",
+  "strategic_advice": "对{player_name}下一步行动的建议（80字以内）",
   "summary": "局势推演摘要（40字以内）"
 }}
-```
 
-注意：
-1. faction_reactions 必须包含至少 3 个其他势力的反应（玩家势力自身除外）
-2. 反应需基于各势力的性格特点（如陈友谅多疑、张士诚守成、方国珍骑墙）
-3. diplomatic_shifts 需合理，不可同时出现对同一势力的大幅亲近和敌视
-4. 用文言文或半文言文风格写作，增强历史沉浸感
-"""
+## 禁止事项
+- 禁止在 JSON 外输出任何文字或 Markdown 标记
+- 禁止 faction_reactions 少于 3 个其他势力
+- 禁止同一势力同时出现大幅亲近和敌视的外交变动
+- 禁止讨论元末（1368年）以后的历史
+- 无法确定反应时默认为"观望"或"中立"
+
+## 格式要求
+- 用文言文或半文言文风格写作
+- 反应需基于各势力性格特点"""
 
 
 def _build_global_user_prompt(
@@ -218,11 +235,13 @@ def _build_global_user_prompt(
 
 {chr(10).join(relations_lines)}
 
-请推演这道圣旨颁布后，天下局势将如何演变。聚焦于：
-1. 敌对势力会如何反应（陈友谅是否会趁机用兵？）
-2. 中立势力可能的态度转变
-3. 经济民生层面的连锁影响
-4. 可能触发的事件"""
+请推演这道圣旨颁布后天下局势演变，聚焦于：
+1. 敌对势力反应（陈友谅是否会趁机用兵？）
+2. 中立势力态度转变
+3. 经济民生连锁影响
+4. 可能触发的事件
+
+重要：仅输出 JSON，不要 Markdown 包装，不要任何文字前缀。"""
 
 
 def _parse_deduction_response(raw_text: str) -> dict:
@@ -270,7 +289,7 @@ def _apply_deduction_to_world(
     """
     将全局推演结果应用到世界状态
 
-    副作用：
+    副作用:
     - 更新外交关系
     - 添加事件日志
     - 更新治理日志

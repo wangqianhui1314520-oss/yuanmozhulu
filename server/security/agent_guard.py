@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import re
 import time
+import threading
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Optional
@@ -56,20 +57,25 @@ class AgentRiskReport:
 
 
 class AgentGuard:
-    """Agent 行为安全守卫（单例）"""
+    """Agent 行为安全守卫（单例，线程安全）"""
 
     _instance: Optional["AgentGuard"] = None
+    _lock = threading.Lock()
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
         return cls._instance
 
     def __init__(self):
         if self._initialized:
             return
         self._initialized = True
+
+        self._data_lock = threading.Lock()
 
         # 行为历史
         self._history: dict[str, deque[AgentBehaviorRecord]] = defaultdict(
@@ -113,7 +119,7 @@ class AgentGuard:
         params: dict,
         result: Optional[dict] = None,
     ) -> str:
-        """记录一次Agent行为，返回记录指纹"""
+        """记录一次Agent行为，返回记录指纹（线程安全）"""
         fingerprint = self._make_fingerprint(faction_id, action_type, params)
 
         record = AgentBehaviorRecord(
@@ -125,12 +131,13 @@ class AgentGuard:
             decision_hash=fingerprint,
         )
 
-        self._history[faction_id].append(record)
-        self._decision_fingerprints.append(fingerprint)
-        self._action_counter[faction_id][action_type].append(time.time())
+        with self._data_lock:
+            self._history[faction_id].append(record)
+            self._decision_fingerprints.append(fingerprint)
+            self._action_counter[faction_id][action_type].append(time.time())
 
-        # 清理过期频率数据（保留1小时）
-        self._clean_expired_counters(faction_id)
+            # 清理过期频率数据（保留1小时）
+            self._clean_expired_counters_locked(faction_id)
 
         return fingerprint
 
@@ -139,7 +146,8 @@ class AgentGuard:
         raw = f"{faction_id}|{action_type}|{sorted(params.items())}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
-    def _clean_expired_counters(self, faction_id: str) -> None:
+    def _clean_expired_counters_locked(self, faction_id: str) -> None:
+        """清理过期计数器（需在 _data_lock 内调用）"""
         cutoff = time.time() - 3600
         for action_type in self._action_counter[faction_id]:
             self._action_counter[faction_id][action_type] = [
@@ -195,14 +203,14 @@ class AgentGuard:
 
         # 4. 检测重复决策（防重放）
         fp = self._make_fingerprint(faction_id, "ai_decision", decision)
-        recent_count = sum(1 for f in self._decision_fingerprints if f == fp)
+        with self._data_lock:
+            recent_count = sum(1 for f in self._decision_fingerprints if f == fp)
+            freq_score = self._check_action_frequency_locked(faction_id, "ai_decision")
         if recent_count > 2:
             flags.append("重复决策（疑似重放攻击）")
             risk_score += 50.0
 
         # 5. 检测异常频率
-        freq_score = self._check_action_frequency(faction_id, "ai_decision")
-        if freq_score > 50:
             flags.append(f"AI决策频率异常 (分={freq_score:.0f})")
             risk_score += freq_score
 
@@ -269,15 +277,15 @@ class AgentGuard:
                 risk_score += 15.0
 
         # 4. 频率检测
-        freq_score = self._check_action_frequency(faction_id, action_type)
+        with self._data_lock:
+            freq_score = self._check_action_frequency_locked(faction_id, action_type)
+            fp = self._make_fingerprint(faction_id, action_type, params)
+            match_count = sum(1 for f in self._decision_fingerprints if f == fp)
         if freq_score > 50:
             flags.append(f"操作频率异常 (分={freq_score:.0f})")
             risk_score += freq_score
 
         # 5. 重复操作检测
-        fp = self._make_fingerprint(faction_id, action_type, params)
-        match_count = sum(1 for f in self._decision_fingerprints if f == fp)
-        if match_count > 5:
             flags.append("重复操作过多")
             risk_score += 30.0
 
@@ -295,8 +303,8 @@ class AgentGuard:
 
         return is_valid, reason, risk_score
 
-    def _check_action_frequency(self, faction_id: str, action_type: str) -> float:
-        """检测行动频率异常（返回0-100风险分）"""
+    def _check_action_frequency_locked(self, faction_id: str, action_type: str) -> float:
+        """检测行动频率异常（需在 _data_lock 内调用，返回0-100风险分）"""
         times = self._action_counter.get(faction_id, {}).get(action_type, [])
         now = time.time()
         recent = [t for t in times if now - t < 60]  # 1分钟内
@@ -313,8 +321,9 @@ class AgentGuard:
     # ---- 行为模式分析 ----
 
     def analyze_faction_behavior(self, faction_id: str) -> AgentRiskReport:
-        """分析势力行为模式，返回风险报告"""
-        records = list(self._history.get(faction_id, []))
+        """分析势力行为模式，返回风险报告（线程安全）"""
+        with self._data_lock:
+            records = list(self._history.get(faction_id, []))
         if not records:
             return AgentRiskReport(
                 faction_id=faction_id,
@@ -332,10 +341,11 @@ class AgentGuard:
         # 模式异常分：检测高度重复的行为模式
         pattern_score = self._calc_pattern_anomaly(recent)
 
-        # 频率异常分
-        freq_score = 0.0
-        for action_type in self._valid_actions:
-            freq_score = max(freq_score, self._check_action_frequency(faction_id, action_type))
+        # 频率异常分（加锁读取频率数据）
+        with self._data_lock:
+            freq_score = 0.0
+            for action_type in self._valid_actions:
+                freq_score = max(freq_score, self._check_action_frequency_locked(faction_id, action_type))
 
         # 边界违规分：参数范围检测
         boundary_score = self._calc_boundary_violations(recent)
@@ -414,7 +424,8 @@ class AgentGuard:
     # ---- 数据导出 ----
 
     def get_faction_history(self, faction_id: str, limit: int = 50) -> list[dict]:
-        records = list(self._history.get(faction_id, []))[-limit:]
+        with self._data_lock:
+            records = list(self._history.get(faction_id, []))[-limit:]
         return [
             {
                 "timestamp": r.timestamp,
@@ -426,11 +437,12 @@ class AgentGuard:
         ]
 
     def get_stats(self) -> dict:
-        return {
-            "total_records": sum(len(v) for v in self._history.values()),
-            "factions_tracked": len(self._history),
-            "unique_fingerprints": len(self._decision_fingerprints),
-        }
+        with self._data_lock:
+            return {
+                "total_records": sum(len(v) for v in self._history.values()),
+                "factions_tracked": len(self._history),
+                "unique_fingerprints": len(self._decision_fingerprints),
+            }
 
 
 # 单例获取

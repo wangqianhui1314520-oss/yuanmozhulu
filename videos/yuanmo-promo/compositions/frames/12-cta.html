@@ -1,0 +1,59 @@
+<template>
+<div id="root" data-composition-id="12-cta" data-width="1920" data-height="1080">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&display=swap');
+  #root { width: 1920px; height: 1080px; overflow: hidden; position: relative; }
+  .clip { position: absolute; }
+  .bg { inset: 0; background: #0D0D0D; }
+  .hero { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 900;
+    color: #DAA520; font-size: 100px; top: 28%; left: 50%; text-align: center; width: 900px; opacity: 0; }
+  .brand { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 700;
+    color: #E8D5B7; font-size: 48px; top: 50%; left: 50%; text-align: center; width: 600px; opacity: 0; }
+  .cta-text { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 400;
+    color: #DAA520; font-size: 36px; top: 62%; left: 50%; text-align: center; width: 700px; opacity: 0; }
+  .cursor { position: absolute; width: 30px; height: 30px;
+    border: 2px solid #DAA520; border-radius: 50%; opacity: 0; }
+  .ripple { position: absolute; width: 20px; height: 20px;
+    border: 2px solid #DAA520; border-radius: 50%; opacity: 0; }
+  .glow-line { position: absolute; top: 60%; left: 50%; transform: translateX(-50%);
+    width: 800px; height: 2px; background: linear-gradient(90deg, transparent, rgba(218,165,32,0.5), transparent); opacity: 0; }
+  .bar { position: absolute; bottom: 0; left: 0; height: 8px; background: #8B0000; width: 0%; }
+</style>
+<div class="clip bg" data-start="0" data-duration="5" data-track-index="0"></div>
+<div class="glow-line" id="gline"></div>
+<div class="hero" id="h1">天命</div>
+<div class="hero" id="h2">由你</div>
+<div class="hero" id="h3">书写</div>
+<div class="brand" id="brand">元末逐鹿</div>
+<div class="cta-text" id="cta">即刻开启你的帝王史诗</div>
+<div class="cursor" id="cur"></div>
+<div class="ripple" id="rip"></div>
+<div class="bar" id="bar"></div>
+<script>
+(function(){
+  const t=gsap.timeline({paused:true});
+  t.to("#bar",{width:"30%",duration:1},0)
+   .fromTo("#h1",{opacity:0,scale:2,y:-20},{opacity:1,scale:1,y:0,duration:0.5,ease:"power4.out"},0.2)
+   .fromTo("#h2",{opacity:0,scale:2,y:-20},{opacity:1,scale:1,y:0,duration:0.5,ease:"power4.out"},0.7)
+   .fromTo("#h3",{opacity:0,scale:2,y:-20},{opacity:1,scale:1,y:0,duration:0.5,ease:"power4.out"},1.2)
+   .to("#bar",{width:"55%",duration:1},1.5)
+   .to("#h1",{x:-180,duration:0.5},1.6)
+   .to("#h3",{x:180,duration:0.5},1.6)
+   .fromTo("#gline",{opacity:0,scaleX:0},{opacity:1,scaleX:1,duration:0.6},2.0)
+   .fromTo("#brand",{opacity:0,y:20},{opacity:1,y:0,duration:0.5},2.3)
+   .to("#bar",{width:"80%",duration:1},2.8)
+   .set("#cur",{left:920,top:560,opacity:0},3.0)
+   .to("#cur",{opacity:1,duration:0.3},3.1)
+   .to("#cur",{left:1000,duration:0.6,ease:"power2.inOut"},3.2)
+   .set("#rip",{left:1000,top:560,opacity:0.6,scale:1},3.8)
+   .to("#rip",{opacity:0,scale:3,duration:0.6},3.8)
+   .to("#cur",{opacity:0,duration:0.3},4.0)
+   .fromTo("#cta",{opacity:0,y:15},{opacity:1,y:0,duration:0.5},4.0)
+   .to("#cta",{scale:1.05,duration:0.4,ease:"sine.inOut"},4.4)
+   .to("#bar",{width:"100%",duration:0.5,background:"#DAA520"},4.5);
+  window.__timelines=window.__timelines||{};
+  window.__timelines["12-cta"]=t;
+})();
+</script>
+</div>
+</template>

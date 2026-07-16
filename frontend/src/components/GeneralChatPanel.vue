@@ -1,6 +1,6 @@
 <template>
   <div class="gc-root" v-if="visible">
-    <div class="gc-window">
+    <div class="gc-window artifact-panel artifact-personnel">
       <!-- 标题栏 -->
       <div class="gc-header">
         <div class="gc-title-row">
@@ -485,11 +485,7 @@ function scrollToBottom() {
 }
 .gc-window {
   width: 90vw; max-width: 700px; height: 80vh; max-height: 750px;
-  background: linear-gradient(180deg, #1c1e2a 0%, #151720 100%);
-  border: 2px solid #5a4030;
   display: flex; flex-direction: column;
-  box-shadow: 0 12px 48px rgba(0,0,0,0.6);
-  border-radius: 4px;
 }
 
 /* 标题栏 */

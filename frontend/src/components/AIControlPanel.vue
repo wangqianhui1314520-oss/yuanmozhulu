@@ -2,7 +2,7 @@
   <Teleport to="body">
     <Transition name="panel-slide">
       <div v-if="visible" class="aicp-overlay">
-        <div class="aicp-panel">
+        <div class="aicp-panel artifact-panel artifact-secret">
           <!-- 头部 -->
           <div class="aicp-header">
             <h2>🤖 AI 中控台</h2>
@@ -284,7 +284,7 @@ function loadDelegationConfig(): Record<string, string> {
   try {
     const saved = localStorage.getItem('yuanmo_delegation_config')
     if (saved) return JSON.parse(saved)
-  } catch (_) {}
+  } catch (_) { console.warn('加载委任配置失败:', _) }
   return { civil: 'advisory', military: 'advisory', diplomacy: 'advisory', espionage: 'advisory', economy: 'advisory' }
 }
 
@@ -337,10 +337,15 @@ function agentIcon(key: string): string {
 }
 
 function agentStatusClass(agent: any): string {
+  // dashboard 数据未加载 → 待同步
   if (!dashboardData.value) return 'standby'
-  if (agent.circuit_state === 'OPEN') return 'degraded'
+  // 已停止的 agent 优先级最高
   if (agent.alive === false) return 'dead'
-  if (!aiStatus.connected) return 'standby'
+  // 熔断态
+  if (agent.circuit_state === 'OPEN') return 'degraded'
+  // 恢复中
+  if (agent.circuit_state === 'HALF_OPEN') return 'standby'
+  // 正常运行的 agent（不依赖 LLM 可用性判断，dashboard 已返回即视为在线）
   return 'active'
 }
 
@@ -352,11 +357,15 @@ function agentCardClass(agent: any): string {
 }
 
 function agentStatusLabel(agent: any): string {
-  if (agent.alive === false) return '已停止'
-  if (agent.circuit_state === 'OPEN') return '已熔断'
-  if (agent.circuit_state === 'HALF_OPEN') return '恢复中'
+  // dashboard 数据未加载 → 提示用户需要刷新
   if (!dashboardData.value) return '未同步'
-  if (!aiStatus.connected) return '离线'
+  // 已停止的 agent
+  if (agent.alive === false) return '已停止'
+  // 熔断态
+  if (agent.circuit_state === 'OPEN') return '已熔断'
+  // 恢复中
+  if (agent.circuit_state === 'HALF_OPEN') return '恢复中'
+  // 正常运行的 agent（dashboard 已成功返回即视为在线）
   return '运行中'
 }
 
@@ -379,7 +388,7 @@ function setAll(level: string) {
 }
 
 function updateDelegation(domain: string) {
-  // 保存到 localStorage（后端圣旨系统会读取此配置影响 AI 行为）
+  // 保存到 localStorage（前端本地存储，影响前端 AI 控制面板行为）
   try {
     localStorage.setItem('yuanmo_delegation_config', JSON.stringify({ ...delegationLevels }))
     delegationSaved.value = true
@@ -581,7 +590,7 @@ watch(() => props.visible, async (v) => {
       aiStatus.connected = d?.ai_available || false
       aiStatus.model = d?.llm_models?.advisor?.model_name || '--'
       aiStatus.activeAgents = d?.agent_count || 8
-    } catch (e) { aiStatus.connected = false }
+    } catch (e) { console.warn('获取AI仪表盘失败:', e); aiStatus.connected = false }
 
     // 非阻塞加载 dashboard
     refreshDashboard()
@@ -595,8 +604,8 @@ watch(() => props.visible, async (v) => {
   display: flex; justify-content: flex-end;
 }
 .aicp-panel {
-  width: 520px; height: 100vh; background: #1a1a2e; color: #e0d5c1;
-  display: flex; flex-direction: column; box-shadow: -4px 0 20px rgba(0,0,0,0.5);
+  width: 520px; height: 100vh; color: #e0d5c1;
+  display: flex; flex-direction: column;
   font-family: 'Noto Serif SC', 'SimSun', serif;
 }
 .aicp-header {

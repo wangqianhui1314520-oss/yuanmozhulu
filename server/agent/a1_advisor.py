@@ -267,8 +267,16 @@ class A1AdvisorAgent(BaseAgent):
         return prompt
 
     # ================================================================
-    # 多 NPC 廷议辩论（并发增强版）
+    # 多 NPC 廷议辩论（多轮交互增强版 3.3）
     # ================================================================
+    # 改进：从单轮并发+汇总 → 三轮交互
+    #   第1轮：各NPC独立发言（并发）
+    #   第2轮：NPC互相反驳/支持（基于第1轮观点）
+    #   第3轮：调停汇总（秉笔太监归纳+最终建议）
+    #
+    # 新增集成：
+    #   - NPCMemoryManager：好感度影响发言倾向
+    #   - NPCRelationManager：廷议后自动更新 NPC 关系
 
     async def court_debate_multi(
         self,
@@ -278,11 +286,20 @@ class A1AdvisorAgent(BaseAgent):
         clients: dict,
         npc_ids: list[str] = None,
     ) -> dict:
-        """多 NPC 廷议辩论 - 多名文臣并发就同一议题各抒己见"""
+        """多 NPC 廷议辩论 - 三轮交互：独立发言 → 互相反驳 → 调停汇总"""
         import asyncio
 
         client: TencentHunyuanClient = clients["advisor"]
         world_json = self._build_faction_snapshot(world_state, faction_id)
+
+        # 延迟导入记忆/关系模块（避免循环依赖）
+        from .npc_memory import get_npc_memory_manager
+        from .npc_relations import get_npc_relation_manager
+
+        memory_mgr = get_npc_memory_manager()
+        relation_mgr = get_npc_relation_manager()
+
+        current_round = world_state.get("current_round", 0)
 
         # 确定参与 NPC
         if not npc_ids:
@@ -291,17 +308,29 @@ class A1AdvisorAgent(BaseAgent):
         if len(npc_ids) < 2:
             return {"error": "至少需要2名NPC参与廷议", "topic": topic}
 
-        # 并发：各 NPC 同时独立发表意见
-        async def _one_npc_opinion(npc_id: str):
+        # ================================================================
+        # 第1轮：各 NPC 独立发表意见（并发）
+        # ================================================================
+
+        async def _round1_opinion(npc_id: str) -> dict:
             npc = self._registry.get_npc(npc_id)
             if not npc:
                 return None
 
             system_prompt = self._build_npc_system_prompt(npc, faction_id, world_state)
+
+            # 注入好感度/记忆上下文
+            memory_context = memory_mgr.build_affection_context(npc_id, current_round)
+            system_prompt += memory_context
+
+            # 注入 NPC 关系上下文
+            other_ids = [n for n in npc_ids if n != npc_id]
+            relation_context = relation_mgr.get_relation_context_for_prompt(npc_id, other_ids)
+            system_prompt += relation_context
+
             system_prompt += (
                 f"\n\n当前你正在参加朝堂廷议，议题是「{topic}」。"
-                f"\n请你就此议题从你的专业角度发表独立见解。"
-                f"\n你不需要知道其他人说了什么——会后会有秉笔太监统一汇总。"
+                f"\n这是第一轮发言。请你就此议题从你的专业角度发表独立见解。"
                 f"\n请坦率地表达你的观点，可以赞同常理，也可以提出异议。"
             )
 
@@ -329,9 +358,10 @@ class A1AdvisorAgent(BaseAgent):
                     "role_label": npc.get("role_label", ""),
                     "role": npc.get("role", ""),
                     "opinion": response,
+                    "round": 1,
                 }
             except Exception as e:
-                logger.error(f"廷议 NPC {npc['name']} 发言失败: {e}")
+                logger.error(f"廷议第1轮 NPC {npc['name']} 发言失败: {e}")
                 return {
                     "npc_id": npc_id,
                     "npc_name": npc["name"],
@@ -339,29 +369,212 @@ class A1AdvisorAgent(BaseAgent):
                     "role_label": npc.get("role_label", ""),
                     "role": npc.get("role", ""),
                     "opinion": f"（{npc['name']}未及发言）",
+                    "round": 1,
                 }
 
-        tasks = [_one_npc_opinion(nid) for nid in npc_ids]
+        logger.info(f"[廷议] 第1轮：{len(npc_ids)}名NPC独立发言，议题「{topic}」")
+        tasks = [_round1_opinion(nid) for nid in npc_ids]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        opinions = []
+        round1_opinions = []
         for i, r in enumerate(results):
             if isinstance(r, Exception):
                 nid = npc_ids[i] if i < len(npc_ids) else "?"
-                logger.error(f"廷议 NPC {nid} 异常: {r}")
+                logger.error(f"廷议第1轮 NPC {nid} 异常: {r}")
                 npc = self._registry.get_npc(nid) or {}
-                opinions.append({
+                round1_opinions.append({
                     "npc_id": nid,
                     "npc_name": npc.get("name", nid),
                     "title": npc.get("title", ""),
                     "role_label": npc.get("role_label", ""),
                     "role": npc.get("role", ""),
                     "opinion": f"（{npc.get('name', nid)}因故未能发言）",
+                    "round": 1,
                 })
             elif r is not None:
-                opinions.append(r)
+                round1_opinions.append(r)
 
-        # 汇总结论
+        # 如果第1轮只有不到2个有效发言，直接汇总
+        valid_round1 = [o for o in round1_opinions if not o["opinion"].startswith("（")]
+        if len(valid_round1) < 2:
+            return await self._debate_summary_only(
+                topic, round1_opinions, client, world_json
+            )
+
+        # ================================================================
+        # 第2轮：NPC 互相反驳/支持（基于第1轮观点）
+        # ================================================================
+
+        # 构建第1轮发言摘要
+        round1_summary = "\n\n".join([
+            f"【{o['npc_name']}（{o['role_label']}）的观点】\n{o['opinion']}"
+            for o in round1_opinions
+        ])
+
+        async def _round2_rebuttal(npc_id: str) -> dict:
+            npc = self._registry.get_npc(npc_id)
+            if not npc:
+                return None
+
+            system_prompt = self._build_npc_system_prompt(npc, faction_id, world_state)
+
+            # 注入好感度上下文（影响反驳倾向）
+            memory_context = memory_mgr.build_affection_context(npc_id, current_round)
+            system_prompt += memory_context
+
+            # 获取该 NPC 对其他人的关系
+            other_ids = [n for n in npc_ids if n != npc_id]
+            relation_context = relation_mgr.get_relation_context_for_prompt(npc_id, other_ids)
+            system_prompt += relation_context
+
+            # 好感度驱动的辩论倾向提示
+            bias = memory_mgr.get_debate_bias(npc_id)
+            if bias > 0.3:
+                bias_hint = "你对主公心怀感激，倾向于支持主公可能赞同的观点。"
+            elif bias < -0.3:
+                bias_hint = "你对主公心存不满，可能对主公可能赞同的观点提出异议。"
+            else:
+                bias_hint = "你持中立态度，根据专业判断发表意见。"
+
+            system_prompt += (
+                f"\n\n当前廷议进入第二轮辩论。议题仍是「{topic}」。"
+                f"\n以下是第一轮各位大臣的发言：\n{round1_summary}"
+                f"\n\n现在请你对同僚的观点进行回应："
+                f"\n- 你可以支持与你观点相近的同僚（点名表示赞同）"
+                f"\n- 你可以反驳你认为不妥的观点（有理有据地指出问题）"
+                f"\n- 你可以补充新的论据来强化你的立场"
+                f"\n{bias_hint}"
+                f"\n请以朝堂辩论的礼仪发言，不必逐一回应所有观点，挑选1-2个你最关心的进行回应即可。"
+                f"\n发言80-150字。"
+            )
+
+            prompt = (
+                f"廷议第二轮辩论，议题「{topic}」。"
+                f"请{npc['name']}就第一轮发言进行回应和辩论。"
+            )
+
+            try:
+                response = await client.chat_role(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    world_json=world_json,
+                    temperature=npc.get("model_temp", 0.75),
+                )
+                return {
+                    "npc_id": npc_id,
+                    "npc_name": npc["name"],
+                    "title": npc.get("title", ""),
+                    "role_label": npc.get("role_label", ""),
+                    "role": npc.get("role", ""),
+                    "opinion": response,
+                    "round": 2,
+                }
+            except Exception as e:
+                logger.error(f"廷议第2轮 NPC {npc['name']} 辩论失败: {e}")
+                return {
+                    "npc_id": npc_id,
+                    "npc_name": npc["name"],
+                    "title": npc.get("title", ""),
+                    "role_label": npc.get("role_label", ""),
+                    "role": npc.get("role", ""),
+                    "opinion": f"（{npc['name']}默然不语）",
+                    "round": 2,
+                }
+
+        logger.info(f"[廷议] 第2轮：{len(npc_ids)}名NPC互相辩论")
+        tasks2 = [_round2_rebuttal(nid) for nid in npc_ids]
+        results2 = await asyncio.gather(*tasks2, return_exceptions=True)
+
+        round2_opinions = []
+        for i, r in enumerate(results2):
+            if isinstance(r, Exception):
+                nid = npc_ids[i] if i < len(npc_ids) else "?"
+                npc = self._registry.get_npc(nid) or {}
+                round2_opinions.append({
+                    "npc_id": nid,
+                    "npc_name": npc.get("name", nid),
+                    "title": npc.get("title", ""),
+                    "role_label": npc.get("role_label", ""),
+                    "role": npc.get("role", ""),
+                    "opinion": f"（{npc.get('name', nid)}未能回应）",
+                    "round": 2,
+                })
+            elif r is not None:
+                round2_opinions.append(r)
+
+        # ================================================================
+        # 第3轮：调停汇总
+        # ================================================================
+
+        all_rounds_text = (
+            "【第一轮：独立发言】\n" +
+            "\n\n".join([
+                f"  {o['npc_name']}（{o['role_label']}）：{o['opinion']}"
+                for o in round1_opinions
+            ]) +
+            "\n\n【第二轮：互相辩论】\n" +
+            "\n\n".join([
+                f"  {o['npc_name']}（{o['role_label']}）：{o['opinion']}"
+                for o in round2_opinions
+            ])
+        )
+
+        summary_prompt = (
+            f"廷议议题：「{topic}」\n\n"
+            f"以下是两轮廷议的完整记录：\n{all_rounds_text}\n\n"
+            f"请你以秉笔太监的身份，将两轮廷议归纳为一份廷议纪要。需包含：\n"
+            f"1. 【各方观点】各方的主要立场\n"
+            f"2. 【争议焦点】存在分歧的关键问题\n"
+            f"3. 【共识与建议】各方能达成一致的方面及最终建议\n"
+            f"4. 【辩论态势】哪方观点占据上风\n"
+            f"以古文风格撰写，总计不超过250字。"
+        )
+
+        summary_system = (
+            "你是朝堂上的秉笔太监，负责记录廷议内容。"
+            "用古文风格撰写纪要，客观中立，言简意赅。"
+        )
+        summary_response = ""
+        try:
+            summary_response = await client.chat_role(
+                prompt=summary_prompt,
+                system_prompt=summary_system,
+                world_json=world_json,
+                temperature=0.5,
+            )
+        except Exception as e:
+            logger.warning(f"廷议汇总失败: {e}")
+            summary_response = "廷议已毕，详情见各位大臣的发言记录。"
+
+        # 廷议后更新 NPC 间关系
+        try:
+            all_opinions = round1_opinions + round2_opinions
+            relation_mgr.update_after_debate(all_opinions, current_round)
+        except Exception as e:
+            logger.warning(f"廷议后关系更新失败: {e}")
+
+        # 合并所有意见（按轮次排列）
+        all_opinions_combined = round1_opinions + round2_opinions
+
+        return {
+            "topic": topic,
+            "rounds": {
+                "round1": round1_opinions,
+                "round2": round2_opinions,
+            },
+            "opinions": all_opinions_combined,  # 向后兼容
+            "summary": summary_response,
+            "npc_count": len(npc_ids),
+            "debate_rounds": 2,  # 辩论轮次数
+            "agent_id": self.agent_id,
+            "category": "A1_advisor",
+        }
+
+    async def _debate_summary_only(
+        self, topic: str, opinions: list[dict],
+        client: TencentHunyuanClient, world_json: str,
+    ) -> dict:
+        """降级：仅有第1轮意见时的简单汇总"""
         all_opinions_text = "\n\n".join([
             f"【{o['npc_name']}（{o['role_label']}）】\n{o['opinion']}"
             for o in opinions
@@ -375,18 +588,25 @@ class A1AdvisorAgent(BaseAgent):
         )
 
         summary_system = "你是朝堂上的秉笔太监，负责记录廷议内容。用古文风格撰写纪要，客观中立，言简意赅。"
-        summary_response = await client.chat_role(
-            prompt=summary_prompt,
-            system_prompt=summary_system,
-            world_json=world_json,
-            temperature=0.5,
-        )
+        summary_response = ""
+        try:
+            summary_response = await client.chat_role(
+                prompt=summary_prompt,
+                system_prompt=summary_system,
+                world_json=world_json,
+                temperature=0.5,
+            )
+        except Exception as e:
+            logger.warning(f"降级汇总失败: {e}")
+            summary_response = "廷议已毕，详情见各位大臣的发言记录。"
 
         return {
             "topic": topic,
+            "rounds": {"round1": opinions},
             "opinions": opinions,
             "summary": summary_response,
             "npc_count": len(opinions),
+            "debate_rounds": 1,
             "agent_id": self.agent_id,
             "category": "A1_advisor",
         }

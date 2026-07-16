@@ -496,6 +496,7 @@ class GeneralEngine:
             # 谨慎：只攻击弱势目标
             weak_targets = [t for t in targets if t["troops"] < legion.get_total_troops() * 0.7]
             if not weak_targets:
+                actions.append({"type": "patrol", "reason": f"{general.name}率{legion.name}谨慎巡视防区（无敌方可乘之机）"})
                 return actions
             target = weak_targets[0]
         else:
@@ -612,8 +613,14 @@ class GeneralEngine:
 
             if candidates:
                 target_fid, target_name = random.choice(candidates)
+                old_fid = general.faction_id
                 general.faction_id = target_fid
                 general.loyalty = 50  # 投奔后重置忠诚
+                # 从原势力武将列表移除，加入目标势力
+                old_list = self.world.__dict__.get("_generals", {}).get(old_fid, [])
+                if general in old_list:
+                    old_list.remove(general)
+                self.world.__dict__.setdefault("_generals", {}).setdefault(target_fid, []).append(general)
                 return True, f"{general.name}因忠诚度不足，叛投{target_name}！"
 
         return False, ""
@@ -641,6 +648,7 @@ class GeneralEngine:
             "speed_mult": 1.0,
             "siege_mult": 1.0,
             "morale_effect": 0,
+            "supply_consumption_mult": 1.0,
         }
         narratives = []
 

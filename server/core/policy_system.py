@@ -9,13 +9,52 @@
 - 徭役绑定民心与基建速度
 """
 from __future__ import annotations
-import random
+import json
 import logging
+import random
+from pathlib import Path
 from typing import Optional
+
 from server.models.world_state import (
     WorldState, FactionState, TileState, TileType,
     PolicyType, DisasterType, Season, BuildingType,
 )
+
+# 模块级缓存：policies.json 只加载一次，避免每回合/每地块的磁盘 I/O
+_policies_cache: Optional[dict] = None
+_policies_cache_lock = False  # 简单标记，避免并发重复加载
+
+
+def _load_policies_data() -> dict:
+    """加载 policies.json（模块级缓存，仅首次读盘）"""
+    global _policies_cache, _policies_cache_lock
+    if _policies_cache is not None:
+        return _policies_cache
+    logger = logging.getLogger("yuanmo.policy")
+    try:
+        policy_path = Path(__file__).parent.parent / "data" / "policies.json"
+        with open(policy_path, "r", encoding="utf-8") as f:
+            _policies_cache = json.load(f)
+        logger.info("国策数据加载成功，共 %d 条", len(_policies_cache))
+        return _policies_cache
+    except FileNotFoundError:
+        logger.error("国策数据文件不存在: %s，国策系统将无法工作", policy_path)
+        _policies_cache = {}
+        return {}
+    except json.JSONDecodeError as e:
+        logger.error("国策数据 JSON 格式错误: %s，国策系统将无法工作", e)
+        _policies_cache = {}
+        return {}
+    except OSError as e:
+        logger.error("读取国策数据文件失败 (%s): %s", policy_path, e)
+        _policies_cache = {}
+        return {}
+    except Exception as e:
+        logger.error("加载国策数据时发生未知错误: %s", e, exc_info=True)
+        _policies_cache = {}
+        return {}
+
+
 
 logger = logging.getLogger("yuanmo.policy")
 
@@ -174,7 +213,7 @@ class PolicyEngine:
 
         # 激活国策
         current.append(policy_type)
-        self.world.faction_policies[faction_id] = current
+        # current 已是 self.world.faction_policies[faction_id] 的引用，无需重新赋值
         faction.unlocked_policies.append(policy_type.value)
 
         # 徭役征发：设置徭役负担
@@ -458,6 +497,8 @@ class PolicyEngine:
 
     def get_bandit_resist(self, tile: TileState) -> float:
         """获取匪患抵抗率（治安+烽燧影响）"""
+        # M-1: 改为从 building_config 导入（消除与 building_system 的延迟导入）
+        from server.core.building_config import BUILDING_CONFIG
         resist = tile.public_order / 100.0
         # 烽燧加成
         for b in tile.buildings.values():
@@ -476,5 +517,130 @@ class PolicyEngine:
         return mult
 
 
-# 局部引用 BUILDING_CONFIG（延迟导入以避免循环）
-from server.core.building_system import BUILDING_CONFIG
+    @staticmethod
+    def get_tech_policy_modifiers(faction, world=None) -> dict:
+        """计算科技树国策的全局修饰符（每回合调用）
+
+        读取 policies.json，根据 faction.unlocked_policies 聚合所有已解锁国策的效果，
+        返回可用于税收/粮产/人口/粮耗等结算的修饰符字典。
+
+        Returns:
+            dict: {
+                "tax_efficiency": float,           # 征税效率加成（0.0~1.0，如 0.30 表示+30%）
+                "treasury_income": int,            # 国库收入固定加成（银/回合）
+                "grain_production": float,         # 粮产加成（0.0~1.0）
+                "population_growth": float,        # 人口增长加成（0.0~1.0）
+                "garrison_cost_reduction": float,  # 驻军消耗减少（0.0~1.0）
+                "land_fertility": float,           # 土地肥力加成
+                "famine_resistance": float,        # 抗灾加成
+                "plague_reduction": float,         # 防疫加成
+                "flood_reduction": float,          # 防洪加成
+                "construction_speed": float,       # 建设速度加成
+                "arms_production": float,          # 军械产量加成
+                "trade_income": float,             # 贸易收入加成
+                "troop_power": float,              # 战力加成
+                "morale_bonus": float,             # 士气加成
+                "siege_bonus": float,              # 攻城加成
+                "fortification_bonus": float,      # 城防加成
+                "march_speed": float,              # 行军速度加成
+                "naval_power": float,              # 水师加成
+                "all_policy_ids": list[str],       # 所有已解锁国策ID
+            }
+        """  # noqa: D401
+        unlocked = getattr(faction, 'unlocked_policies', [])
+        if not unlocked:
+            return {"all_policy_ids": [], "tax_efficiency": 0.0, "treasury_income": 0,
+                    "grain_production": 0.0, "population_growth": 0.0,
+                    "garrison_cost_reduction": 0.0, "land_fertility": 0.0,
+                    "famine_resistance": 0.0, "plague_reduction": 0.0,
+                    "flood_reduction": 0.0, "construction_speed": 0.0,
+                    "arms_production": 0.0, "trade_income": 0.0,
+                    "troop_power": 0.0, "morale_bonus": 0.0,
+                    "siege_bonus": 0.0, "fortification_bonus": 0.0,
+                    "march_speed": 0.0, "naval_power": 0.0}
+
+        try:
+            policies_data = _load_policies_data()
+        except Exception:
+            logger = logging.getLogger("yuanmo.policy")
+            logger.warning("加载 policies.json 失败，国策修饰符不生效")
+            return {"all_policy_ids": [], "tax_efficiency": 0.0, "treasury_income": 0,
+                    "grain_production": 0.0, "population_growth": 0.0,
+                    "garrison_cost_reduction": 0.0, "land_fertility": 0.0,
+                    "famine_resistance": 0.0, "plague_reduction": 0.0,
+                    "flood_reduction": 0.0, "construction_speed": 0.0,
+                    "arms_production": 0.0, "trade_income": 0.0,
+                    "troop_power": 0.0, "morale_bonus": 0.0,
+                    "siege_bonus": 0.0, "fortification_bonus": 0.0,
+                    "march_speed": 0.0, "naval_power": 0.0}
+
+        modifiers = {
+            "all_policy_ids": list(unlocked),
+            "tax_efficiency": 0.0,
+            "treasury_income": 0,
+            "grain_production": 0.0,
+            "population_growth": 0.0,
+            "garrison_cost_reduction": 0.0,
+            "land_fertility": 0.0,
+            "famine_resistance": 0.0,
+            "plague_reduction": 0.0,
+            "flood_reduction": 0.0,
+            "construction_speed": 0.0,
+            "arms_production": 0.0,
+            "trade_income": 0.0,
+            "troop_power": 0.0,
+            "morale_bonus": 0.0,
+            "siege_bonus": 0.0,
+            "fortification_bonus": 0.0,
+            "march_speed": 0.0,
+            "naval_power": 0.0,
+        }
+
+        for cat in policies_data.get("policies", {}).values():
+            for branch in cat.get("branches", []):
+                for tier in branch.get("tiers", []):
+                    if tier["id"] not in unlocked:
+                        continue
+                    effects = tier.get("effects", {})
+                    for key, val in effects.items():
+                        if key == "tax_efficiency":
+                            modifiers["tax_efficiency"] += val / 100.0
+                        elif key == "treasury_income":
+                            modifiers["treasury_income"] += val
+                        elif key == "grain_production":
+                            modifiers["grain_production"] += val / 100.0
+                        elif key == "population_growth":
+                            modifiers["population_growth"] += val / 100.0
+                        elif key == "garrison_cost_reduction":
+                            modifiers["garrison_cost_reduction"] += val / 100.0
+                        elif key == "land_fertility":
+                            modifiers["land_fertility"] += val / 100.0
+                        elif key == "famine_resistance":
+                            modifiers["famine_resistance"] += val / 100.0
+                        elif key == "plague_reduction":
+                            modifiers["plague_reduction"] += val / 100.0
+                        elif key == "flood_reduction":
+                            modifiers["flood_reduction"] += val / 100.0
+                        elif key == "construction_speed":
+                            modifiers["construction_speed"] += val / 100.0
+                        elif key == "arms_production":
+                            modifiers["arms_production"] += val / 100.0
+                        elif key == "trade_income":
+                            modifiers["trade_income"] += val / 100.0
+                        elif key == "troop_power":
+                            modifiers["troop_power"] += val / 100.0
+                        elif key == "morale_bonus":
+                            modifiers["morale_bonus"] += val / 100.0
+                        elif key == "siege_bonus":
+                            modifiers["siege_bonus"] += val / 100.0
+                        elif key == "fortification_bonus":
+                            modifiers["fortification_bonus"] += val / 100.0
+                        elif key == "march_speed":
+                            modifiers["march_speed"] += val / 100.0
+                        elif key == "naval_power":
+                            modifiers["naval_power"] += val / 100.0
+
+        return modifiers
+
+
+

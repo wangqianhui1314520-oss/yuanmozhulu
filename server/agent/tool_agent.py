@@ -652,7 +652,11 @@ class CoreToolAgent:
     def _exec_raise_troops(self, world: "WorldState", fid: str, args: dict) -> str:
         faction = world.get_faction(fid)
         if not faction: return "势力不存在"
-        count = args.get("count", 1000)
+        # H-1: LLM 参数护栏 — 不超过金库/3，上限3000
+        max_affordable = max(0, faction.treasury // 3)
+        count = max(0, min(args.get("count", 1000), 3000, max_affordable))
+        if count <= 0:
+            return "银两不足，无法征召"
         cost = count * 2  # 每兵2银
         grain_cost = count // 10  # 每10兵1粮
         if faction.treasury < cost:
@@ -669,7 +673,7 @@ class CoreToolAgent:
 
     def _exec_siege_target(self, world: "WorldState", fid: str, args: dict) -> str:
         target = args.get("target", "")
-        troops = args.get("troops", 1000)
+        troops = max(0, min(args.get("troops", 1000), 10000))
         if not world.get_faction(target):
             return f"目标势力{target}不存在"
         # 检查是否接壤
@@ -681,7 +685,7 @@ class CoreToolAgent:
 
     def _exec_fortify_defense(self, world: "WorldState", fid: str, args: dict) -> str:
         tile_id = args.get("tile_id", "")
-        level = args.get("level", 1)
+        level = max(1, min(args.get("level", 1), 10))
         tile = world.get_tile(tile_id)
         if not tile or tile.faction_id != fid:
             return "地块不存在或不属于你方"
@@ -695,15 +699,23 @@ class CoreToolAgent:
         return f"{tile.tile_name}城防提升至{tile.fortification}级，消耗银两{cost}"
 
     def _exec_train_troops(self, world: "WorldState", fid: str, args: dict) -> str:
-        count = args.get("count", 1000)
         faction = world.get_faction(fid)
         if not faction: return "势力不存在"
+        if faction.total_troops <= 0:
+            return "无兵可练"
+        count = max(0, min(args.get("count", 1000), faction.total_troops, faction.treasury))
         cost = count  # 每兵1银训练费
+        if cost <= 0:
+            return f"银两不足，无法训练"
         if faction.treasury < cost:
-            return f"银两不足（需要{cost}）"
+            return f"银两不足（需要{cost}，现有{faction.treasury}）"
         faction.treasury -= cost
-        faction.total_troops = int(faction.total_troops * 1.1)  # 战力提升10%
-        return f"训练{count}士兵完成，全军战力提升，消耗银两{cost}"
+        # ★ 修复：直接给每个地块加兵力，效果持久（之前 total_troops*=1.1 会被 settle_engine 覆盖）
+        tiles = world.get_faction_tiles(fid)
+        bonus_per_tile = max(1, int(tiles[0].troops * 0.05)) if tiles else 0
+        for t in tiles:
+            t.troops += bonus_per_tile
+        return f"训练{count}士兵完成，每地块兵力+{bonus_per_tile}，全军战力提升，消耗银两{cost}"
 
     def _exec_scout_territory(self, world: "WorldState", fid: str, args: dict) -> str:
         target = args.get("target", "")
@@ -726,7 +738,7 @@ class CoreToolAgent:
         return f"从{tile.tile_name}撤退，保留半数兵力"
 
     def _exec_mobilize_militia(self, world: "WorldState", fid: str, args: dict) -> str:
-        count = args.get("count", 500)
+        count = max(0, min(args.get("count", 500), 5000))
         faction = world.get_faction(fid)
         if not faction: return "势力不存在"
         faction.realm_stability = max(0, faction.realm_stability - 5)
@@ -737,11 +749,11 @@ class CoreToolAgent:
 
     def _exec_deploy_garrison(self, world: "WorldState", fid: str, args: dict) -> str:
         tile_id = args.get("tile_id", "")
-        troops = args.get("troops", 500)
+        faction = world.get_faction(fid)
+        troops = max(0, min(args.get("troops", 500), faction.total_troops if faction else 5000))
         tile = world.get_tile(tile_id)
         if not tile or tile.faction_id != fid:
             return "地块不存在或不属于你方"
-        faction = world.get_faction(fid)
         if faction and faction.total_troops < troops:
             return f"兵力不足（需要{troops}，现有{faction.total_troops}）"
         tile.troops += troops
@@ -751,7 +763,10 @@ class CoreToolAgent:
 
     def _exec_raid_supply_line(self, world: "WorldState", fid: str, args: dict) -> str:
         target = args.get("target", "")
-        troops = args.get("troops", 300)
+        # H-1: 防止劫掠己方补给线
+        if target == fid:
+            return "不可劫掠己方补给线"
+        troops = max(0, min(args.get("troops", 300), 3000))
         target_faction = world.get_faction(target)
         if not target_faction:
             return f"目标势力{target}不存在"
@@ -776,7 +791,7 @@ class CoreToolAgent:
     # ============================================================
     def _exec_develop_land(self, world: "WorldState", fid: str, args: dict) -> str:
         tile_id = args.get("tile_id", "")
-        investment = args.get("investment", 500)
+        investment = max(0, min(args.get("investment", 500), 5000))
         tile = world.get_tile(tile_id)
         if not tile or tile.faction_id != fid:
             return "地块不存在或不属于你方"
@@ -835,7 +850,7 @@ class CoreToolAgent:
 
     def _exec_distribute_relief(self, world: "WorldState", fid: str, args: dict) -> str:
         tile_id = args.get("tile_id", "")
-        amount = args.get("amount", 200)
+        amount = max(0, min(args.get("amount", 200), 5000))
         tile = world.get_tile(tile_id)
         if not tile or tile.faction_id != fid:
             return "地块不存在或不属于你方"
@@ -849,7 +864,7 @@ class CoreToolAgent:
         return f"赈灾{tile.tile_name}，发放{amount}石粮草，民心大振"
 
     def _exec_recruit_officials(self, world: "WorldState", fid: str, args: dict) -> str:
-        count = args.get("count", 1)
+        count = max(1, min(args.get("count", 1), 10))
         cost = count * 100
         faction = world.get_faction(fid)
         if not faction: return "势力不存在"
@@ -875,13 +890,36 @@ class CoreToolAgent:
     _ATTITUDE_MIN = -100
     _ATTITUDE_MAX = 100
 
-    @staticmethod
-    def _clamp_attitude(attitude: int) -> int:
-        return max(_ATTITUDE_MIN, min(_ATTITUDE_MAX, attitude))
+    # C-2修复: 外交冷却机制（防止NPC刷关系导致快速外交固化）
+    _DIPLOMACY_COOLDOWN_ROUNDS = 3          # 同目标两次外交操作的最小间隔
+    _diplomacy_cooldowns: dict = {}          # {(fid, target, action): last_round}
+
+    @classmethod
+    def _clamp_attitude(cls, attitude: int) -> int:
+        return max(cls._ATTITUDE_MIN, min(cls._ATTITUDE_MAX, attitude))
+
+    @classmethod
+    def _check_cooldown(cls, fid: str, target: str, action: str, current_round: int) -> bool:
+        """检查外交冷却：同一势力对同一目标的同一操作需冷却。返回 True=允许执行。"""
+        key = (fid, target, action)
+        last = cls._diplomacy_cooldowns.get(key, -999)
+        if current_round - last < cls._DIPLOMACY_COOLDOWN_ROUNDS:
+            logger.info(f"[Diplomacy] 冷却中跳过: {fid}→{target} {action} (上次第{last}回合)")
+            return False
+        cls._diplomacy_cooldowns[key] = current_round
+        return True
+
+    @classmethod
+    def _check_mutual_cooldown(cls, fid: str, target: str, action: str, current_round: int) -> bool:
+        """双向冷却：A→B 和 B→A 共享冷却，防止双方互相刷关系"""
+        return cls._check_cooldown(fid, target, action, current_round) and \
+               cls._check_cooldown(target, fid, action, current_round)
 
     def _exec_send_envoy(self, world: "WorldState", fid: str, args: dict) -> str:
         target = args.get("target", "")
         message = args.get("message", "")
+        if not self._check_mutual_cooldown(fid, target, "envoy", world.current_round):
+            return f"使臣已在途中（冷却中）"
         relation = world.get_relation(fid, target)
         if not relation:
             return f"与{target}无外交关系"
@@ -895,6 +933,8 @@ class CoreToolAgent:
 
     def _exec_propose_alliance(self, world: "WorldState", fid: str, args: dict) -> str:
         target = args.get("target", "")
+        if not self._check_cooldown(fid, target, "alliance", world.current_round):
+            return "使臣已在途中（冷却中）"
         relation = world.get_relation(fid, target)
         if not relation:
             return f"与{target}无外交关系"
@@ -907,6 +947,8 @@ class CoreToolAgent:
 
     def _exec_declare_war(self, world: "WorldState", fid: str, args: dict) -> str:
         target = args.get("target", "")
+        if not self._check_cooldown(fid, target, "war", world.current_round):
+            return "不可重复宣战（冷却中）"
         relation = world.get_relation(fid, target)
         if not relation:
             return f"与{target}无外交关系"
@@ -923,6 +965,8 @@ class CoreToolAgent:
 
     def _exec_sue_for_peace(self, world: "WorldState", fid: str, args: dict) -> str:
         target = args.get("target", "")
+        if not self._check_cooldown(fid, target, "peace", world.current_round):
+            return "求和使臣已在途中（冷却中）"
         relation = world.get_relation(fid, target)
         if not relation:
             return f"与{target}无外交关系"
@@ -933,6 +977,8 @@ class CoreToolAgent:
 
     def _exec_arrange_marriage(self, world: "WorldState", fid: str, args: dict) -> str:
         target = args.get("target", "")
+        if not self._check_mutual_cooldown(fid, target, "marriage", world.current_round):
+            return "联姻使臣已在途中（冷却中）"
         relation = world.get_relation(fid, target)
         if not relation:
             return f"与{target}无外交关系"
@@ -947,6 +993,8 @@ class CoreToolAgent:
     def _exec_offer_tribute(self, world: "WorldState", fid: str, args: dict) -> str:
         target = args.get("target", "")
         amount = args.get("amount", 500)
+        if not self._check_mutual_cooldown(fid, target, "tribute", world.current_round):
+            return "贡使已在途中（冷却中）"
         faction = world.get_faction(fid)
         if not faction: return "势力不存在"
         if faction.treasury < amount:
@@ -962,6 +1010,8 @@ class CoreToolAgent:
 
     def _exec_break_alliance(self, world: "WorldState", fid: str, args: dict) -> str:
         target = args.get("target", "")
+        if not self._check_cooldown(fid, target, "break", world.current_round):
+            return "不可重复撕毁盟约（冷却中）"
         relation = world.get_relation(fid, target)
         if not relation:
             return f"与{target}无外交关系"

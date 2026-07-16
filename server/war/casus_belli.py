@@ -205,10 +205,6 @@ def validate_casus_belli(
         if attacker.reputation < cfg.prestige_cost:
             return False, f"声望不足（需要{cfg.prestige_cost}，现有{attacker.reputation}）", {}
 
-    # 扣声望
-    if cfg.prestige_cost > 0:
-        attacker.reputation = max(0, attacker.reputation - cfg.prestige_cost)
-
     context = {
         "cb_type": cb.value,
         "cb_name": cfg.name,
@@ -220,6 +216,22 @@ def validate_casus_belli(
         "target_tile_ids": target_tile_ids or [],
     }
     return True, "", context
+
+
+def deduct_cb_prestige_cost(
+    cb: CasusBelli,
+    attacker_faction_id: str,
+    world_state,
+) -> bool:
+    """宣战时扣除声望消耗（仅在实际宣战时调用）"""
+    cfg = CB_CONFIG.get(cb)
+    if not cfg or cfg.prestige_cost <= 0:
+        return False
+    attacker = world_state.factions.get(attacker_faction_id)
+    if not attacker:
+        return False
+    attacker.reputation = max(0, attacker.reputation - cfg.prestige_cost)
+    return True
 
 
 def _are_factions_adjacent(world_state, faction_a: str, faction_b: str) -> bool:

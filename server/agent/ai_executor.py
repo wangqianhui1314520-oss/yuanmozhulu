@@ -29,6 +29,10 @@ class AIExecutor:
         self.march_engine = march_engine
         self.spy_engine = spy_engine
         self.diplomacy_engine = diplomacy_engine
+        # 幂等性防护：去重已执行的操作
+        self._executed_warlord_round = -1
+        self._executed_diplomacy_round = -1
+        self._executed_event_ids: set[str] = set()
 
     # ================================================================
     # A2 群雄殿决策 → 军事/内政操作
@@ -47,6 +51,11 @@ class AIExecutor:
             [{"faction_id": ..., "actions": [...], "status": ...}]
         """
         actions_log = []
+
+        # 幂等性：同一回合只执行一次
+        current_round = self.world.current_round
+        if current_round == self._executed_warlord_round:
+            return actions_log
 
         for result in warlord_results:
             fid = result.get("faction_id", "")
@@ -84,6 +93,7 @@ class AIExecutor:
                 "decision_source": "plan" if decision_plan.get("actions") else "text" if decision_plan else "fallback",
             })
 
+        self._executed_warlord_round = current_round
         return actions_log
 
     def _execute_plan(self, fid: str, faction, plan: dict, ai_config: dict) -> list[str]:
@@ -101,12 +111,15 @@ class AIExecutor:
             action_type = act.get("type", "")
             target = act.get("target", "")
             target_fid = act.get("target_faction", "")
-            amount = act.get("amount", 0)
+            amount = act.get("amount")  # None 表示 AI 未指定数量
             priority = act.get("priority", "normal")
 
             try:
                 if action_type == "recruit":
-                    recruit_count = amount or min(300, faction.treasury // 3, 800)
+                    # 修复 falsy 陷阱: amount=0 时 AI 明确不要招募，不应被 or 吞掉
+                    recruit_count = amount if amount is not None else min(300, faction.treasury // 3, 800)
+                    if recruit_count <= 0:
+                        continue  # AI 明确指示不招募
                     if recruit_count > 50 and faction.treasury > recruit_count * 3:
                         faction.treasury -= recruit_count * 3
                         if tiles:
@@ -119,7 +132,11 @@ class AIExecutor:
 
                 elif action_type in ("march", "attack"):
                     if self.march_engine and tiles:
-                        executed_attack = self._execute_attack(fid, faction, tiles, target_fid, ai_config)
+                        # v4.0: 检查是否有军事深化数据（阵型/兵力分配/将领）
+                        military_detail = plan.get("military_detail", {})
+                        executed_attack = self._execute_attack(
+                            fid, faction, tiles, target_fid, ai_config,
+                            military_detail=military_detail)
                         if executed_attack:
                             actions.extend(executed_attack)
 
@@ -294,9 +311,17 @@ class AIExecutor:
         return actions
 
     def _execute_attack(self, fid: str, faction, tiles: list, target_fid: str,
-                        ai_config: dict) -> list[str]:
-        """执行进攻操作"""
+                        ai_config: dict, military_detail: dict = None) -> list[str]:
+        """执行进攻操作（v4.0：支持阵型和兵力分配）"""
         actions = []
+        military_detail = military_detail or {}
+
+        # ★ v4.0 阵型加成
+        formation = military_detail.get("formation", "方圆阵")
+        formation_bonus = self._get_formation_bonus(formation)
+        if formation_bonus:
+            actions.append(f"布{formation}（{formation_bonus}）")
+
         # 找到可攻击的目标
         expansion_targets = []
 
@@ -305,6 +330,8 @@ class AIExecutor:
                 continue
             attackable = self.march_engine.get_attackable_neighbors(atk_tile.tile_id, fid)
             for target in attackable:
+                if not target or not isinstance(target, dict):
+                    continue
                 enemy_id = target.get("faction_id", "")
                 if not enemy_id or enemy_id == fid:
                     continue
@@ -338,16 +365,28 @@ class AIExecutor:
                     troops=troops_to_send,
                     attacker_faction=fid,
                 )
-                won = march_result.get("battle_result", {}).get("winner") == fid
+                battle = march_result.get("battle_result") or {}
+                won = battle.get("winner") == fid
+                tile_captured = march_result.get("tile_captured", False)
+                captured_name = march_result.get("tile_name", "")
                 actions.append(
                     f"进攻{target.get('faction_name', '?')}的{target.get('tile_name', '?')}"
-                    f"{'（胜）' if won else '（败）'}"
+                    f"{'（胜，占领' + captured_name + '）' if tile_captured else '（胜）' if won else '（败）'}"
                 )
-                self._log_event(
-                    fid, "military",
-                    f"{faction.name}出兵{target.get('faction_name', '?')}，"
-                    f"{'大获全胜' if won else '铩羽而归'}"
-                )
+                if tile_captured:
+                    self._log_event(
+                        fid, "military",
+                        f"{faction.name}出兵{target.get('faction_name', '?')}，"
+                        f"成功占领{captured_name}！"
+                    )
+                    # 占领后安抚民心，小幅提升稳定度
+                    faction.realm_stability = min(100, faction.realm_stability + 1)
+                else:
+                    self._log_event(
+                        fid, "military",
+                        f"{faction.name}出兵{target.get('faction_name', '?')}，"
+                        f"{'大获全胜' if won else '铩羽而归'}"
+                    )
             except Exception as e:
                 logger.warning(f"A2 进攻执行失败 {fid}: {e}")
 
@@ -448,6 +487,13 @@ class AIExecutor:
         applied = {"factions_affected": 0, "total_grain_loss": 0,
                    "total_pop_loss": 0, "total_troop_loss": 0}
 
+        # 幂等性：同 event_id 不重复执行
+        event_id = event_result.get("event_id", "")
+        if event_id and event_id in self._executed_event_ids:
+            return applied
+        if event_id:
+            self._executed_event_ids.add(event_id)
+
         affected = event_result.get("affected_factions", [])
         for af in affected:
             fid = af.get("faction_id", "")
@@ -514,6 +560,11 @@ class AIExecutor:
         根据外交建议文本，执行结盟/宣战/贸易/进贡等操作。
         """
         actions_log = []
+
+        # 幂等性：同一回合只执行一次外交
+        current_round = self.world.current_round
+        if current_round == self._executed_diplomacy_round:
+            return actions_log
 
         for result in diplomacy_results:
             fid = result.get("faction_id", "")
@@ -622,6 +673,7 @@ class AIExecutor:
                 "actions": executed,
             })
 
+        self._executed_diplomacy_round = current_round
         return actions_log
 
     # ================================================================
@@ -733,6 +785,8 @@ class AIExecutor:
                                     attackable = self.march_engine.get_attackable_neighbors(
                                         atk_tile.tile_id, fid) if self.march_engine else []
                                     for target in attackable:
+                                        if not target or not isinstance(target, dict):
+                                            continue
                                         if target.get("faction_id") == enemy_id:
                                             expansion_targets.append((atk_tile, target, 2.0))
 
@@ -744,6 +798,8 @@ class AIExecutor:
                         attackable = self.march_engine.get_attackable_neighbors(
                             atk_tile.tile_id, fid) if self.march_engine else []
                         for target in attackable:
+                            if not target or not isinstance(target, dict):
+                                continue
                             tfid = target.get("faction_id", "")
                             if tfid and tfid != fid:
                                 if target.get("troops", 9999) < atk_tile.troops * 0.8:
@@ -760,7 +816,8 @@ class AIExecutor:
                                 troops=min(atk_tile.troops - 100, max(100, atk_tile.troops // 2)),
                                 attacker_faction=fid,
                             )
-                            won = march_result.get("battle_result", {}).get("winner") == fid
+                            battle = march_result.get("battle_result") or {}
+                            won = battle.get("winner") == fid
                             results["actions"].append(
                                 f"{faction.name}进攻{target.get('faction_name', '?')}的"
                                 f"{target.get('tile_name', '?')}{'（胜）' if won else '（败）'}"
@@ -872,8 +929,8 @@ class AIExecutor:
                 rel.stance = target_stance
                 return
 
-        # 创建新关系
-        new_key = f"{fid_a}_{fid_b}"
+        # 创建新关系（键排序保证唯一性，避免 a_b 和 b_a 重复）
+        new_key = "_".join(sorted([fid_a, fid_b]))
         self.world.relations[new_key] = RelationState(
             faction_a=fid_a,
             faction_b=fid_b,
@@ -925,3 +982,16 @@ class AIExecutor:
             )
         except Exception as e:
             logger.debug(f"事件总线发布失败（非致命）: {e}")
+
+    @staticmethod
+    def _get_formation_bonus(formation: str) -> str:
+        """v4.0: 返回阵型加成描述（实际加成由 combat_modifiers 处理）"""
+        bonuses = {
+            "锋矢阵": "突击+25%，防御-10%",
+            "鹤翼阵": "包抄+20%，骑兵伤+15%",
+            "方圆阵": "防御+30%，机动-10%",
+            "长蛇阵": "行军速度+30%，遭遇战-15%",
+            "雁行阵": "远程伤害+25%，近战-10%",
+        }
+        return bonuses.get(formation, "")
+

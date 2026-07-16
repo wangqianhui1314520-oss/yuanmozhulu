@@ -141,6 +141,82 @@ class NPCRegistry:
         self._prompt_templates.clear()
         self._load_data()
 
+    def reset_to_template(self):
+        """重置 NPC 状态为模板原始数据（新开局时调用）"""
+        self._npc_cache.clear()
+        self._npc_by_faction.clear()
+        self._npc_by_role.clear()
+        self._faction_advisers.clear()
+        self._prompt_templates.clear()
+        self._load_data()
+        logger.info("NPC Registry 已重置为模板数据")
+
+    def export_runtime_state(self) -> dict:
+        """
+        导出当前所有 NPC 的运行时状态（供存档使用）。
+
+        返回: { npc_id: {alive, executed, loyalty, ambition, wisdom, faction, ...}, ... }
+        只导出与模板不同的动态字段，减小存档体积。
+        """
+        state = {}
+        for npc_id, npc in self._npc_cache.items():
+            dynamic = {
+                "alive": npc.get("alive", True),
+                "executed": npc.get("executed", False),
+                "loyalty": npc.get("loyalty", 80),
+                "ambition": npc.get("ambition", 30),
+                "wisdom": npc.get("wisdom", 80),
+                "faction": npc.get("faction", ""),
+            }
+            # 仅当有状态变更时才记录
+            if npc.get("death_round", 0):
+                dynamic["death_round"] = npc["death_round"]
+            if npc.get("execution_reason"):
+                dynamic["execution_reason"] = npc["execution_reason"]
+            if npc.get("faction_change_reason"):
+                dynamic["faction_change_reason"] = npc["faction_change_reason"]
+            if npc.get("title"):
+                dynamic["title"] = npc["title"]
+            if npc.get("role_label"):
+                dynamic["role_label"] = npc["role_label"]
+            state[npc_id] = dynamic
+        return state
+
+    def import_runtime_state(self, state: dict):
+        """
+        从存档恢复 NPC 运行时状态（读档时调用）。
+
+        Args:
+            state: export_runtime_state() 导出的字典
+        """
+        if not state:
+            return
+
+        for npc_id, dynamic in state.items():
+            npc = self._npc_cache.get(npc_id)
+            if not npc:
+                continue
+            for key, value in dynamic.items():
+                npc[key] = value
+
+        # 重建按势力的索引
+        self._npc_by_faction = {}
+        for npc in self._npc_cache.values():
+            fid = npc.get("faction", "_wandering")
+            if fid not in self._npc_by_faction:
+                self._npc_by_faction[fid] = []
+            self._npc_by_faction[fid].append(npc)
+
+        # 重建按角色的索引
+        self._npc_by_role = {}
+        for npc in self._npc_cache.values():
+            role = npc.get("role", "other")
+            if role not in self._npc_by_role:
+                self._npc_by_role[role] = []
+            self._npc_by_role[role].append(npc)
+
+        logger.info(f"NPC 运行时状态恢复完成（{len(state)} 条记录）")
+
     # ================================================================
     # NPC 查询
     # ================================================================
@@ -231,12 +307,17 @@ class NPCRegistry:
         self,
         role_filter: str = "",
         faction_id: str = "",
+        include_dead: bool = False,
     ) -> list[dict]:
         """获取 NPC 列表（序列化格式，供 API 层使用）"""
         result = []
         normalized_fid = normalize_faction_id(faction_id) if faction_id else ""
 
         for npc_id, npc in self._npc_cache.items():
+            # 默认过滤死亡 NPC
+            if not include_dead and not self.is_npc_alive(npc_id):
+                continue
+
             if role_filter and npc.get("role") != role_filter:
                 continue
 
@@ -257,7 +338,7 @@ class NPCRegistry:
     def select_debate_npcs(
         self, faction_id: str, count: int = 4
     ) -> list[str]:
-        """为廷议选取 NPC（不同角色优先，不足则补充）"""
+        """为廷议选取 NPC（不同角色优先，不足则补充，自动排除死亡 NPC）"""
         normalized = normalize_faction_id(faction_id)
 
         # 优先从谋士团选取
@@ -267,7 +348,7 @@ class NPCRegistry:
 
         for nid in adviser_team:
             npc = self._npc_cache.get(nid)
-            if not npc:
+            if not npc or not self.is_npc_alive(nid):
                 continue
             role = npc.get("role", "")
             if role not in roles_seen:
@@ -278,7 +359,7 @@ class NPCRegistry:
 
         # 补充其他 NPC（不同角色）
         for nid, npc in self._npc_cache.items():
-            if nid in selected:
+            if nid in selected or not self.is_npc_alive(nid):
                 continue
             role = npc.get("role", "")
             if role not in roles_seen:
@@ -307,6 +388,368 @@ class NPCRegistry:
         except Exception:
             logger.warning(f"Prompt 模板加载失败: {template_name}")
             return ""
+
+    # ================================================================
+    # NPC 动态状态更新 (3.3 新增)
+    # ================================================================
+
+    def update_npc_state(
+        self, npc_id: str, field: str, value,
+        persist: bool = True,
+    ) -> bool:
+        """
+        动态更新 NPC 状态字段
+
+        支持更新的字段: loyalty, wisdom, ambition, faction, title,
+                       role_label, alive, personality
+
+        Args:
+            npc_id: NPC ID
+            field: 要更新的字段名
+            value: 新值
+            persist: 是否持久化到 JSON 文件
+
+        Returns:
+            是否更新成功
+        """
+        npc = self._npc_cache.get(npc_id)
+        if not npc:
+            logger.warning(f"更新 NPC 状态失败: {npc_id} 不存在")
+            return False
+
+        old_value = npc.get(field)
+        npc[field] = value
+
+        # 数值字段范围限制
+        if field in ("loyalty",):
+            npc[field] = max(0, min(100, int(value)))
+        elif field in ("wisdom",):
+            npc[field] = max(0, min(100, int(value)))
+        elif field in ("ambition",):
+            npc[field] = max(0, min(100, int(value)))
+
+        logger.info(
+            f"[NPC状态] {npc['name']}({npc_id}).{field}: "
+            f"{old_value} → {npc[field]}"
+        )
+
+        if persist:
+            self._persist_npc_data()
+
+        return True
+
+    def modify_npc_stat(
+        self, npc_id: str, field: str, delta: int,
+        persist: bool = True,
+    ) -> bool:
+        """
+        增量修改 NPC 数值属性
+
+        Args:
+            npc_id: NPC ID
+            field: 字段名 (loyalty/wisdom/ambition)
+            delta: 增量值
+            persist: 是否持久化
+        """
+        npc = self._npc_cache.get(npc_id)
+        if not npc:
+            return False
+
+        current = npc.get(field, 0)
+        return self.update_npc_state(npc_id, field, current + delta, persist)
+
+    def kill_npc(self, npc_id: str, persist: bool = True) -> bool:
+        """
+        标记 NPC 为死亡状态
+
+        死亡的 NPC:
+        - alive 字段设为 False
+        - 从势力 NPC 列表中移除
+        - 保留在 _npc_cache 中以供历史引用
+        """
+        npc = self._npc_cache.get(npc_id)
+        if not npc:
+            return False
+
+        npc["alive"] = False
+        npc["death_round"] = getattr(self, '_current_round', 0)
+
+        # 从势力分组中移除
+        faction = npc.get("faction", "")
+        if faction and faction in self._npc_by_faction:
+            self._npc_by_faction[faction] = [
+                n for n in self._npc_by_faction[faction]
+                if n.get("npc_id") != npc_id
+            ]
+
+        # 从角色分组中移除
+        role = npc.get("role", "")
+        if role and role in self._npc_by_role:
+            self._npc_by_role[role] = [
+                n for n in self._npc_by_role[role]
+                if n.get("npc_id") != npc_id
+            ]
+
+        logger.info(f"[NPC死亡] {npc['name']}({npc_id}) 已标记为死亡")
+
+        if persist:
+            self._persist_npc_data()
+
+        return True
+
+    def execute_npc(self, npc_id: str, reason: str = "",
+                    round_number: int = 0) -> bool:
+        """
+        处决 NPC（标记死亡并记录原因）
+
+        处决会产生连锁反应:
+        - 其他 NPC 的好感度和信任度下降（由 NPCMemoryManager 处理）
+        - 同派系 NPC 关系恶化（由 NPCRelationManager 处理）
+        """
+        npc = self._npc_cache.get(npc_id)
+        if not npc:
+            return False
+
+        npc["alive"] = False
+        npc["executed"] = True
+        npc["execution_reason"] = reason
+        npc["death_round"] = round_number
+
+        self.kill_npc(npc_id, persist=False)
+        self._persist_npc_data()
+
+        logger.info(
+            f"[NPC处决] {npc['name']}({npc_id}) 被处决"
+            + (f"（原因：{reason}）" if reason else "")
+        )
+        return True
+
+    def change_npc_faction(
+        self, npc_id: str, new_faction_id: str,
+        reason: str = "", persist: bool = True,
+    ) -> bool:
+        """
+        NPC 更换势力（叛变/投靠）
+
+        会更新所有相关索引
+        """
+        npc = self._npc_cache.get(npc_id)
+        if not npc:
+            return False
+
+        old_faction = npc.get("faction", "")
+        normalized_new = normalize_faction_id(new_faction_id)
+
+        # 从旧势力移除
+        if old_faction and old_faction in self._npc_by_faction:
+            self._npc_by_faction[old_faction] = [
+                n for n in self._npc_by_faction[old_faction]
+                if n.get("npc_id") != npc_id
+            ]
+
+        # 更新 faction
+        npc["faction"] = normalized_new
+        npc["faction_change_reason"] = reason
+
+        # 加入新势力
+        if normalized_new not in self._npc_by_faction:
+            self._npc_by_faction[normalized_new] = []
+        self._npc_by_faction[normalized_new].append(npc)
+
+        logger.info(
+            f"[NPC叛变] {npc['name']}({npc_id}): "
+            f"{old_faction} → {normalized_new}"
+            + (f"（原因：{reason}）" if reason else "")
+        )
+
+        if persist:
+            self._persist_npc_data()
+
+        return True
+
+    def get_alive_npcs(self, faction_id: str = "") -> list[dict]:
+        """
+        获取存活的 NPC 列表（排除已死亡 NPC）
+
+        Args:
+            faction_id: 势力 ID（空字符串表示全部势力）
+        """
+        if faction_id:
+            normalized = normalize_faction_id(faction_id)
+            candidates = self._npc_by_faction.get(normalized, [])
+        else:
+            candidates = list(self._npc_cache.values())
+
+        return [
+            npc for npc in candidates
+            if npc.get("alive", True) and not npc.get("executed", False)
+        ]
+
+    def get_dead_npcs(self) -> list[dict]:
+        """获取已死亡的 NPC 列表"""
+        return [
+            npc for npc in self._npc_cache.values()
+            if not npc.get("alive", True) or npc.get("executed", False)
+        ]
+
+    def is_npc_alive(self, npc_id: str) -> bool:
+        """检查 NPC 是否存活"""
+        npc = self._npc_cache.get(npc_id)
+        if not npc:
+            return False
+        return npc.get("alive", True) and not npc.get("executed", False)
+
+    def apply_game_event_to_npcs(
+        self, event_type: str, affected_npc_ids: list[str],
+        stat_changes: dict = None, round_number: int = 0,
+    ):
+        """
+        批量应用游戏事件到 NPC 状态
+
+        Args:
+            event_type: 事件类型 (rebellion/execution/promotion/reward/punishment/battle)
+            affected_npc_ids: 受影响的 NPC ID 列表
+            stat_changes: 属性变化 {"loyalty": delta, "ambition": delta, ...}
+            round_number: 当前回合
+        """
+        stat_changes = stat_changes or {}
+
+        event_effects = {
+            "rebellion": {
+                "loyalty": -20,
+                "ambition": 10,
+                "description": "参与叛变",
+            },
+            "execution_witness": {
+                "loyalty": -10,
+                "ambition": -5,
+                "description": "目睹处决",
+            },
+            "promotion": {
+                "loyalty": 10,
+                "ambition": 5,
+                "description": "获得升迁",
+            },
+            "reward": {
+                "loyalty": 5,
+                "description": "获得赏赐",
+            },
+            "punishment": {
+                "loyalty": -10,
+                "ambition": -5,
+                "description": "遭受惩罚",
+            },
+            "battle_victory": {
+                "loyalty": 5,
+                "ambition": 3,
+                "description": "战斗胜利",
+            },
+            "battle_defeat": {
+                "loyalty": -5,
+                "ambition": -3,
+                "description": "战斗失败",
+            },
+        }
+
+        effect = event_effects.get(event_type, stat_changes)
+        if isinstance(effect, dict) and "description" in effect:
+            desc = effect["description"]
+            for npc_id in affected_npc_ids:
+                for field, delta in effect.items():
+                    if field != "description" and isinstance(delta, (int, float)):
+                        self.modify_npc_stat(npc_id, field, int(delta), persist=False)
+        else:
+            # 自定义 stat_changes
+            for npc_id in affected_npc_ids:
+                for field, delta in stat_changes.items():
+                    self.modify_npc_stat(npc_id, field, int(delta), persist=False)
+
+        self._persist_npc_data()
+
+    # ================================================================
+    # 数据持久化
+    # ================================================================
+
+    def _persist_npc_data(self, player_id: str = ""):
+        """
+        将当前 NPC 运行时状态持久化到玩家隔离目录（不再覆盖模板文件）。
+
+        v3.5 修复：原实现直接覆盖 server/data/npc_ministers.json（全局模板），
+        导致：(1) NPC 死亡/叛变后永久污染模板，新开局 NPC 缺失；
+              (2) 多玩家共享同一文件，互相覆盖；(3) 存档不含 NPC 状态，读档后状态丢失。
+
+        现在写入 data/players/{player_id}/npc_runtime_state.json，
+        与 npc_memory/npc_relations 保持一致的玩家隔离架构。
+        存档文件中的 NPC 状态由 export_runtime_state/import_runtime_state 管理。
+        """
+        try:
+            # 确定运行时状态文件路径
+            if player_id:
+                runtime_dir = Path(__file__).parent.parent.parent / "data" / "players" / player_id
+            else:
+                # 无玩家 ID 时写入全局降级目录（兼容旧行为，但不再覆盖模板）
+                runtime_dir = Path(__file__).parent.parent / "data"
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            npc_path = runtime_dir / "npc_runtime_state.json"
+
+            # 只导出动态状态（不含静态模板数据）
+            state_data = {
+                "version": "3.5",
+                "description": "元末逐鹿 - NPC 运行时状态（不覆盖模板）",
+                "npcs": self.export_runtime_state(),
+            }
+
+            with open(npc_path, "w", encoding="utf-8") as f:
+                json.dump(state_data, f, ensure_ascii=False, indent=2)
+
+            logger.debug(f"NPC 运行时状态已持久化（{len(state_data['npcs'])} 条）→ {npc_path}")
+        except Exception as e:
+            logger.error(f"NPC 运行时状态持久化失败: {e}")
+
+    def _load_runtime_state(self, player_id: str):
+        """
+        从玩家隔离目录加载 NPC 运行时状态（服务器重启后恢复）。
+
+        仅在内存中没有运行时状态时调用（即首次初始化后），
+        避免覆盖活跃游戏中的状态。
+        """
+        runtime_dir = Path(__file__).parent.parent.parent / "data" / "players" / player_id
+        npc_path = runtime_dir / "npc_runtime_state.json"
+        if not npc_path.exists():
+            return
+
+        try:
+            with open(npc_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            npcs_state = data.get("npcs", {})
+            if npcs_state:
+                self.import_runtime_state(npcs_state)
+                logger.info(f"NPC 运行时状态已加载（{len(npcs_state)} 条）← {npc_path}")
+        except Exception as e:
+            logger.warning(f"加载 NPC 运行时状态失败（将使用模板默认值）: {e}")
+
+    def set_current_round(self, round_number: int):
+        """设置当前回合号（用于记录事件时间）"""
+        self._current_round = round_number
+
+    # ================================================================
+    # 序列化增强（包含动态状态）
+    # ================================================================
+
+    def serialize_npc_dynamic(self, npc: dict) -> dict:
+        """
+        序列化 NPC 数据（包含动态状态信息）
+        比 serialize_npc 多返回 alive、executed 等运行时字段
+        """
+        base = self.serialize_npc(npc)
+        base.update({
+            "alive": npc.get("alive", True),
+            "executed": npc.get("executed", False),
+            "death_round": npc.get("death_round", 0),
+            "execution_reason": npc.get("execution_reason", ""),
+            "faction_change_reason": npc.get("faction_change_reason", ""),
+        })
+        return base
 
     # ================================================================
     # 关系判断

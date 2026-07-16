@@ -73,7 +73,7 @@ function getTacticLabel(t: string) {
 
 <template>
   <div v-if="visible" class="talent-overlay" @click.self="emit('close')">
-    <div class="talent-panel">
+    <div class="talent-panel artifact-panel artifact-personnel">
       <div class="panel-header">
         <h3>🏛 人才市场</h3>
         <button class="close-btn" @click="emit('close')">✕</button>
@@ -149,11 +149,10 @@ function getTacticLabel(t: string) {
   background: rgba(0,0,0,0.6);
 }
 .talent-panel {
-  width: 680px; max-height: 85vh;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  border: 1px solid #4a5568; border-radius: 12px;
+  width: 680px; max-width: 95vw; max-height: 85vh;
   display: flex; flex-direction: column;
   color: #e2e8f0; font-size: 13px;
+  box-shadow: inset 3px 0 0 var(--wuxing-wood);
 }
 .panel-header {
   display: flex; justify-content: space-between; align-items: center;

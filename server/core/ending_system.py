@@ -14,7 +14,7 @@ import os
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, Callable, Any
-from server.models.world_state import WorldState, FactionState, DiplomaticStance
+from server.models.world_state import WorldState, FactionState, DiplomaticStance, TileType
 
 # ================================================================
 # 结局等级枚举
@@ -597,6 +597,11 @@ class EndingEngine:
         self._hints_shown: set[str] = set()  # 已展示过的提示
         self._unlocked_rewards: dict[str, list[str]] = {}  # 已解锁奖励
 
+    def _claimable_tile_count(self) -> int:
+        """可被势力占领的地块总数（排除海域等不可占领地块）"""
+        return sum(1 for t in self.world.tiles.values()
+                   if t.tile_type != TileType.SEA)
+
     # ================================================================
     # 结局检测
     # ================================================================
@@ -622,7 +627,7 @@ class EndingEngine:
         if self.world.current_round < 3:
             return None
 
-        total_tiles = len(self.world.tiles)
+        total_tiles = self._claimable_tile_count()
         player_tiles = self.world.get_faction_tiles(player.faction_id)
         living = self.world.get_living_factions()
         territory_ratio = len(player_tiles) / max(total_tiles, 1)
@@ -763,7 +768,7 @@ class EndingEngine:
                 if f.faction_id == player.faction_id:
                     continue
                 rel = self.world.get_relation(player.faction_id, f.faction_id)
-                if rel and rel.stance != DiplomaticStance.WAR:
+                if not rel or rel.stance != DiplomaticStance.WAR:
                     return False
 
         # policies
@@ -771,12 +776,13 @@ class EndingEngine:
             if len(player.unlocked_policies) < conditions["policies_unlocked_min"]:
                 return False
 
-        # disaster count (近10回合)
+        # disaster count (近10回合，仅统计影响玩家势力的灾害)
         if "disaster_count_max" in conditions:
             recent_disasters = [
                 e for e in self.world.events_log
                 if e.get("event_type") == "disaster"
                 and e.get("round", 0) >= self.world.current_round - 10
+                and e.get("faction_id") == player.faction_id
             ]
             if len(recent_disasters) > conditions["disaster_count_max"]:
                 return False
@@ -977,7 +983,7 @@ class EndingEngine:
 
         # 检查各维度差距
         player_tiles = self.world.get_faction_tiles(player.faction_id)
-        territory_ratio = len(player_tiles) / max(len(self.world.tiles), 1)
+        territory_ratio = len(player_tiles) / max(self._claimable_tile_count(), 1)
 
         next_req = next_ending.conditions.get("required", {})
         if "territory_ratio_min" in next_req:
@@ -1072,7 +1078,7 @@ class EndingEngine:
             return {"endings": []}
 
         player_tiles = self.world.get_faction_tiles(player.faction_id)
-        territory_ratio = len(player_tiles) / max(len(self.world.tiles), 1)
+        territory_ratio = len(player_tiles) / max(self._claimable_tile_count(), 1)
 
         progress = []
         for ending in ENDING_CONFIGS.values():

@@ -228,6 +228,36 @@ export interface WorldState {
   version: string
 }
 
+/** 世界状态增量更新（用于 gameStore.applyDelta 增量同步） */
+export interface WorldStateDelta {
+  current_round?: number
+  current_year?: number
+  current_month?: number
+  current_season?: string
+  game_mode?: string
+  player_faction_id?: string
+  factions?: Record<string, Partial<FactionState>>
+  tiles?: Record<string, Partial<TileState>>
+  relations?: Record<string, Partial<RelationState>>
+  coalitions?: Record<string, string[]>
+  alliance_treaties?: AllianceTreaty[]
+  trade_routes?: TradeRoute[]
+  vassal_relations?: Record<string, string>
+  spy_networks?: Record<string, Record<string, unknown>>
+  spy_intel?: SpyIntel[]
+  officials?: Record<string, Official>
+  siege_states?: Record<string, SiegeState>
+  prisoners?: Record<string, Prisoner>
+  rebel_armies?: Record<string, RebelArmy>
+  events_log?: GameEvent[]
+  events?: GameEvent[]
+  disasters?: DisasterRecord[]
+  disaster_index?: number
+  decrees?: DecreeRecord[]
+  tile_changes?: Record<string, unknown>[]
+  weather?: Partial<WeatherState>
+}
+
 export interface HexCoord {
   q: number
   r: number
@@ -289,34 +319,4 @@ export interface CounterRelation {
   reason: string
 }
 
-export type PanelType = 
-  | 'treasury' 
-  | 'factions' 
-  | 'court' 
-  | 'disaster' 
-  | 'military' 
-  | 'diplomacy' 
-  | 'events' 
-  | 'construction' 
-  | 'ai-strategy'
-  | 'audio'
-  | 'law'
-  | 'law-interrogate'
-  | 'spy'
-  | 'royal'
-  | 'medical'
-  | 'sea'
-  | 'vassal'
-  | 'workshop'
-  | 'prisoner'
-  | 'personnel'
-  | 'culture'
-  | 'territory'
-  | 'recruit'
-  | 'rebel'
-  | 'ambush'
-  | 'plunder'
-  | 'moveCapital'
-  | 'agent'
-  | 'faction_network'
-  | ''
+export type { PanelType } from './game'

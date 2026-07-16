@@ -193,8 +193,8 @@ class AuditLogger:
                             events.append(json.loads(line))
                         except json.JSONDecodeError:
                             continue
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"读取审计事件失败: {e}")
         return events
 
     def get_recent_alerts(self, limit: int = 50) -> list[dict]:
@@ -209,8 +209,8 @@ class AuditLogger:
                             alerts.append(json.loads(line))
                         except json.JSONDecodeError:
                             continue
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"读取告警记录失败: {e}")
         return alerts
 
 

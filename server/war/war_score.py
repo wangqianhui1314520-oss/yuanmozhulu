@@ -72,6 +72,13 @@ class WarScoreTracker:
     # 战争目标持续持有回合数
     war_goal_held_rounds: int = 0
 
+    # v3.4 新增：厌战度与战斗规模
+    total_rounds: int = 0                     # 战争已持续回合数
+    war_exhaustion_attacker: float = 0.0      # 进攻方厌战度 (0~100)
+    war_exhaustion_defender: float = 0.0      # 防守方厌战度 (0~100)
+    total_casualties_attacker: int = 0        # 进攻方累计伤亡
+    total_casualties_defender: int = 0        # 防守方累计伤亡
+
     # 配置
     war_score_multiplier: float = 1.0       # CB 决定的分数倍率
     war_goal_tiles: set = field(default_factory=set)  # 战争目标地块
@@ -83,15 +90,33 @@ class WarScoreTracker:
     SCORE_BATTLE_DEFEAT = -12.0
     SCORE_OCCUPIED_TILE = 8.0
     SCORE_LOST_TILE = -10.0
-    SCORE_OCCUPIED_CAPITAL = 25.0
+    SCORE_OCCUPIED_CAPITAL = 35.0       # 3.0 平衡：从25提升至35（对标CK3首都权重）
     SCORE_LOST_CAPITAL = -30.0
     SCORE_SIEGE_WON = 8.0
     SCORE_SIEGE_LOST = -10.0
-    SCORE_TICKING_MAX = 50.0               # 战争目标持有最大累计分
-    SCORE_TICKING_PER_ROUND = 2.0           # 每回合加成
+    SCORE_TICKING_MAX = 50.0            # 战争目标持有最大累计分
+    SCORE_TICKING_PER_ROUND = 3.0       # 3.0 平衡：从2提升至3（约17回合拿满）
     SCORE_ALLY_JOINED = 5.0
     SCORE_ALLY_DEFECTED = -8.0
     SCORE_CAPTURED_LEADER = 20.0
+    # v3.3 新增：防守方被动分数加成（每回合+0.1，体现本土作战优势）
+    SCORE_DEFENDER_PASSIVE = 0.1
+    # 3.0 平衡：防守方战争分数加成
+    DEFENDER_SCORE_BONUS = 0.1
+
+    # v3.4 厌战度常量
+    EXHAUSTION_PER_ROUND = 0.3               # 每回合基础厌战增长
+    EXHAUSTION_PER_1000_CASUALTY = 2.0       # 每1000伤亡增加的厌战
+    EXHAUSTION_FROM_LOST_CAPITAL = 15.0      # 丢失首都的厌战冲击
+    EXHAUSTION_FROM_LOST_BATTLE = 3.0        # 战败的厌战冲击
+    EXHAUSTION_THRESHOLD_HIGH = 60.0         # 高厌战阈值（开始影响国内稳定）
+    EXHAUSTION_THRESHOLD_CRITICAL = 85.0     # 临界厌战（可能自动求和）
+
+    # v3.4 战斗规模加权常量
+    BATTLE_SCALE_THRESHOLD_SMALL = 2000      # 小规模战斗阈值
+    BATTLE_SCALE_THRESHOLD_LARGE = 8000      # 大规模会战阈值
+    BATTLE_SCALE_BONUS_LARGE = 1.5           # 大规模会战分数倍率
+    BATTLE_SCALE_PENALTY_SMALL = 0.5         # 小规模冲突分数衰减
 
     def record_event(
         self,
@@ -103,7 +128,16 @@ class WarScoreTracker:
         troops_involved: Optional[int] = None,
     ):
         """记录战争分数变化事件"""
+        # v3.4: 战斗规模加权
         scaled_value = base_value * self.war_score_multiplier
+        if troops_involved is not None and source in (
+            WarScoreSource.BATTLE_VICTORY, WarScoreSource.BATTLE_DEFEAT
+        ):
+            if troops_involved >= self.BATTLE_SCALE_THRESHOLD_LARGE:
+                scaled_value *= self.BATTLE_SCALE_BONUS_LARGE
+            elif troops_involved < self.BATTLE_SCALE_THRESHOLD_SMALL:
+                scaled_value *= self.BATTLE_SCALE_PENALTY_SMALL
+
         self.events.append(WarScoreEvent(
             source=source,
             value=scaled_value,
@@ -136,11 +170,29 @@ class WarScoreTracker:
 
     def tick(self, round_num: int, war_goal_held_count: int):
         """
-        每回合推进：计算战争目标持有的渐进分数
+        每回合推进：计算战争目标持有的渐进分数 + 厌战度增长
 
         当进攻方控制了战争目标地块时，每回合获得渐进分数。
         渐进分数有上限（防止挂机躺赢）。
+
+        v3.3: 防守方每回合自动获得+0.1战争分数（本土作战优势）
+        v3.4: 厌战度随回合和伤亡增长，高厌战影响战争意愿
         """
+        # v3.4: 厌战度每回合自然增长
+        self.total_rounds += 1
+        self.war_exhaustion_attacker = min(100.0,
+            self.war_exhaustion_attacker + self.EXHAUSTION_PER_ROUND)
+        self.war_exhaustion_defender = min(100.0,
+            self.war_exhaustion_defender + self.EXHAUSTION_PER_ROUND * 0.7)  # 防守方厌战增长较慢
+
+        # 防守方被动分数加成（每回合自动获得）
+        self.record_event(
+            source=WarScoreSource.TICKING_WARSCORE,
+            base_value=-self.SCORE_DEFENDER_PASSIVE,  # 负值 = 防守方得分
+            round_num=round_num,
+            description="防守方本土作战被动优势",
+        )
+
         if war_goal_held_count <= 0:
             self.war_goal_held_rounds = 0
             return
@@ -186,6 +238,10 @@ class WarScoreTracker:
             advantage = "defender_crushing"     # 防守方碾压
             can_enforce = True  # 防守方可以反制
 
+        # v3.4: 进攻方极度厌战时，防守方可强制要求和平（进攻方无力继续作战）
+        if self.war_exhaustion_attacker >= self.EXHAUSTION_THRESHOLD_HIGH:
+            can_enforce = True  # 防守方可强制和平（进攻方厌战，愿意接受条件）
+
         return {
             "war_score": round(self.war_score, 1),
             "advantage": advantage,
@@ -198,6 +254,15 @@ class WarScoreTracker:
             },
             "events_count": len(self.events),
             "war_goal_held_rounds": self.war_goal_held_rounds,
+            "total_rounds": self.total_rounds,
+            "war_exhaustion": {
+                "attacker": round(self.war_exhaustion_attacker, 1),
+                "defender": round(self.war_exhaustion_defender, 1),
+            },
+            "casualties": {
+                "attacker": self.total_casualties_attacker,
+                "defender": self.total_casualties_defender,
+            },
         }
 
     def get_recent_events(self, limit: int = 10) -> list[dict]:
@@ -213,3 +278,96 @@ class WarScoreTracker:
             }
             for e in self.events[-limit:]
         ]
+
+    # ================================================================
+    # v3.4 厌战度方法
+    # ================================================================
+
+    def add_casualties(self, attacker_losses: int, defender_losses: int, is_attacker_win: bool):
+        """
+        记录战斗伤亡并更新厌战度
+
+        Args:
+            attacker_losses: 进攻方伤亡
+            defender_losses: 防守方伤亡
+            is_attacker_win: 进攻方是否获胜
+        """
+        self.total_casualties_attacker += attacker_losses
+        self.total_casualties_defender += defender_losses
+
+        # 伤亡转化为厌战度
+        atk_exhaustion = (attacker_losses / 1000) * self.EXHAUSTION_PER_1000_CASUALTY
+        def_exhaustion = (defender_losses / 1000) * self.EXHAUSTION_PER_1000_CASUALTY
+
+        # 战败方厌战度额外增加
+        if not is_attacker_win:
+            atk_exhaustion += self.EXHAUSTION_FROM_LOST_BATTLE
+        else:
+            def_exhaustion += self.EXHAUSTION_FROM_LOST_BATTLE
+
+        self.war_exhaustion_attacker = min(100.0, self.war_exhaustion_attacker + atk_exhaustion)
+        self.war_exhaustion_defender = min(100.0, self.war_exhaustion_defender + def_exhaustion)
+
+    def add_exhaustion_shock(self, faction: str, amount: float):
+        """
+        添加厌战度冲击（如丢失首都等重大事件）
+
+        Args:
+            faction: "attacker" 或 "defender"
+            amount: 厌战度增加值
+        """
+        if faction == "attacker":
+            self.war_exhaustion_attacker = min(100.0, self.war_exhaustion_attacker + amount)
+        elif faction == "defender":
+            self.war_exhaustion_defender = min(100.0, self.war_exhaustion_defender + amount)
+
+    def should_auto_surrender(self, faction: str) -> bool:
+        """
+        判断是否应自动投降
+
+        当厌战度达到临界值 + 战争分数极端不利时触发
+
+        Args:
+            faction: "attacker" 或 "defender"
+
+        Returns:
+            是否建议自动求和
+        """
+        if faction == "attacker":
+            exhaustion = self.war_exhaustion_attacker
+            score = self.war_score
+            # 进攻方厌战临界 + 分数极度不利
+            if exhaustion >= self.EXHAUSTION_THRESHOLD_CRITICAL and score <= -80:
+                return True
+        elif faction == "defender":
+            exhaustion = self.war_exhaustion_defender
+            score = self.war_score
+            # 防守方厌战临界 + 分数极度不利
+            if exhaustion >= self.EXHAUSTION_THRESHOLD_CRITICAL and score >= 80:
+                return True
+
+        return False
+
+    def get_exhaustion_penalty(self, faction: str) -> float:
+        """
+        获取厌战度对国内稳定的惩罚
+
+        Args:
+            faction: "attacker" 或 "defender"
+
+        Returns:
+            稳定度惩罚值 (0.0 ~ 30.0)
+        """
+        if faction == "attacker":
+            exhaustion = self.war_exhaustion_attacker
+        elif faction == "defender":
+            exhaustion = self.war_exhaustion_defender
+        else:
+            return 0.0
+
+        if exhaustion < 30:
+            return 0.0
+        elif exhaustion < self.EXHAUSTION_THRESHOLD_HIGH:
+            return (exhaustion - 30) * 0.3  # 30-60: 逐步增加惩罚
+        else:
+            return 9.0 + (exhaustion - self.EXHAUSTION_THRESHOLD_HIGH) * 0.5  # 60+: 加速惩罚

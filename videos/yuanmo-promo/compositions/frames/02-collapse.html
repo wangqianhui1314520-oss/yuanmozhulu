@@ -1,0 +1,52 @@
+<template>
+<div id="root" data-composition-id="02-collapse" data-width="1920" data-height="1080">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&display=swap');
+  #root { width: 1920px; height: 1080px; overflow: hidden; position: relative; }
+  .clip { position: absolute; }
+  .bg { inset: 0; background: #0D0D0D; }
+  .stat { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 900;
+    color: #DAA520; top: 42%; left: 50%; transform: translate(-50%,-50%); font-size: 260px; opacity: 0; }
+  .label { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 400;
+    color: #E8D5B7; font-size: 32px; opacity: 0; text-align: center; width: 400px;
+    top: 60%; left: 50%; transform: translateX(-50%); }
+  .yuan { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 900;
+    color: #DAA520; top: 40%; left: 50%; transform: translate(-50%,-50%); font-size: 360px; opacity: 0; }
+  .shard { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 900;
+    color: #DAA520; font-size: 120px; opacity: 0; }
+  .bar { position: absolute; bottom: 0; left: 0; height: 8px; background: #8B0000; width: 0%; }
+</style>
+<div class="clip bg" data-start="0" data-duration="7" data-track-index="0"></div>
+<div class="stat" id="num">1351</div>
+<div class="label" id="l1">红巾军起义</div>
+<div class="label" id="l2" style="top:68%">十八路反王 · 六方割据</div>
+<div class="yuan" id="yuan">元</div>
+<div class="shard" id="s1" style="top:30%;left:38%">元</div>
+<div class="shard" id="s2" style="top:55%;left:55%">元</div>
+<div class="shard" id="s3" style="top:25%;left:58%">元</div>
+<div class="bar" id="bar"></div>
+<script>
+(function(){
+  const t = gsap.timeline({ paused: true });
+  t.to("#bar", { width: "30%", duration: 2, ease: "power3.out" }, 0)
+   .fromTo("#num", { opacity:0, scale:3, rotation:-6 }, { opacity:1, scale:1, rotation:-6, duration:1, ease:"power4.out" }, 0.2)
+   .fromTo("#l1", { opacity:0, y:30 }, { opacity:1, y:0, duration:0.8 }, 1.5)
+   .to("#bar", { width: "50%", duration: 1.5 }, 2)
+   .to("#num", { opacity:0, scale:0.8, duration:0.5 }, 2.5)
+   .to("#l1", { opacity:0, duration:0.3 }, 3.0)
+   .fromTo("#l2", { opacity:0, y:20 }, { opacity:1, y:0, duration:0.8 }, 3.0)
+   .to("#bar", { width: "70%", duration: 1.5 }, 3.5)
+   .fromTo("#yuan", { opacity:0, scale:5, rotation:-5 }, { opacity:1, scale:1, rotation:-5, duration:0.8, ease:"back.out(1.2)" }, 4.5)
+   .to("#l2", { opacity:0, duration:0.3 }, 5.5)
+   .to("#bar", { width: "100%", duration: 0.5 }, 6.0)
+   .to("#yuan", { scale:0.3, rotation:-15, opacity:0, duration:0.6, ease:"power3.in" }, 6.2)
+   .fromTo("#s1", { opacity:0, scale:0.3, rotation:-15, x:0, y:0 }, { opacity:1, scale:1.2, x:200, y:-100, duration:0.5 }, 6.2)
+   .fromTo("#s2", { opacity:0, scale:0.3, rotation:10, x:0, y:0 }, { opacity:1, scale:1, x:-180, y:80, duration:0.5 }, 6.3)
+   .fromTo("#s3", { opacity:0, scale:0.3, rotation:-5, x:0, y:0 }, { opacity:1, scale:0.9, x:250, y:-50, duration:0.45 }, 6.4)
+   .to("#s1,#s2,#s3", { opacity:0, duration:0.3 }, 6.7);
+  window.__timelines = window.__timelines || {};
+  window.__timelines["02-collapse"] = t;
+})();
+</script>
+</div>
+</template>

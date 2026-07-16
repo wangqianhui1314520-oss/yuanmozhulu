@@ -111,6 +111,15 @@ export const DEFAULT_RENDER_CONFIG: RenderConfig = {
 }
 
 // ============================================================
+// 预计算常量
+// ============================================================
+
+const HEX_COS_SIN = [0, 1, 2, 3, 4, 5].map(i => {
+  const angle = (60 * i) * Math.PI / 180
+  return { cos: Math.cos(angle), sin: Math.sin(angle) }
+})
+
+// ============================================================
 // 主类
 // ============================================================
 
@@ -684,16 +693,15 @@ export class YuanMapCanvasRenderer {
   // 辅助
   // ============================================================
 
-  /** 获取六边形六个顶点 */
+  /** 获取六边形六个顶点（使用预计算 cos/sin） */
   private _getHexCorners(cx: number, cy: number): { x: number; y: number }[] {
     const key = `${cx},${cy}`
     if (!this._hexVertexCache.has(key)) {
       const corners: { x: number; y: number }[] = []
       for (let i = 0; i < 6; i++) {
-        const angle = (60 * i) * Math.PI / 180
         corners.push({
-          x: cx + HEX_SIZE * Math.cos(angle),
-          y: cy + HEX_SIZE * Math.sin(angle),
+          x: cx + HEX_SIZE * HEX_COS_SIN[i].cos,
+          y: cy + HEX_SIZE * HEX_COS_SIN[i].sin,
         })
       }
       this._hexVertexCache.set(key, corners)

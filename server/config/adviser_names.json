@@ -1,0 +1,28 @@
+{
+  "version": "1.0",
+  "description": "谋士 ID → 中文名 + 官职 映射表，用于回合大事录中的臣子身份随机抽取",
+  "advisers": {
+    "tuotuo": { "name": "脱脱", "title": "中书右丞相" },
+    "chahan_temur": { "name": "察罕帖木儿", "title": "河南行省平章政事" },
+    "hama": { "name": "哈麻", "title": "宣政院使" },
+    "liu_ji": { "name": "刘基", "title": "诚意伯·军师祭酒" },
+    "li_shanchang": { "name": "李善长", "title": "左丞相·韩国公" },
+    "xu_da": { "name": "徐达", "title": "征虏大将军·魏国公" },
+    "chang_yuchun": { "name": "常遇春", "title": "副将军·鄂国公" },
+    "song_lian": { "name": "宋濂", "title": "翰林学士承旨" },
+    "hu_weiyong": { "name": "胡惟庸", "title": "中书省参知政事" },
+    "zhu_sheng": { "name": "朱升", "title": "翰林侍讲学士" },
+    "zhang_dingbian": { "name": "张定边", "title": "太尉·汉军大都督" },
+    "zou_pusheng": { "name": "邹普胜", "title": "太师" },
+    "zhang_bixian": { "name": "张必先", "title": "丞相" },
+    "zhang_shide": { "name": "张士德", "title": "平章政事·行军元帅" },
+    "lv_zhen": { "name": "吕珍", "title": "左丞" },
+    "pan_yuanming": { "name": "潘元明", "title": "右丞" },
+    "fang_guozhen": { "name": "方国珍", "title": "浙东节度使" },
+    "xushou_hui": { "name": "徐寿辉", "title": "天完皇帝" },
+    "ming_yuzhen": { "name": "明玉珍", "title": "大夏皇帝" },
+    "liu_zhen": { "name": "刘桢", "title": "丞相·参政" },
+    "wang_baobao": { "name": "扩廓帖木儿", "title": "河南王·天下兵马大元帅" },
+    "tatar_khan": { "name": "阿鲁台", "title": "太师·草原万户长" }
+  }
+}

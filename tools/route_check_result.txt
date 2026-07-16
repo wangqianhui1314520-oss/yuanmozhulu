@@ -1,0 +1,104 @@
+[后端] api_server.py 路由数: 220
+
+[后端] 安全路由 (/api/security 前缀) 数: 12
+
+[后端] 总路由数 (去重): 232
+------------------------------------------------------------
+
+[前端] api.ts 中的 API 调用数 (去重): 152
+------------------------------------------------------------
+
+============================================================
+=== 对比分析 ===
+============================================================
+
+[缺失] 前端调用但后端未提供: 0
+----------------------------------------
+  (无)
+
+[冗余] 后端提供但前端未调用: 80
+----------------------------------------
+  GET    /
+  GET    /agent/conversations
+  GET    /agent/conversations/{npc_id}
+  GET    /agent/faction-advisers/{faction_id}
+  GET    /agent/npc/{npc_id}
+  GET    /agent/stats
+  GET    /ai/faction-detail/{faction_id}
+  GET    /ai/snapshot/{faction_id}
+  GET    /audio/voice-config
+  GET    /audio/voice-status
+  GET    /benchmark/imbalance
+  GET    /benchmark/rankings
+  GET    /building/available/{tile_id}
+  GET    /config/api-key-status
+  GET    /config/faction/{faction_id}
+  GET    /cost/report
+  GET    /court/capital-candidates/{faction_id}
+  GET    /court/capital-history/{faction_id}
+  GET    /court/debate-history/{faction_id}
+  GET    /court/officials/{faction_id}
+  GET    /court/overview/{faction_id}
+  GET    /court/policy-overview/{faction_id}
+  GET    /diplomacy/recommendations/{faction_id}
+  GET    /diplomacy/relations/{faction_id}
+  GET    /diplomacy/summary/{faction_id}
+  GET    /diplomacy/vassal/check_independence/{suzerain_id}/{vassal_id}
+  GET    /economy/workshops/{faction_id}
+  GET    /generals/{faction_id}
+  GET    /health/connectivity
+  GET    /history/anchors/{faction_id}
+  GET    /history/{faction_id}
+  GET    /legions/{faction_id}
+  GET    /map/boundaries
+  GET    /map/layer-config
+  GET    /map/layers/data
+  GET    /map/render
+  GET    /map/render/status
+  GET    /map/static-full
+  GET    /map/tile/{tile_id}
+  GET    /march/neighbors/{tile_id}
+  GET    /mcts/stats
+  GET    /military/recruit-info/{tile_id}
+  GET    /panel/culture/{faction_id}
+  GET    /panel/medical/{faction_id}
+  GET    /panel/royal/{faction_id}
+  GET    /panel/sea/{faction_id}
+  GET    /phase
+  GET    /policy/active/{faction_id}
+  GET    /policy/available
+  GET    /save/replay-snapshot/{round_num}
+  GET    /security/agent/{faction_id}
+  GET    /security/agent/{faction_id}/history
+  GET    /spy/networks/{faction_id}
+  GET    /supply/status/{tile_id}
+  GET    /supply/summary/{faction_id}
+  GET    /territory/changes/{faction_id}
+  GET    /territory/global-changes
+  GET    /territory/summary/{faction_id}
+  GET    /territory/tile-history/{tile_id}
+  GET    /tiles/owned/{faction_id}
+  GET    /vassal/check/{faction_id}
+  GET    /war/status
+  GET    /{path:path}
+  POST   /agent/conversations/clear-all
+  POST   /agent/conversations/sync
+  POST   /agent/conversations/{npc_id}/clear
+  POST   /ai/delegation/config
+  POST   /audio/generate-all-voices
+  POST   /audio/generate-voice
+  POST   /benchmark/reset
+  POST   /building/construct
+  POST   /building/demolish
+  POST   /building/upgrade
+  POST   /config/player-api-key
+  POST   /cost/reset
+  POST   /game/save
+  POST   /policy/activate
+  POST   /policy/deactivate
+  POST   /security/threats/unblock-ip
+  POST   /war/declare
+
+[方法不匹配] 路径相同但HTTP方法不同: 0
+----------------------------------------
+  (无)

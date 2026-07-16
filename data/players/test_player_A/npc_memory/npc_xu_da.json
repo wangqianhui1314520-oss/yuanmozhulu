@@ -1,0 +1,23 @@
+{
+  "npc_id": "npc_xu_da",
+  "npc_name": "XuDa",
+  "faction_id": "faction_yuan",
+  "affection": 80,
+  "emotion": "loyal",
+  "key_memories": [
+    {
+      "type": "reward",
+      "content": "ci yu",
+      "round": 3,
+      "importance": 10,
+      "timestamp": "2026-07-16T14:16:50.816912"
+    }
+  ],
+  "dialogue_summary": "",
+  "total_conversations": 0,
+  "rewards_received": 0,
+  "punishments_received": 0,
+  "promises_made_to": 0,
+  "promises_kept": 0,
+  "last_interaction_round": 3
+}

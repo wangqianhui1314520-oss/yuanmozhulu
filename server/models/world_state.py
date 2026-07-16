@@ -22,11 +22,17 @@ class TileType(str, Enum):
     MOUNTAIN = "mountain"
     WATER = "water"
     COAST = "coast"
+    COASTAL = "coastal"
     CITY = "city"
     PASS = "pass"
     PORT = "port"
     DESERT = "desert"
     GRASSLAND = "grassland"
+    HILL = "hill"
+    WETLAND = "wetland"
+    FOREST = "forest"
+    TUNDRA_FOREST = "tundra_forest"
+    OASIS = "oasis"
     SEA = "sea"             # 海洋地块 (v4.1)
 
 
@@ -82,6 +88,7 @@ class DiplomaticStance(str, Enum):
     TRUCE = "truce"
     ALLIANCE = "alliance"
     VASSAL = "vassal"
+    TRIBUTE = "tribute"  # 3.0: 纳贡状态
 
 
 class FactionState(BaseModel):
@@ -140,6 +147,9 @@ class FactionState(BaseModel):
 
     # 地盘统计（每次回合结算时由引擎更新）
     tile_count: int = 0
+
+    # 税收政策标记（normal / heavy），存档/读档保持
+    tax_policy: str = "normal"
 
 
 class TileState(BaseModel):
@@ -217,6 +227,7 @@ class TileState(BaseModel):
 
 class RelationState(BaseModel):
     """双边关系"""
+    model_config = {"extra": "allow"}  # 3.0: 允许动态附加 tribute_payer/vassal_suzerain 等字段
     faction_a: str
     faction_b: str
     stance: DiplomaticStance = DiplomaticStance.NEUTRAL
@@ -429,7 +440,7 @@ class WorldState(BaseModel):
     # 元数据
     created_at: str = ""
     updated_at: str = ""
-    version: str = "3.2"
+    version: str = "4.0"
 
     def get_faction(self, faction_id: str) -> Optional[FactionState]:
         return self.factions.get(faction_id)

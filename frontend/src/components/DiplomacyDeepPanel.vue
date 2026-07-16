@@ -106,7 +106,7 @@ watch(() => props.visible, (v) => { if (v) analyzeStrategy() })
 
 <template>
   <div v-if="visible" class="diplomacy-overlay" @click.self="emit('close')">
-    <div class="diplomacy-panel">
+    <div class="diplomacy-panel artifact-panel artifact-secret">
       <div class="panel-header">
         <h3>🕊️ 纵横权谋</h3>
         <button @click="emit('close')" class="close-btn">✕</button>
@@ -233,7 +233,7 @@ watch(() => props.visible, (v) => { if (v) analyzeStrategy() })
 
 <style scoped>
 .diplomacy-overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6); }
-.diplomacy-panel { width: 640px; max-height: 80vh; background: linear-gradient(135deg, #1a1a2e, #16213e); border: 1px solid #4a5568; border-radius: 12px; display: flex; flex-direction: column; color: #e2e8f0; font-size: 13px; }
+.diplomacy-panel { width: 640px; max-width: 95vw; max-height: 80vh; display: flex; flex-direction: column; color: #e2e8f0; font-size: 13px; box-shadow: inset 3px 0 0 var(--wuxing-water); }
 .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #2d3748; }
 .panel-header h3 { margin: 0; font-size: 16px; }
 .close-btn { background: none; border: none; color: #a0aec0; font-size: 18px; cursor: pointer; }

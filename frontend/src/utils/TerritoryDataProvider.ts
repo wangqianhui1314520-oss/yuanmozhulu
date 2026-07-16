@@ -242,7 +242,7 @@ export class TerritoryDataProvider {
       this._buildInternalIndices()
 
       this.state.loaded = true
-      console.log(
+      if (import.meta.env.DEV) console.log(
         `[TerritoryDataProvider] 初始化完成: ${this._tilesArray.length} 格, ` +
         `${Object.keys(this._provinces).length} 行省, ` +
         `${Object.keys(this._circuits).length} 路, ` +
@@ -298,7 +298,7 @@ export class TerritoryDataProvider {
       this._buildInternalIndices()
 
       this.state.loaded = true
-      console.log(
+      if (import.meta.env.DEV) console.log(
         `[TerritoryDataProvider] 静态数据初始化完成: ${this._tilesArray.length} 格`
       )
     } catch (err: any) {

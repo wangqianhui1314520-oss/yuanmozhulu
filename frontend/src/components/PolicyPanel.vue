@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <div class="policy-overlay" @click.self="$emit('close')" v-if="visible">
-      <div class="policy-dialog animate-fade-in">
+      <div class="policy-dialog animate-fade-in artifact-panel artifact-memorial">
         <!-- 标题栏 -->
         <div class="policy-header">
           <h2 class="policy-title">国策总览</h2>
@@ -638,9 +638,6 @@ watch(activePrimary, () => {
 }
 
 .policy-dialog {
-  background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-panel) 100%);
-  border: 2px solid var(--text-dim);
-  border-radius: 3px;
   width: 90vw;
   max-width: 900px;
   max-height: 85vh;

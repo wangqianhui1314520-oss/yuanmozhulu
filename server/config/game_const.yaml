@@ -15,13 +15,16 @@ civil:
   base_population_growth: 0.02
   base_tax_rate: 0.15
   refugee_threshold_morale: 30
-  famine_threshold_grain: 100
+  famine_threshold_grain: 150  # 3.0 平衡：从100提升至150，降低饥荒频率
   water_works_effect: 0.15
   granary_capacity_per_level: 500
   clinic_plague_reduction: 0.3
   migration_cost_per_pop: 2
   relief_cost_per_pop: 5
   quarantine_duration: 3
+  # 3.0 平衡：元廷debuff下限保护
+  yuan_min_treasury_pct: 0.30  # 国库不低于初始30%
+  yuan_min_stability: 20       # 民心/稳定度不低于20
 
 march:
   base_march_cost: 10
@@ -36,6 +39,9 @@ march:
   fortification_defense_bonus: 0.2
   border_raid_damage: 0.15
   logistics_base_attrition: 0.02
+  # v3.3 平衡性改进
+  max_defense_multiplier: 2.5       # 防御倍率硬上限（防止城墙+关隘+地形无限叠加）
+  siege_engine_breach_per_turn: 2   # 围城器械每回合降低城防点数
 
 diplomacy:
   base_relation_change: 5
@@ -194,3 +200,64 @@ policy:
   order_revolt_risk_threshold: 15
   corvee_morale_penalty_threshold: 30
   policy_unlock_default_cost: 500
+
+# ============================================================
+# 3.3 新增：经济引擎系统
+# ============================================================
+economy:
+  # 人口结构默认比例
+  pop_farmer_ratio: 0.60
+  pop_artisan_ratio: 0.15
+  pop_merchant_ratio: 0.10
+  pop_soldier_ratio: 0.15
+  # 贸易商品基础价格
+  trade_grain_price: 20
+  trade_silk_price: 80
+  trade_tea_price: 50
+  trade_porcelain_price: 70
+  trade_salt_iron_price: 90
+  trade_warhorses_price: 120
+  # 军费
+  military_upkeep_per_soldier: 0.8  # v4.1: 原1.0，降低滚雪球门槛
+  winter_military_bonus_upkeep: 0.25  # v4.1: 原0.3，配合基础值下调
+  # 经济健康
+  gini_warning_threshold: 0.4
+  gini_critical_threshold: 0.6
+  income_dependency_warning: 0.6
+
+# ============================================================
+# 3.3 新增：道路与驿站系统
+# ============================================================
+road:
+  official_road:
+    build_cost: 500
+    upkeep_per_tile: 20
+    speed_multiplier: 0.7
+    trade_income_bonus: 0.15
+    supply_extension: 1
+  postal_road:
+    build_cost: 1000
+    upkeep_per_tile: 40
+    speed_multiplier: 0.5
+    trade_income_bonus: 0.25
+    supply_extension: 2
+  dirt_path:
+    speed_multiplier: 0.9
+  relay_station:
+    build_cost: 300
+    upkeep: 50
+    min_spacing: 3
+    max_spacing: 5
+    supply_bonus: 2
+    messenger_speed_bonus: 0.30
+    morale_recovery: 5
+
+# ============================================================
+# 3.3 新增：战争迷雾系统
+# ============================================================
+fog_of_war:
+  beacon_vision_per_level: 2
+  troop_vision_radius: 1
+  fog_decay_per_turn: 1
+  ally_share_visibility: true
+  spy_visibility_level: 2

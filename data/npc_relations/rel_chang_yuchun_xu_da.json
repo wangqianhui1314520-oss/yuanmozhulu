@@ -1,0 +1,18 @@
+{
+  "npc_id_a": "xu_da",
+  "npc_id_b": "chang_yuchun",
+  "affinity": 60,
+  "relation_type": "friend",
+  "last_interaction_round": 0,
+  "agreements": 0,
+  "disagreements": 0,
+  "collaborations": 0,
+  "interactions": [
+    {
+      "delta": 60,
+      "reason": "并肩作战",
+      "round": 0,
+      "timestamp": 1784175859.0983977
+    }
+  ]
+}

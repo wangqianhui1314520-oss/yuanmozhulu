@@ -1,0 +1,52 @@
+<template>
+<div id="root" data-composition-id="11-lockup" data-width="1920" data-height="1080">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&display=swap');
+  #root { width: 1920px; height: 1080px; overflow: hidden; position: relative; }
+  .clip { position: absolute; }
+  .bg { inset: 0; background: #0D0D0D; }
+  .ch { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 900;
+    color: #DAA520; font-size: 80px; opacity: 0.4; }
+  .lockup { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 900;
+    color: #DAA520; font-size: 160px; top: 38%; opacity: 0; text-align: center; width: 800px; left: 50%; }
+  .subtitle { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 400;
+    color: #E8D5B7; font-size: 28px; top: 62%; left: 50%; opacity: 0; text-align: center; width: 600px; }
+  .glow { position: absolute; top: 38%; left: 50%; transform: translate(-50%,-40%);
+    width: 800px; height: 200px; background: radial-gradient(ellipse, rgba(218,165,32,0.2) 0%, transparent 70%); opacity: 0; }
+  .bar { position: absolute; bottom: 0; left: 0; height: 8px; background: #8B0000; width: 0%; }
+</style>
+<div class="clip bg" data-start="0" data-duration="5" data-track-index="0"></div>
+<div class="glow" id="glow"></div>
+<div class="ch" id="f1" style="top:20%;left:20%">元</div>
+<div class="ch" id="f2" style="top:20%;right:20%">末</div>
+<div class="ch" id="f3" style="bottom:20%;left:20%">逐</div>
+<div class="ch" id="f4" style="bottom:20%;right:20%">鹿</div>
+<div class="lockup" id="lock">元末逐鹿</div>
+<div class="subtitle" id="sub">元末历史大战略游戏</div>
+<div class="bar" id="bar"></div>
+<script>
+(function(){
+  const t=gsap.timeline({paused:true});
+  t.to("#bar",{width:"40%",duration:2},0)
+   .fromTo("#f1",{opacity:0.4},{opacity:1,scale:1.2,duration:0.6},0)
+   .fromTo("#f2",{opacity:0.4},{opacity:1,scale:1.2,duration:0.6},0.3)
+   .fromTo("#f3",{opacity:0.4},{opacity:1,scale:1.2,duration:0.6},0.6)
+   .fromTo("#f4",{opacity:0.4},{opacity:1,scale:1.2,duration:0.6},0.9)
+   .to("#f1",{left:"30%",top:"38%",opacity:1,duration:1,ease:"power3.inOut"},1.8)
+   .to("#f2",{left:"42%",top:"38%",opacity:1,duration:1,ease:"power3.inOut"},2.0)
+   .to("#f3",{left:"54%",top:"38%",opacity:1,duration:1,ease:"power3.inOut"},2.2)
+   .to("#f4",{left:"66%",top:"38%",opacity:1,duration:1,ease:"power3.inOut"},2.4)
+   .to("#bar",{width:"75%",duration:1},3.0)
+   .fromTo("#glow",{opacity:0},{opacity:1,duration:1},3.2)
+   .to("#f1,#f2,#f3,#f4",{opacity:0,duration:0.3},3.3)
+   .fromTo("#lock",{opacity:0,scale:1.5},{opacity:1,scale:1,duration:0.6,ease:"power4.out"},3.4)
+   .fromTo("#sub",{opacity:0,y:15},{opacity:1,y:0,duration:0.5},4.0)
+   .to("#lock",{scale:1.05,duration:0.4,ease:"sine.inOut"},4.2)
+   .to("#glow",{opacity:0,duration:0.5},4.5)
+   .to("#bar",{width:"100%",duration:0.5},4.5);
+  window.__timelines=window.__timelines||{};
+  window.__timelines["11-lockup"]=t;
+})();
+</script>
+</div>
+</template>

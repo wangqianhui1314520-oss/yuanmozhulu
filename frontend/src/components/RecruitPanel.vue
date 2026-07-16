@@ -1,5 +1,5 @@
 <template>
-  <div v-if="store.activePanel === 'recruit'" class="float-panel animate-fade-in" style="top:60px;right:280px;width:460px;max-height:85vh;">
+  <div v-if="store.activePanel === 'recruit'" class="float-panel animate-fade-in artifact-panel artifact-memorial" style="top:60px;left:52px;width:460px;max-height:85vh;">
     <div class="fp-header">
       <h3>🛡 招兵买马</h3>
       <button v-audio class="fp-close" @click="store.togglePanel('recruit')">✕</button>

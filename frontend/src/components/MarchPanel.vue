@@ -4,7 +4,7 @@
     class="march-overlay"
     @click.self="$emit('close')"
   >
-    <div class="march-panel animate-fade-in">
+    <div class="march-panel animate-fade-in artifact-panel artifact-dispatch">
       <!-- 标题栏 -->
       <div class="mp-header">
         <div class="mp-title-row">
@@ -798,32 +798,17 @@ function getFactionName(id: string): string {
   backdrop-filter: blur(2px);
 }
 
-/* ===== 面板主体 ===== */
+/* ===== 面板主体（背景/边框/阴影由 artifact-dispatch 全局器物系统接管） ===== */
 .march-panel {
-  background: linear-gradient(180deg, #2C2416 0%, #1F1A12 100%);
-  border: 2px solid #8B7355;
-  border-radius: 4px;
   width: 520px;
+  max-width: 95vw;
   max-height: 85vh;
   display: flex;
   flex-direction: column;
-  box-shadow:
-    0 0 40px rgba(139, 115, 85, 0.15),
-    0 8px 32px rgba(0, 0, 0, 0.5);
   font-family: "SimSun", "FangSong", serif;
   position: relative;
   overflow: hidden;
-}
-
-/* 装饰边角 */
-.march-panel::before {
-  content: '';
-  position: absolute;
-  top: -1px; left: -1px; right: -1px; bottom: -1px;
-  border: 1px solid rgba(201, 169, 78, 0.3);
-  border-radius: 5px;
-  pointer-events: none;
-  z-index: 0;
+  box-shadow: inset 3px 0 0 var(--wuxing-fire);
 }
 
 /* ===== 标题栏 ===== */

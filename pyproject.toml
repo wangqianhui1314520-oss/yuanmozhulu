@@ -1,0 +1,32 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+    "--disable-warnings",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "unit: unit tests for pure functions",
+    "integration: integration tests requiring mock WorldState",
+    "combat: combat system tests",
+    "economy: economy engine tests",
+    "pathfinding: pathfinding and connectivity tests",
+    "hex: hex grid coordinate tests",
+    "supply: supply system tests",
+    "fog: fog of war tests",
+]
+
+[tool.coverage.run]
+source = ["server"]
+omit = ["server/*/test_*", "tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]

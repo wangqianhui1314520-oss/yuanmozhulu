@@ -25,6 +25,16 @@ class DeepDiplomacyEngine:
 
     def __init__(self, world: WorldState):
         self.world = world
+        # v3.3 离间计冷却追踪: {(schemer_fid, target_a, target_b): last_used_round}
+        self._discord_cooldowns: dict[tuple[str, str, str], int] = {}
+        # v3.3 警惕buff追踪: {target_faction_id: remaining_rounds}
+        self._vigilance_buffs: dict[str, int] = {}
+        # 离间计冷却回合数
+        self.DISCORD_COOLDOWN_ROUNDS = 6
+        # 警惕buff持续回合数
+        self.VIGILANCE_DURATION = 4
+        # 警惕buff成功率惩罚
+        self.VIGILANCE_PENALTY = 0.15
 
     # ================================================================
     # 远交近攻策略分析
@@ -189,6 +199,10 @@ class DeepDiplomacyEngine:
         """
         发动离间计
         
+        v3.3 平衡改动：
+        - 冷却时间：6回合内对同一目标只能使用1次
+        - 失败后目标获得"警惕"buff（后续成功率-15%，持续4回合）
+        
         返回: {success: bool, message: str, relation_change: int, ...}
         """
         result = {
@@ -215,6 +229,17 @@ class DeepDiplomacyEngine:
             result["message"] = "施计方势力不存在"
             return result
 
+        # v3.3 冷却检查：6回合内对同一目标组合不能重复使用
+        cooldown_key = (schemer_fid, fa, fb)
+        last_used = self._discord_cooldowns.get(cooldown_key, -999)
+        current_round = getattr(self.world, 'current_round', 0)
+        rounds_since = current_round - last_used
+        if rounds_since < self.DISCORD_COOLDOWN_ROUNDS:
+            remaining = self.DISCORD_COOLDOWN_ROUNDS - rounds_since
+            result["message"] = f"离间计冷却中（还需等待{remaining}回合）"
+            result["narrative"] = f"上次离间{self._faction_name(fa)}与{self._faction_name(fb)}距今仅{rounds_since}回合，不宜再次行动。"
+            return result
+
         # 成本
         schemer_treasury = schemer.treasury
         costs = {
@@ -233,6 +258,9 @@ class DeepDiplomacyEngine:
         schemer.treasury -= cost
         result["cost"] = cost
 
+        # v3.3 记录冷却（无论成功失败，都进入冷却）
+        self._discord_cooldowns[cooldown_key] = current_round
+
         # 成功概率：基于关系态度和离间类型
         base_chance = {
             DiscordType.SOW_DISCORD: 0.45,
@@ -241,18 +269,35 @@ class DeepDiplomacyEngine:
             DiscordType.FAKE_LETTER: 0.55,
         }[discord_type]
 
-        # 态度越低越容易离间
-        attitude_factor = max(0.2, (100 - max(0, relation.attitude)) / 100.0)
-        chance = base_chance * attitude_factor
+        # v3.3 警惕buff惩罚：目标有警惕buff时成功率-15%
+        vigilance_penalty = 0.0
+        for target_fid in (fa, fb):
+            vig_rounds = self._vigilance_buffs.get(target_fid, 0)
+            if vig_rounds > 0:
+                vigilance_penalty = self.VIGILANCE_PENALTY
+                result["narrative"] += f"{self._faction_name(target_fid)}已有所警惕，离间成功率降低。"
+                break
+
+        # 态度越低越容易离间（负数态度反向放大成功率）
+        attitude_factor = max(0.2, (100 - relation.attitude) / 100.0)
+        chance = base_chance * attitude_factor - vigilance_penalty
+        chance = max(0.05, min(0.95, chance))  # 限制在5%~95%
 
         if random.random() < chance:
-            # 离间成功
-            relation.attitude = max(-50, relation.attitude - random.randint(30, 60))
+            # 离间成功 — 清除警惕buff
+            for target_fid in (fa, fb):
+                self._vigilance_buffs.pop(target_fid, None)
+
+            attitude_change = random.randint(30, 60)
+            relation.attitude = max(-50, relation.attitude - attitude_change)
 
             # 态度极低时破裂同盟
             if relation.attitude < -20:
                 relation.stance = DiplomaticStance.NEUTRAL
                 relation.trade_active = False
+                # 清理附庸关系（如存在）
+                self.world.vassal_relations.pop(fa, None)
+                self.world.vassal_relations.pop(fb, None)
                 result["alliance_broken"] = True
                 result["message"] = f"离间成功！{self._faction_name(fa)}与{self._faction_name(fb)}的同盟已破裂！"
                 result["narrative"] = self._generate_discord_narrative(schemer, fa, fb, discord_type, broken=True)
@@ -261,11 +306,14 @@ class DeepDiplomacyEngine:
                 result["narrative"] = self._generate_discord_narrative(schemer, fa, fb, discord_type, broken=False)
 
             result["success"] = True
-            result["relation_change"] = -45
+            result["relation_change"] = -attitude_change
         else:
-            # 离间失败
+            # v3.3 离间失败：目标获得"警惕"buff
+            for target_fid in (fa, fb):
+                self._vigilance_buffs[target_fid] = self.VIGILANCE_DURATION
+
             result["message"] = f"离间失败！{self._faction_name(fa)}与{self._faction_name(fb)}未受影响。"
-            result["narrative"] = f"离间计被{self._faction_name(fa)}识破，双方反而更加警惕。"
+            result["narrative"] = f"离间计被{self._faction_name(fa)}识破，双方获得警惕（4回合内离间成功率-15%）。"
 
             # 可能被发现
             if random.random() < 0.35:
@@ -277,7 +325,7 @@ class DeepDiplomacyEngine:
 
         # 记录外交日志
         self.world.diplomatic_archive.append({
-            "round": self.world.current_round,
+            "round": current_round,
             "action": "discord",
             "schemer": schemer_fid,
             "target_a": fa,
@@ -288,6 +336,18 @@ class DeepDiplomacyEngine:
         })
 
         return result
+
+    def on_round_end(self):
+        """每回合结束时调用，递减警惕buff和清理过期冷却"""
+        # 递减警惕buff
+        expired = []
+        for fid in list(self._vigilance_buffs.keys()):
+            self._vigilance_buffs[fid] -= 1
+            if self._vigilance_buffs[fid] <= 0:
+                expired.append(fid)
+        for fid in expired:
+            del self._vigilance_buffs[fid]
+            logger.debug(f"[Diplomacy] {self._faction_name(fid)} 的警惕buff已过期")
 
     def _generate_discord_narrative(self, schemer: FactionState, fa: str, fb: str,
                                      dtype: DiscordType, broken: bool) -> str:
@@ -311,6 +371,62 @@ class DeepDiplomacyEngine:
         """获取势力名称"""
         f = self.world.get_faction(fid)
         return f.name if f else fid
+
+    def _calc_predicament_bonus(self, target) -> float:
+        """
+        v3.4: 计算目标势力的困境程度，影响招安成功率
+        
+        困境因子基于：
+        - 正在被围攻/多面作战
+        - 国库空虚
+        - 兵力薄弱
+        - 地块丢失
+        
+        Returns:
+            困境加成 (0.0 ~ 0.25)
+        """
+        bonus = 0.0
+
+        # 检查目标是否处于战争中
+        target_fid = target.faction_id if hasattr(target, 'faction_id') else target.id
+        active_wars = 0
+        for key, rel in getattr(self.world, 'relations', {}).items():
+            if hasattr(rel, 'stance') and str(rel.stance) in ('war', 'War', 'WAR'):
+                if (hasattr(rel, 'faction_a') and rel.faction_a == target_fid) or \
+                   (hasattr(rel, 'faction_b') and rel.faction_b == target_fid):
+                    active_wars += 1
+
+        if active_wars >= 2:
+            bonus += 0.15  # 多线作战，压力巨大
+        elif active_wars == 1:
+            bonus += 0.08  # 正在交战
+
+        # 国库空虚（先检查更严格的条件，避免 elif 死分支）
+        treasury = getattr(target, 'treasury', 1000)
+        if treasury < 200:
+            bonus += 0.10
+        elif treasury < 500:
+            bonus += 0.05
+
+        # 兵力薄弱（修复：owner_faction → faction_id，TileState 实际字段名）
+        total_troops = sum(
+            getattr(t, 'troops', 0) or 0
+            for t in getattr(self.world, 'tiles', {}).values()
+            if getattr(t, 'faction_id', '') == target_fid
+        )
+        tile_count = len([t for t in getattr(self.world, 'tiles', {}).values()
+                          if getattr(t, 'faction_id', '') == target_fid])
+        if tile_count > 0 and total_troops / tile_count < 100:
+            bonus += 0.05  # 每地块平均兵力不足
+
+        # 丢失首都（如果首都被占）
+        capital = getattr(target, 'capital_tile', None)
+        if capital:
+            cap_tile = getattr(self.world, 'tiles', {}).get(capital)
+            if cap_tile and getattr(cap_tile, 'faction_id', '') != target_fid:
+                bonus += 0.10  # 首都被占，极度困境
+
+        return min(0.25, bonus)
 
     # ================================================================
     # 招安
@@ -385,6 +501,9 @@ class DeepDiplomacyEngine:
         # 实力因子：我方越强越好
         power_bonus = min(0.3, (power_ratio - 1.0) * 0.15) if power_ratio > 1 else -0.2
 
+        # v3.4 目标困境因子：处于困境的势力更容易被招安
+        predicament_bonus = self._calc_predicament_bonus(target)
+
         # 对方人格影响
         target_personality = target.personality_tags
         personality_bonus = 0
@@ -397,7 +516,7 @@ class DeepDiplomacyEngine:
         if "忠勇无双" in target_personality:
             personality_bonus -= 0.20
 
-        chance = base_chance + attitude_bonus + power_bonus + personality_bonus
+        chance = base_chance + attitude_bonus + power_bonus + personality_bonus + predicament_bonus
         chance = max(0.05, min(0.85, chance))
 
         if random.random() < chance:
@@ -411,6 +530,13 @@ class DeepDiplomacyEngine:
             new_stance = coopt_type_map.get(coopt_type, DiplomaticStance.VASSAL)
 
             if new_stance == DiplomaticStance.VASSAL:
+                # 检查目标是否已附庸其他势力
+                existing_suzerain = self.world.vassal_relations.get(target_fid)
+                if existing_suzerain and existing_suzerain != coopter_fid:
+                    suz_faction = self.world.factions.get(existing_suzerain)
+                    existing_name = suz_faction.name if suz_faction else existing_suzerain
+                    result["message"] = f"招安失败！{target.name}已是{existing_name}的附庸，无法接受你的招安。"
+                    return result
                 self.world.vassal_relations[target_fid] = coopter_fid
 
             if relation:

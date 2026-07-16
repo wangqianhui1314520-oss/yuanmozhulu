@@ -35,17 +35,12 @@ async def full_auto_step(
     clients: Optional[dict] = None,
 ) -> dict:
     """
-    完整自动推演一回合
+    [DEPRECATED] 完整自动推演一回合
     
-    按7个Agent类型分阶段执行，严格遵循设计文档的并发模型。
+    已废弃：请使用 orchestrator.py 中的 AgentOrchestrator.run_full_auto_step() 代替。
+    新版 orchestrator 支持 A1~A8 八大智能体统一调度、事件总线、并发优化。
     
-    Args:
-        world_state: 当前世界状态
-        faction_configs: 势力配置
-        clients: LLM客户端（不传则自动获取全局实例）
-    
-    Returns:
-        回合推演摘要
+    此函数保留仅用于向后兼容，新代码不应再调用。
     """
     if clients is None:
         clients = await get_global_clients()

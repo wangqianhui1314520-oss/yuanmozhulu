@@ -10,7 +10,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { WorldState, FactionState, TileState, GameEvent, PanelType } from '@/types'
+import type { WorldStateDelta } from '@/types/game'
 import * as API from '@/services/api'
+// H-5: 委托专用外交/战争 store 为单一数据源
+import { useDiplomacyStore } from './diplomacyStore'
+import { useWarStore } from './warStore'
 
 export const useGameStore = defineStore('game', () => {
   // ===== 游戏核心状态（全部从后端同步） =====
@@ -59,7 +63,11 @@ export const useGameStore = defineStore('game', () => {
 
   // ===== 外交子系统 =====
   const coalitions = ref<Record<string, any>>({})
-  const tradeRoutes = ref<any[]>([])
+  /** H-5: 委托 diplomacyStore 为单一数据源（writable computed） */
+  const tradeRoutes = computed<any[]>({
+    get: () => useDiplomacyStore().tradeRoutes as any[],
+    set: (val: any[]) => { useDiplomacyStore().tradeRoutes = val as any },
+  })
   const vassalRelations = ref<Record<string, string>>({})
   const allianceTreaties = ref<any[]>([])
   /** 2026-07-15: 展开的外交关系数组（来自 game/status 顶层 diplomatic_relations） */
@@ -79,9 +87,26 @@ export const useGameStore = defineStore('game', () => {
   const endingData = ref<any>(null)
   const gameStatistics = ref<any>(null)
 
+  // ===== 回合大事录（圣旨弹窗） =====
+  const showTurnSummary = ref(false)
+  const turnSummaryLoading = ref(false)
+  const turnSummaryNarrative = ref('')
+  const turnSummaryMinister = ref('')
+  const turnSummaryTitle = ref('')
+  const turnSummaryAiGenerated = ref(false)
+  const turnSummaryRound = ref(0)
+  const turnSummaryYear = ref(0)
+  const turnSummaryMonth = ref(0)
+  const turnSummarySeason = ref('')
+
   // ===== UI状态 =====
   const activePanel = ref<PanelType>('')
   const selectedTile = ref('')
+
+  // ===== 会话令牌：势力切换/重置时递增，用于取消过期异步操作 =====
+  const _sessionToken = ref(0)
+  function _getSessionToken(): number { return _sessionToken.value }
+  function _isValidSession(token: number): boolean { return _sessionToken.value === token }
 
   // ===== 圣旨指令队列（地图右键生成，自动填充到圣旨框） =====
   const pendingEdictCommands = ref<{ action: string; params: Record<string, any>; label: string }[]>([])
@@ -94,7 +119,11 @@ export const useGameStore = defineStore('game', () => {
   const showWarPanel = ref(false)
   const warPanelData = ref<any>(null)  // 预选战争数据（用于打开和平谈判）
   const showPeacePanel = ref(false)
-  const activeWars = ref<any[]>([])
+  /** H-5: 委托 warStore 为单一数据源（writable computed） */
+  const activeWars = computed<any[]>({
+    get: () => useWarStore().activeWars as any[],
+    set: (val: any[]) => { useWarStore().activeWars = val as any },
+  })
 
   // ===== 路线显示开关 =====
   const showRoutes = ref(true)  // 控制所有路线（行军/谍报/通商）的显示/隐藏
@@ -213,10 +242,18 @@ export const useGameStore = defineStore('game', () => {
   async function startGame(factionId: string, mode: string = 'player_turn', customFaction?: any) {
     isProcessing.value = true
     try {
+      // 读取玩家在设置中配置的 API Key（公网部署时使用自己的 Key）
+      let playerApiKey = ''
+      try {
+        const savedKeys = JSON.parse(localStorage.getItem('yuanmo_llm_api_keys') || '{}')
+        playerApiKey = savedKeys?.advisor || savedKeys?.law || savedKeys?.enemy || ''
+      } catch { /* ignore */ }
+
       const result = await API.initGame({
         faction_id: factionId,
         mode,
         custom_faction: customFaction,
+        api_key: playerApiKey || undefined,
       })
 
       // 全量同步世界状态
@@ -238,8 +275,8 @@ export const useGameStore = defineStore('game', () => {
         _mergePlayerFactionFields(result.player_faction, playerFactionId.value)
       }
 
-      // 后台检查 AI 状态
-      checkAIStatus()
+      // 后台检查 AI 状态（P0修复: 添加错误捕获防止未处理 rejection）
+      checkAIStatus().catch(() => { /* 后台检查失败不影响主流程 */ })
     } finally {
       isProcessing.value = false
     }
@@ -313,12 +350,17 @@ export const useGameStore = defineStore('game', () => {
         responsibilityStats.value = result.responsibility_stats
       }
 
-      // 图层数据刷新（非阻塞）
-      _fetchLayerData()
+      // 图层数据刷新（非阻塞，会话令牌校验防止过期回调污染状态）
+      const layerToken = _getSessionToken()
+      _fetchLayerData().then(() => {
+        if (!_isValidSession(layerToken)) return
+      }).catch(() => { /* 忽略图层加载错误 */ })
 
-      // AI 事件生成（每3回合自动触发一次，非阻塞）
+      // AI 事件生成（每3回合自动触发一次，非阻塞，会话令牌校验）
       if (currentRound.value % 3 === 0 && aiAvailable.value) {
+        const eventToken = _getSessionToken()
         generateAIEvents().then(aiResult => {
+          if (!_isValidSession(eventToken)) return
           if (aiResult?.events_text) {
             addEvent({
               event_id: `ai_event_${Date.now()}`,
@@ -338,10 +380,63 @@ export const useGameStore = defineStore('game', () => {
         })
       }
 
+      // 触发回合大事录弹窗（非首回合 + 非结局）
+      if (currentRound.value > 1 && !result.ending) {
+        triggerTurnSummary(
+          result.current_round || currentRound.value,
+          result.current_year || currentYear.value,
+          result.current_month || currentMonth.value,
+          result.current_season || currentSeason.value,
+        )
+      }
+
       return result
     } finally {
       isProcessing.value = false
     }
+  }
+
+  /**
+   * 触发回合大事录弹窗：先显示加载态，再异步获取 AI 叙事
+   */
+  function triggerTurnSummary(round: number, year: number, month: number, season: string) {
+    turnSummaryRound.value = round
+    turnSummaryYear.value = year
+    turnSummaryMonth.value = month
+    turnSummarySeason.value = String(season)
+    turnSummaryNarrative.value = ''
+    turnSummaryMinister.value = ''
+    turnSummaryTitle.value = ''
+    turnSummaryAiGenerated.value = false
+    turnSummaryLoading.value = true
+    showTurnSummary.value = true
+
+    // 异步获取 AI 叙事（不阻塞 UI）
+    _fetchTurnNarrative(round)
+  }
+
+  async function _fetchTurnNarrative(round: number) {
+    try {
+      const result = await API.fetchTurnNarrative(round)
+      if (result) {
+        turnSummaryNarrative.value = result.narrative || ''
+        turnSummaryMinister.value = result.minister_name || ''
+        turnSummaryTitle.value = result.minister_title || ''
+        turnSummaryAiGenerated.value = result.ai_generated || false
+      }
+    } catch (e) {
+      console.warn('[回合大事录] AI 叙事获取失败，使用降级文本:', e)
+      if (!turnSummaryNarrative.value) {
+        turnSummaryNarrative.value = '启奏陛下。本月天下大事已录于起居注。臣谨奏。'
+      }
+    } finally {
+      turnSummaryLoading.value = false
+    }
+  }
+
+  function closeTurnSummary() {
+    showTurnSummary.value = false
+    turnSummaryLoading.value = false
   }
 
   /**
@@ -399,6 +494,10 @@ export const useGameStore = defineStore('game', () => {
           (factions.value[fid] as any)[srcKey] = val
         }
       }
+    }
+    // 同步数组字段（不可用 Number() 转换，需单独处理）
+    if (Array.isArray(pfData.unlocked_policies)) {
+      (factions.value[fid] as any).unlocked_policies = pfData.unlocked_policies
     }
     // 同步 controlled_tiles 到 store 顶级 ref
     if (pfData.controlled_tiles !== undefined) {
@@ -462,6 +561,12 @@ export const useGameStore = defineStore('game', () => {
     if (state.trade_routes) tradeRoutes.value = state.trade_routes
     if (state.vassal_relations) vassalRelations.value = state.vassal_relations
 
+    // H-5: 委托到专用外交/战争 store（单一数据源）
+    const diploStore = useDiplomacyStore()
+    const warStore = useWarStore()
+    diploStore.extractFromWorldState(state as any)
+    warStore.extractFromWorldState(state as any)
+
     // 3.2: 同步叛军数据
     if (state.rebel_armies) {
       rebelArmies.value = Object.entries(state.rebel_armies).map(([rid, rdata]: [string, any]) => ({
@@ -511,6 +616,144 @@ export const useGameStore = defineStore('game', () => {
     _extractLayerData(state)
     // 异步加载己方各地块邻接关系（用于判断前线）
     _loadTileNeighbors()
+  }
+
+  /**
+   * 增量同步 - 应用 WorldStateDelta 到 Store
+   * 仅更新变化的数据，而非全量覆盖
+   * 与 _applyWorldState 保持兼容，可同时使用
+   */
+  function applyDelta(delta: WorldStateDelta) {
+    if (delta.current_round !== undefined) currentRound.value = delta.current_round
+    if (delta.current_year !== undefined) currentYear.value = delta.current_year
+    if (delta.current_month !== undefined) currentMonth.value = delta.current_month
+    if (delta.current_season !== undefined) currentSeason.value = delta.current_season
+    if (delta.game_mode) gameMode.value = delta.game_mode as any
+
+    // 增量势力数据
+    if (delta.factions) {
+      for (const [fid, partial] of Object.entries(delta.factions)) {
+        if (factions.value[fid]) {
+          // 净化负值
+          const clean: Record<string, any> = { ...partial }
+          for (const field of ['treasury', 'grain', 'arms', 'horses', 'reputation', 'total_troops', 'total_population', 'court_stability', 'realm_stability']) {
+            if (typeof clean[field] === 'number' && clean[field] < 0) clean[field] = 0
+          }
+          for (const field of ['court_stability', 'realm_stability', 'reputation']) {
+            if (typeof clean[field] === 'number') clean[field] = Math.max(0, Math.min(100, clean[field]))
+          }
+          Object.assign(factions.value[fid], clean)
+        } else {
+          factions.value[fid] = partial as FactionState
+        }
+      }
+    }
+
+    // 增量地块数据
+    if (delta.tiles) {
+      for (const [tid, partial] of Object.entries(delta.tiles)) {
+        if (tiles.value[tid]) {
+          Object.assign(tiles.value[tid], partial)
+        } else {
+          tiles.value[tid] = partial as TileState
+        }
+      }
+    }
+
+    // 增量关系数据
+    if (delta.relations) {
+      for (const [key, partial] of Object.entries(delta.relations)) {
+        if (relations.value[key]) {
+          Object.assign(relations.value[key], partial)
+        } else {
+          relations.value[key] = partial as any
+        }
+      }
+    }
+
+    // 新事件
+    if (delta.new_events) {
+      const existingIds = new Set(events.value.map(e => (e as any).event_id))
+      for (const evt of delta.new_events) {
+        if (!existingIds.has((evt as any).event_id)) {
+          events.value.unshift(evt)
+        }
+      }
+    }
+
+    // 移除事件
+    if (delta.removed_event_ids) {
+      const removeSet = new Set(delta.removed_event_ids)
+      events.value = events.value.filter(e => !removeSet.has((e as any).event_id))
+    }
+
+    // 地盘变更
+    if (delta.tile_changes) {
+      tileChanges.value = delta.tile_changes as any[]
+      tileChangesThisRound.value = delta.tile_changes as any[]
+    }
+
+    // 灾害更新
+    if (delta.disasters !== undefined) {
+      activeDisasters.value = delta.disasters as any[]
+    }
+    if (delta.disaster_index !== undefined) {
+      disasterIndex.value = delta.disaster_index
+    }
+
+    // 外交子系统增量
+    if (delta.coalitions) coalitions.value = delta.coalitions as any
+    if (delta.alliance_treaties) allianceTreaties.value = delta.alliance_treaties
+    if (delta.trade_routes) tradeRoutes.value = delta.trade_routes as any[]
+    if (delta.vassal_relations) vassalRelations.value = delta.vassal_relations
+
+    // H-5: 委托专用 store 增量同步
+    const diploStore = useDiplomacyStore()
+    const warStore = useWarStore()
+    diploStore.extractFromWorldState(delta as any)
+    warStore.extractFromWorldState(delta as any)
+
+    // 谍报增量
+    if (delta.spy_networks) {
+      spyNetworks.value = Object.entries(delta.spy_networks).map(([fid, data]) => ({
+        target_faction_id: fid,
+        ...(data as any),
+      })) as any[]
+    }
+    if (delta.spy_intel) spyIntel.value = delta.spy_intel as any[]
+
+    // 叛军增量
+    if (delta.rebel_armies) {
+      rebelArmies.value = Object.entries(delta.rebel_armies).map(([rid, rdata]: [string, any]) => ({
+        rebel_id: rid,
+        ...rdata,
+      }))
+    }
+
+    // 官员增量
+    if (delta.officials) {
+      const pfOfficials: any[] = []
+      for (const [oid, odata] of Object.entries(delta.officials)) {
+        if ((odata as any).faction_id === playerFactionId.value) {
+          pfOfficials.push(odata)
+        }
+      }
+      if (pfOfficials.length > 0) officials.value = pfOfficials
+    }
+
+    // 结局触发
+    if (delta.ending) {
+      showEnding.value = true
+      endingData.value = delta.ending
+    }
+
+    // 更新玩家势力数据
+    const pf = playerFaction.value
+    if (pf) {
+      courtStability.value = pf.court_stability
+      realmStability.value = pf.realm_stability || 50
+      reputation.value = pf.reputation || 50
+    }
   }
 
   /** 从后端获取图层渲染数据 */
@@ -764,7 +1007,7 @@ export const useGameStore = defineStore('game', () => {
     try {
       const result = await API.getSpyNetworks(playerFactionId.value)
       spyNetworks.value = result.networks || []
-    } catch (_) { /* 忽略 */ }
+    } catch (_) { console.warn('刷新谍报网络失败:', _) }
   }
 
   /**
@@ -887,7 +1130,7 @@ export const useGameStore = defineStore('game', () => {
         gameStatistics.value = result.statistics
       }
       return result
-    } catch (_) { /* 忽略 */ }
+    } catch (_) { console.warn('刷新结局数据失败:', _) }
   }
 
   /**
@@ -896,7 +1139,7 @@ export const useGameStore = defineStore('game', () => {
   async function refreshEndingsProgress() {
     try {
       return await API.getEndingsProgress()
-    } catch (_) { return null }
+    } catch (_) { console.warn('获取结局进度失败:', _); return null }
   }
 
   /**
@@ -905,7 +1148,7 @@ export const useGameStore = defineStore('game', () => {
   async function refreshEndingsHistory() {
     try {
       return await API.getEndingsHistory()
-    } catch (_) { return { history: [] } }
+    } catch (_) { console.warn('获取结局历史失败:', _); return { history: [] } }
   }
 
   /**
@@ -914,7 +1157,7 @@ export const useGameStore = defineStore('game', () => {
   async function refreshEndingsLegacy() {
     try {
       return await API.getEndingsLegacy()
-    } catch (_) { return { legacy: {} } }
+    } catch (_) { console.warn('获取传承数据失败:', _); return { legacy: {} } }
   }
 
   // ===== AI 智能体方法 =====
@@ -926,7 +1169,7 @@ export const useGameStore = defineStore('game', () => {
   async function checkAIStatus() {
     try {
       const status = await API.agentStatus()
-      aiAvailable.value = status?.llm_available ?? false
+      aiAvailable.value = status?.ai_available ?? false
       aiStatus.value = status
       return status
     } catch (err: unknown) {
@@ -978,9 +1221,9 @@ export const useGameStore = defineStore('game', () => {
 
     const contextParts = [
       `[游戏状态] 第${currentRound.value}回合 ${currentYear.value}年${currentSeason.value}季`,
-      `我方势力: ${pf.name || '未知'}`,
-      `领地: ${playerTiles.length}块  总兵力: ${totalTroops.value}人`,
-      `国库: ${pf.treasury || 0}两  粮草: ${pf.grain || 0}  声望: ${reputation.value}`,
+      `我方势力: ${pf.value?.name || '未知'}`,
+      `领地: ${playerTiles.value.length}块  总兵力: ${totalTroops.value}人`,
+      `国库: ${pf.value?.treasury || 0}两  粮草: ${pf.value?.grain || 0}  声望: ${reputation.value}`,
       `民心: ${realmStability.value}  朝纲: ${courtStability.value}`,
     ]
     if (enemies.length) contextParts.push(`敌方: ${enemies.join('、')}`)
@@ -1212,17 +1455,9 @@ export const useGameStore = defineStore('game', () => {
   /** 圣旨 AI 解析（旧版兼容） */
   async function parseEdictAI(edictText: string) {
     try {
-      const pf = playerFaction.value
       return await API.parseEdict({
         edict_text: edictText,
         faction_id: playerFactionId.value,
-        turn: currentRound.value,
-        season: currentSeason.value,
-        treasury: pf?.treasury,
-        troops: totalTroops.value,
-        reputation: reputation.value,
-        court_stability: courtStability.value,
-        realm_stability: realmStability.value,
       })
     } catch (err: unknown) {
       console.warn('圣旨AI解析失败:', err)
@@ -1347,6 +1582,8 @@ export const useGameStore = defineStore('game', () => {
   }
 
   async function resetGame() {
+    // 递增会话令牌，使所有正在进行中的异步操作失效
+    _sessionToken.value++
     try {
       await API.restartGame()
     } catch (_) { /* 忽略 */ }
@@ -1400,11 +1637,34 @@ export const useGameStore = defineStore('game', () => {
     showPeacePanel.value = false
     warPanelData.value = null
     activeWars.value = []
+    // H-5: 重置专用外交/战争 store
+    useDiplomacyStore().resetAll()
+    useWarStore().resetAll()
     gameStatistics.value = null
     npcList.value = []
     factionAdvisers.value = []
     selectedNpcId.value = ''
     npcConversations.value = {}
+    // 3.0: 补充遗漏的重置字段
+    diplomaticRelations.value = []
+    controlledTiles.value = []
+    controlledTileCount.value = 0
+    turnSummaryLoading.value = false
+    turnSummaryNarrative.value = ''
+    turnSummaryTitle.value = ''
+    turnSummaryAiGenerated.value = false
+    showTurnSummary.value = false
+    activeRoutes.value = []
+    // 图层数据重置
+    fogVisibleTileIds.value = new Set<string>()
+    activeMarchRoutes.value = []
+    activeSupplyLines.value = []
+    activeDiploRelations.value = []
+    tileGarrisonData.value = {}
+    playerClaimTiles.value = new Set()
+    tileDisasterData.value = {}
+    waterRoutes.value = []
+    tileBuildingData.value = {}
   }
 
   return {
@@ -1415,6 +1675,7 @@ export const useGameStore = defineStore('game', () => {
     playerFactionId, factions, tiles,
     // 外交
     relations, coalitions, tradeRoutes, vassalRelations, allianceTreaties,
+    diplomaticRelations,  // 3.0: 外交关系数组
     // 事件
     events, decrees,
     // 地盘变更
@@ -1429,6 +1690,11 @@ export const useGameStore = defineStore('game', () => {
     disasterIndex, activeDisasters,
     // 结局
     showEnding, endingData, gameStatistics,
+    // 回合大事录
+    showTurnSummary, turnSummaryLoading, turnSummaryNarrative,
+    turnSummaryMinister, turnSummaryTitle, turnSummaryAiGenerated,
+    turnSummaryRound, turnSummaryYear, turnSummaryMonth, turnSummarySeason,
+    closeTurnSummary,
     // AI
     aiAvailable, aiStatus,
     // NPC 文臣
@@ -1441,6 +1707,8 @@ export const useGameStore = defineStore('game', () => {
     showWarPanel, warPanelData, showPeacePanel, activeWars,
     // 路线显示开关
     showRoutes, activeRoutes,
+    // 3.0: 领土/天气数据
+    controlledTiles, controlledTileCount, weatherInfo,
     // 图层系统数据 v2.0
     fogVisibleTileIds, activeMarchRoutes, activeSupplyLines,
     activeDiploRelations, tileGarrisonData, playerClaimTiles,
@@ -1486,6 +1754,9 @@ export const useGameStore = defineStore('game', () => {
     chatWithNPC, startCourtDebate, clearNPCConversation,
     // UI
     togglePanel, addEvent, selectTile, resetGame,
+    // 增量同步
+    applyDelta,
+
 
     /** 读档专用：用后端返回的 world_state 全量覆盖前端状态 */
     applyLoadState(state: WorldState, playerFactionIdStr: string) {
@@ -1501,6 +1772,53 @@ export const useGameStore = defineStore('game', () => {
       tileChangesThisRound.value = []
       pendingEdictCommands.value = []
       showMarchPanel.value = false
+    },
+
+    // ================================================================
+    // 存档/读档快捷方法（3.0 完善）
+    // ================================================================
+
+    /** 快速存档：自动寻找空闲槽位保存 */
+    async quickSaveGame(note?: string) {
+      try {
+        const result = await API.quickSave(note)
+        return { success: true, slot: result.slot, round: result.round }
+      } catch (e: any) {
+        return { success: false, error: e?.response?.data?.msg || e?.message || '未知错误' }
+      }
+    },
+
+    /** 按槽位存档 */
+    async saveGameToSlot(slot: number, note?: string) {
+      try {
+        await API.saveGame(slot, note)
+        return { success: true }
+      } catch (e: any) {
+        return { success: false, error: e?.response?.data?.msg || e?.message || '未知错误' }
+      }
+    },
+
+    /** 读取存档并恢复到游戏 */
+    async loadGameFromSlot(slot: number, filename?: string) {
+      try {
+        const data = await API.loadGame(slot, filename)
+        if (data.world_state) {
+          this.applyLoadState(data.world_state, data.world_state.player_faction_id || '')
+          return { success: true }
+        }
+        return { success: false, error: '存档数据异常' }
+      } catch (e: any) {
+        return { success: false, error: e?.response?.data?.msg || e?.message || '未知错误' }
+      }
+    },
+
+    /** 获取存档列表 */
+    async fetchSaveList() {
+      try {
+        return await API.listSaves()
+      } catch {
+        return { saves: [], auto_saves: [] }
+      }
     },
   }
 })

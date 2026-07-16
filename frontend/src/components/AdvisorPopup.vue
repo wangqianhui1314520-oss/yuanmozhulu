@@ -2,7 +2,7 @@
   <Teleport to="body">
     <transition name="modal">
       <div class="advisor-popup-overlay" v-if="visible" @click.self="$emit('close')">
-        <div class="advisor-popup">
+        <div class="advisor-popup artifact-panel artifact-personnel">
           <!-- 标题 -->
           <div class="ap-header">
             <div class="ap-title-row">
@@ -496,15 +496,11 @@ watch(() => props.visible, (v) => {
 }
 
 .advisor-popup {
-  background: linear-gradient(180deg, #2a2418 0%, #1a1510 100%);
-  border: 2px solid var(--gold);
-  border-radius: 4px;
   width: 520px;
   max-width: 95vw;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
 }
 
 .ap-header {

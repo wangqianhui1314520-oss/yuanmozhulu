@@ -131,11 +131,7 @@ export {
   TERRAIN_NAMES,
 } from './layerUtils'
 export type {
-  LayerState,
-  LayerConfig,
   RemoteLayerConfig,
-  BoundaryMode,
-  MarkersFogMode,
 } from './layerUtils'
 
 // ---- 古卷宣纸纹理生成器 ----

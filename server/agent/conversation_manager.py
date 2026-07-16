@@ -325,8 +325,8 @@ class ConversationManager:
             path = self._get_persist_path(key)
             if path.exists():
                 path.unlink()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"会话持久化文件删除失败: {e}")
 
     def persist_all(self):
         """持久化所有活跃会话"""

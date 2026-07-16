@@ -1,11 +1,15 @@
 <template>
-  <!-- 有真实图片时优先展示图片，否则 Canvas 绘制 -->
+  <!-- 有真实图片时优先展示图片（懒加载），否则 Canvas 绘制 -->
   <img
-    v-if="portraitData.imageUrl"
-    :src="portraitData.imageUrl"
+    v-if="resolvedImageUrl"
+    :src="resolvedImageUrl"
     class="char-portrait-img"
+    :class="{ 'char-portrait-loaded': imageLoaded, 'char-portrait-error': imageError }"
     :style="{ width: size + 'px', height: size + 'px' }"
     :alt="portraitData.name"
+    loading="lazy"
+    @load="onImageLoad"
+    @error="onImageError"
   />
   <canvas
     v-else
@@ -18,18 +22,13 @@
 </template>
 
 <script lang="ts">
-/** 九大势力 ID → 人物图片路径统一映射 */
-export const RULER_IMAGE_MAP: Record<string, string> = {
-  faction_yuan: '/assets/factions/ruler_yuan.jpg',
-  faction_zhuyuanzhang: '/assets/factions/ruler_zhuyuan.jpg',
-  faction_chenyouliang: '/assets/factions/ruler_chen.jpg',
-  faction_zhangshicheng: '/assets/factions/ruler_zhang.jpg',
-  faction_fangguozhen: '/assets/factions/ruler_fang.jpg',
-  faction_xushouhui: '/assets/factions/ruler_xushou.jpg',
-  faction_mingyuzhen: '/assets/factions/ruler_ming.jpg',
-  faction_wangbaobao: '/assets/factions/ruler_wang.jpg',
-  faction_mobei: '/assets/factions/ruler_tatar.jpg',
-}
+import { getPortraitUrl, RULER_PORTRAIT_MAP, NPC_PORTRAIT_MAP } from '@/utils/npcPortraitMap'
+
+/** 九大势力 ID → 人物图片路径统一映射（保持向后兼容） */
+export const RULER_IMAGE_MAP = RULER_PORTRAIT_MAP
+
+/** 全部 NPC 肖像映射（含 38 名文臣武将） */
+export { NPC_PORTRAIT_MAP }
 
 export interface PortraitData {
   name: string
@@ -50,11 +49,15 @@ export interface PortraitData {
   isRuler?: boolean
   /** 真实人物图片路径（优先级高于 Canvas 绘制） */
   imageUrl?: string
+  /** NPC ID，用于自动查找肖像映射（如 "liu_ji"、"xu_da"） */
+  npcId?: string
+  /** 势力 ID，用于君主肖像回退 */
+  factionId?: string
 }
 </script>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 
 const props = withDefaults(defineProps<{
   portraitData: PortraitData
@@ -66,6 +69,37 @@ const props = withDefaults(defineProps<{
 })
 
 const canvasRef = ref<HTMLCanvasElement>()
+const imageLoaded = ref(false)
+const imageError = ref(false)
+
+/** 解析最终图片 URL：优先 imageUrl，其次 NPC ID 映射，最后势力君主回退 */
+const resolvedImageUrl = computed(() => {
+  if (imageError.value) return undefined
+  // 1) 显式传入的 imageUrl 优先级最高
+  if (props.portraitData.imageUrl) return props.portraitData.imageUrl
+  // 2) 通过 NPC ID 查找
+  const url = getPortraitUrl(props.portraitData.npcId, props.portraitData.factionId)
+  if (url) return url
+  // 3) 旧版兼容：isRuler 时尝试势力地图
+  if (props.portraitData.isRuler && props.portraitData.factionId) {
+    const rulerUrl = RULER_PORTRAIT_MAP[props.portraitData.factionId]
+    if (rulerUrl) return rulerUrl
+  }
+  return undefined
+})
+
+function onImageLoad() {
+  imageLoaded.value = true
+  imageError.value = false
+}
+
+function onImageError() {
+  imageError.value = true
+  // 图片加载失败后回退到 Canvas 绘制
+  if (canvasRef.value) {
+    draw()
+  }
+}
 
 // 根据角色类型和性格生成种子
 function seedFromCharacter(data: PortraitData): number {
@@ -555,9 +589,27 @@ function drawOfficialHat(ctx: CanvasRenderingContext2D, cx: number, topY: number
 // 暴露方法让父组件可以调用重绘
 defineExpose({ redraw: draw })
 
-onMounted(() => { draw() })
-watch(() => props.portraitData, () => { draw() }, { deep: true })
-watch(() => props.size, () => { draw() })
+onMounted(() => {
+  // 无图片时用 Canvas 绘制
+  if (!resolvedImageUrl.value) {
+    draw()
+  }
+})
+
+watch(() => props.portraitData, () => {
+  // 数据变化时重置图片状态
+  imageLoaded.value = false
+  imageError.value = false
+  if (!resolvedImageUrl.value) {
+    draw()
+  }
+}, { deep: true })
+
+watch(() => props.size, () => {
+  if (!resolvedImageUrl.value || imageError.value) {
+    draw()
+  }
+})
 </script>
 
 <style scoped>
@@ -569,5 +621,13 @@ watch(() => props.size, () => { draw() })
 .char-portrait-img {
   object-fit: cover;
   object-position: top center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.char-portrait-loaded {
+  opacity: 1;
+}
+.char-portrait-error {
+  display: none;
 }
 </style>

@@ -106,6 +106,9 @@ class IOAEngine:
         # 窗口统计
         self._window_events: deque[SecurityEvent] = deque(maxlen=5000)
 
+        # 线程安全锁（所有数据写入和读取均持锁）
+        self._data_lock = threading.Lock()
+
         self._audit = get_audit_logger()
         self._last_dashboard: Optional[IOADashboard] = None
 
@@ -119,7 +122,7 @@ class IOAEngine:
         detail: dict,
         risk_score: float = 0.0,
     ):
-        """记录安全事件"""
+        """记录安全事件（线程安全）"""
         evt = SecurityEvent(
             timestamp=time.time(),
             event_type=event_type,
@@ -128,31 +131,33 @@ class IOAEngine:
             detail=detail,
             risk_score=risk_score,
         )
-        self._events.append(evt)
-        self._window_events.append(evt)
+        with self._data_lock:
+            self._events.append(evt)
+            self._window_events.append(evt)
+
+            # 更新来源维度的活跃记录
+            now = time.time()
+            self._ip_activity[source].append(now)
+            if detail.get("faction_id"):
+                self._faction_activity[detail["faction_id"]].append(now)
+            if detail.get("endpoint"):
+                self._endpoint_hits[detail["endpoint"]].append(now)
 
         if severity in ("high", "critical"):
             self._audit.log_alert(
                 f"[IOA] {event_type} | severity={severity} | source={source} | {detail}"
             )
 
-        # 更新来源维度的活跃记录
-        now = time.time()
-        self._ip_activity[source].append(now)
-        if detail.get("faction_id"):
-            self._faction_activity[detail["faction_id"]].append(now)
-        if detail.get("endpoint"):
-            self._endpoint_hits[detail["endpoint"]].append(now)
-
     def record_validation_fail(self, endpoint: str, source: str, reason: str, detail: dict):
-        """记录数据校验失败"""
-        self._validation_fails.append({
-            "timestamp": time.time(),
-            "endpoint": endpoint,
-            "source": source,
-            "reason": reason,
-            "detail": detail,
-        })
+        """记录数据校验失败（线程安全）"""
+        with self._data_lock:
+            self._validation_fails.append({
+                "timestamp": time.time(),
+                "endpoint": endpoint,
+                "source": source,
+                "reason": reason,
+                "detail": detail,
+            })
         self.record_event("validation_fail", "medium", source, {
             "endpoint": endpoint,
             "reason": reason,
@@ -160,42 +165,47 @@ class IOAEngine:
         }, risk_score=30.0)
 
     def record_ai_call(self, model: str, latency_ms: float, success: bool) -> None:
-        """记录AI调用（用于统计）"""
-        self._ai_call_times.append({
-            "timestamp": time.time(),
-            "model": model,
-            "latency_ms": latency_ms,
-            "success": success,
-        })
+        """记录AI调用（线程安全）"""
+        with self._data_lock:
+            self._ai_call_times.append({
+                "timestamp": time.time(),
+                "model": model,
+                "latency_ms": latency_ms,
+                "success": success,
+            })
 
     def record_session(self, session_id: str) -> None:
-        """记录活跃会话"""
-        self._active_sessions[session_id] = time.time()
-        # 清理过期会话 (> 30 min)
-        cutoff = time.time() - 1800
-        expired = [sid for sid, ts in self._active_sessions.items() if ts < cutoff]
-        for sid in expired:
-            del self._active_sessions[sid]
+        """记录活跃会话（线程安全）"""
+        with self._data_lock:
+            self._active_sessions[session_id] = time.time()
+            # 清理过期会话 (> 30 min)
+            cutoff = time.time() - 1800
+            expired = [sid for sid, ts in self._active_sessions.items() if ts < cutoff]
+            for sid in expired:
+                del self._active_sessions[sid]
 
     # ---- 风险分析 ----
 
     def compute_risk_profile(self) -> RiskProfile:
-        """计算当前风险画像"""
+        """计算当前风险画像（线程安全）"""
         now = time.time()
         hour_ago = now - 3600
         day_ago = now - 86400
 
-        recent = [e for e in self._window_events if e.timestamp > hour_ago]
-        day_events = [e for e in self._events if e.timestamp > day_ago]
+        with self._data_lock:
+            recent = [e for e in self._window_events if e.timestamp > hour_ago]
+            day_events = [e for e in self._events if e.timestamp > day_ago]
+            validation_snapshot = list(self._validation_fails)
+            ip_snapshot = dict(self._ip_activity)
 
         # 行为风险：高频操作 + 异常行为密度
         behavior_risk = self._calc_behavior_risk(recent)
         # 数据风险：校验失败率
-        data_risk = self._calc_data_risk(hour_ago)
+        data_risk = self._calc_data_risk(hour_ago, validation_snapshot)
         # AI风险：调用异常率
         ai_risk = self._calc_ai_risk(recent)
         # 网络风险：IP高频访问
-        network_risk = self._calc_network_risk(hour_ago)
+        network_risk = self._calc_network_risk(hour_ago, ip_snapshot)
 
         # 综合风险分（加权）
         overall = (
@@ -236,17 +246,17 @@ class IOAEngine:
         ratio = (anomaly_count + suspicious_count) / total
         return min(100, ratio * 200 + anomaly_count * 5)
 
-    def _calc_data_risk(self, hour_ago: float) -> float:
-        recent_fails = [f for f in self._validation_fails if f["timestamp"] > hour_ago]
+    def _calc_data_risk(self, hour_ago: float, validation_snapshot: list[dict]) -> float:
+        recent_fails = [f for f in validation_snapshot if f["timestamp"] > hour_ago]
         return min(100, len(recent_fails) * 3)
 
     def _calc_ai_risk(self, recent: list[SecurityEvent]) -> float:
         rate_hits = sum(1 for e in recent if e.event_type == "rate_limit")
         return min(100, rate_hits * 10)
 
-    def _calc_network_risk(self, hour_ago: float) -> float:
+    def _calc_network_risk(self, hour_ago: float, ip_snapshot: dict[str, list[float]]) -> float:
         high_freq_ips = 0
-        for ip, times in self._ip_activity.items():
+        for ip, times in ip_snapshot.items():
             recent_hits = sum(1 for t in times if t > hour_ago)
             if recent_hits > 100:
                 high_freq_ips += 1
@@ -257,11 +267,16 @@ class IOAEngine:
     # ---- 仪表盘 ----
 
     def get_dashboard(self) -> IOADashboard:
-        """生成安全仪表盘"""
+        """生成安全仪表盘（线程安全）"""
         now = time.time()
         hour_ago = now - 3600
 
-        recent = [e for e in self._window_events if e.timestamp > hour_ago]
+        with self._data_lock:
+            recent = [e for e in self._window_events if e.timestamp > hour_ago]
+            validation_snapshot = list(self._validation_fails)
+            ai_snapshot = list(self._ai_call_times)
+            active_sessions = len(self._active_sessions)
+
         risk = self.compute_risk_profile()
 
         # 高频威胁
@@ -275,8 +290,8 @@ class IOAEngine:
         )[:5]
 
         # AI调用统计
-        ai_recent = sum(1 for d in self._ai_call_times if d.get("timestamp", 0) > hour_ago)
-        ai_total = len(self._ai_call_times)
+        ai_recent = sum(1 for d in ai_snapshot if d.get("timestamp", 0) > hour_ago)
+        ai_total = len(ai_snapshot)
 
         # 建议
         recommendations = self._generate_recommendations(risk, recent)
@@ -287,7 +302,7 @@ class IOAEngine:
             top_threats=top_threats,
             anomaly_count_1h=sum(1 for e in recent if e.event_type == "anomaly"),
             validation_fail_count_1h=sum(
-                1 for f in self._validation_fails if f["timestamp"] > hour_ago
+                1 for f in validation_snapshot if f["timestamp"] > hour_ago
             ),
             agent_suspicious_count_1h=sum(
                 1 for e in recent if e.event_type == "agent_suspicious"
@@ -295,7 +310,7 @@ class IOAEngine:
             rate_limit_hits_1h=sum(
                 1 for e in recent if e.event_type == "rate_limit"
             ),
-            active_sessions=len(self._active_sessions),
+            active_sessions=active_sessions,
             ai_call_stats={
                 "last_hour": ai_recent,
                 "total": ai_total,
@@ -332,34 +347,39 @@ class IOAEngine:
 
 
     def block_ip(self, ip: str, reason: str, duration: float = 86400.0) -> None:
-        """Bug #29修复: 添加封禁过期时间，默认24小时"""
-        import time
-        self._blocked_ips.add(ip)
-        self._blocked_ips_expiry[ip] = time.time() + duration
+        """Bug #29修复: 添加封禁过期时间，默认24小时（线程安全）"""
+        import time as _time
+        with self._data_lock:
+            self._blocked_ips.add(ip)
+            self._blocked_ips_expiry[ip] = _time.time() + duration
         self._audit.log_alert(f"[IOA] IP封禁: {ip} | 原因: {reason} | 持续: {duration:.0f}秒")
 
     def is_ip_blocked(self, ip: str) -> bool:
-        """Bug #29修复: 检查过期"""
-        if ip not in self._blocked_ips:
-            return False
-        import time
-        if time.time() >= self._blocked_ips_expiry.get(ip, float('inf')):
-            self._blocked_ips.discard(ip)
-            self._blocked_ips_expiry.pop(ip, None)
-            return False
-        return True
+        """Bug #29修复: 检查过期（线程安全）"""
+        import time as _time
+        with self._data_lock:
+            if ip not in self._blocked_ips:
+                return False
+            if _time.time() >= self._blocked_ips_expiry.get(ip, float('inf')):
+                self._blocked_ips.discard(ip)
+                self._blocked_ips_expiry.pop(ip, None)
+                return False
+            return True
 
     def mark_faction_suspicious(self, faction_id: str) -> None:
-        self._suspicious_factions.add(faction_id)
+        with self._data_lock:
+            self._suspicious_factions.add(faction_id)
 
     def is_faction_suspicious(self, faction_id: str) -> bool:
-        return faction_id in self._suspicious_factions
+        with self._data_lock:
+            return faction_id in self._suspicious_factions
 
     # ---- 数据导出 ----
 
     def export_events(self, limit: int = 100) -> list[dict]:
-        """导出最近安全事件"""
-        events = list(self._events)[-limit:]
+        """导出最近安全事件（线程安全）"""
+        with self._data_lock:
+            events = list(self._events)[-limit:]
         return [
             {
                 "timestamp": datetime.fromtimestamp(e.timestamp).isoformat(),
@@ -373,17 +393,17 @@ class IOAEngine:
         ]
 
     def export_stats(self) -> dict:
-        """导出统计摘要"""
-        now = time.time()
-        return {
-            "total_events": len(self._events),
-            "blocked_ips": list(self._blocked_ips),
-            "suspicious_factions": list(self._suspicious_factions),
-            "active_sessions": len(self._active_sessions),
-            "total_ai_calls": len(self._ai_call_times),
-            "validation_fails_total": len(self._validation_fails),
-            "risk_profile": self.compute_risk_profile().__dict__,
-        }
+        """导出统计摘要（线程安全）"""
+        with self._data_lock:
+            return {
+                "total_events": len(self._events),
+                "blocked_ips": list(self._blocked_ips),
+                "suspicious_factions": list(self._suspicious_factions),
+                "active_sessions": len(self._active_sessions),
+                "total_ai_calls": len(self._ai_call_times),
+                "validation_fails_total": len(self._validation_fails),
+                "risk_profile": self.compute_risk_profile().__dict__,
+            }
 
 
 # 单例获取

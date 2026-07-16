@@ -1,0 +1,18 @@
+{
+  "npc_id_a": "liu_ji",
+  "npc_id_b": "li_shanchang",
+  "affinity": -10,
+  "relation_type": "rival",
+  "last_interaction_round": 0,
+  "agreements": 0,
+  "disagreements": 0,
+  "collaborations": 0,
+  "interactions": [
+    {
+      "delta": -10,
+      "reason": "浙东与淮西之争",
+      "round": 0,
+      "timestamp": 1784182583.2696671
+    }
+  ]
+}

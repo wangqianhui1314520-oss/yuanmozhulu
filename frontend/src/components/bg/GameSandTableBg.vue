@@ -61,6 +61,13 @@ let weatherParticles: WeatherParticle[] = []
 let time = 0
 let W = 0
 let H = 0
+let dpr = 1
+
+// V5.0 六边形顶点预计算缓存
+let hexVerticesCache: Array<{ cx: number; cy: number; pulse: number }> | null = null
+let lastHexSize = 0
+let lastIW = 0
+let lastIH = 0
 
 // 地形色板
 const TERRAIN_COLORS: Array<[number, number, number]> = [
@@ -92,17 +99,26 @@ function onResize() {
 function initCanvas() {
   const c = canvas.value
   if (!c) return
-  c.width = window.innerWidth
-  c.height = window.innerHeight
+  dpr = Math.min(window.devicePixelRatio || 1, 2)
+  c.width = window.innerWidth * dpr
+  c.height = window.innerHeight * dpr
+  c.style.width = window.innerWidth + 'px'
+  c.style.height = window.innerHeight + 'px'
   W = c.width
   H = c.height
+
+  const ctx = c.getContext('2d')
+  if (ctx) ctx.scale(dpr, dpr)
+
+  const iw = window.innerWidth
+  const ih = window.innerHeight
 
   // 大地舆图色块
   terrainBlobs = []
   for (let i = 0; i < 12; i++) {
     terrainBlobs.push({
-      x: Math.random() * W,
-      y: Math.random() * H,
+      x: Math.random() * iw,
+      y: Math.random() * ih,
       r: 150 + Math.random() * 350,
       vx: (Math.random() - 0.5) * 0.15,
       vy: (Math.random() - 0.5) * 0.15,
@@ -115,10 +131,10 @@ function initCanvas() {
   marchRoutes = []
   for (let i = 0; i < 6; i++) {
     marchRoutes.push({
-      fromX: Math.random() * W * 0.8 + W * 0.1,
-      fromY: Math.random() * H * 0.8 + H * 0.1,
-      toX: Math.random() * W * 0.8 + W * 0.1,
-      toY: Math.random() * H * 0.8 + H * 0.1,
+      fromX: Math.random() * iw * 0.8 + iw * 0.1,
+      fromY: Math.random() * ih * 0.8 + ih * 0.1,
+      toX: Math.random() * iw * 0.8 + iw * 0.1,
+      toY: Math.random() * ih * 0.8 + ih * 0.1,
       progress: Math.random(),
       speed: 0.0003 + Math.random() * 0.0008,
       alpha: 0.04 + Math.random() * 0.04,
@@ -127,18 +143,21 @@ function initCanvas() {
 
   // 营帐篝火
   campFires = [
-    { x: W * 0.05, y: H * 0.15, r: 40, flicker: 0, speed: 0.04, baseAlpha: 0.06 },
-    { x: W * 0.95, y: H * 0.1, r: 35, flicker: 1, speed: 0.05, baseAlpha: 0.05 },
-    { x: W * 0.08, y: H * 0.85, r: 45, flicker: 2, speed: 0.035, baseAlpha: 0.06 },
-    { x: W * 0.92, y: H * 0.88, r: 38, flicker: 3, speed: 0.045, baseAlpha: 0.05 },
+    { x: iw * 0.05, y: ih * 0.15, r: 40, flicker: 0, speed: 0.04, baseAlpha: 0.06 },
+    { x: iw * 0.95, y: ih * 0.1, r: 35, flicker: 1, speed: 0.05, baseAlpha: 0.05 },
+    { x: iw * 0.08, y: ih * 0.85, r: 45, flicker: 2, speed: 0.035, baseAlpha: 0.06 },
+    { x: iw * 0.92, y: ih * 0.88, r: 38, flicker: 3, speed: 0.045, baseAlpha: 0.05 },
   ]
 
-  // 天气粒子
+  // 天气粒子（V5.0 修复：确保三态正常分布）
+  const weatherType = Math.floor(Math.abs(Math.sin(Date.now() * 0.1)) * 3)
   weatherParticles = []
-  const weatherType = Math.floor(Math.abs(Math.sin(Date.now() * 0.0001)) * 3) // 模拟季节变化
   for (let i = 0; i < 40; i++) {
     weatherParticles.push(createWeatherParticle(weatherType))
   }
+
+  // V5.0 预计算六边形顶点
+  precomputeHexVertices(iw, ih)
 }
 
 function createWeatherParticle(type?: number): WeatherParticle {
@@ -157,6 +176,30 @@ function createWeatherParticle(type?: number): WeatherParticle {
   }
 }
 
+// V5.0 预计算六边形网格顶点（避免每帧重复计算）
+function precomputeHexVertices(iw: number, ih: number) {
+  const hexSize = 35
+  const hexW = hexSize * 1.5
+  const hexH = hexSize * Math.sqrt(3)
+
+  if (hexSize === lastHexSize && iw === lastIW && ih === lastIH && hexVerticesCache) return
+
+  hexVerticesCache = []
+  for (let row = -2; row < ih / hexH + 3; row++) {
+    const offsetX = (row % 2 === 0) ? 0 : hexW / 2
+    for (let col = -2; col < iw / hexW + 3; col++) {
+      hexVerticesCache.push({
+        cx: col * hexW + offsetX,
+        cy: row * hexH * 0.5,
+        pulse: 0,
+      })
+    }
+  }
+  lastHexSize = hexSize
+  lastIW = iw
+  lastIH = ih
+}
+
 function animate() {
   const c = canvas.value
   if (!c) return
@@ -164,16 +207,20 @@ function animate() {
   if (!ctx) return
 
   time += 1
-  ctx.clearRect(0, 0, W, H)
+  ctx.save()
+  ctx.scale(dpr, dpr)
+  const iw = window.innerWidth
+  const ih = window.innerHeight
+  ctx.clearRect(0, 0, iw, ih)
 
   // 1. 大地舆图色块漂移
   for (const blob of terrainBlobs) {
     blob.x += blob.vx
     blob.y += blob.vy
-    if (blob.x < -blob.r) blob.x = W + blob.r
-    if (blob.x > W + blob.r) blob.x = -blob.r
-    if (blob.y < -blob.r) blob.y = H + blob.r
-    if (blob.y > H + blob.r) blob.y = -blob.r
+    if (blob.x < -blob.r) blob.x = iw + blob.r
+    if (blob.x > iw + blob.r) blob.x = -blob.r
+    if (blob.y < -blob.r) blob.y = ih + blob.r
+    if (blob.y > ih + blob.r) blob.y = -blob.r
 
     const [r, g, b] = blob.color
     const grad = ctx.createRadialGradient(blob.x, blob.y, 0, blob.x, blob.y, blob.r)
@@ -185,30 +232,25 @@ function animate() {
     ctx.fill()
   }
 
-  // 2. 六边形网格脉动（呼应HexMap）
+  // 2. 六边形网格脉动（V5.0 使用预计算缓存）
+  if (!hexVerticesCache) precomputeHexVertices(iw, ih)
   const hexSize = 35
-  const hexW = hexSize * 1.5
-  const hexH = hexSize * Math.sqrt(3)
   ctx.strokeStyle = 'rgba(184, 150, 62, 0.025)'
   ctx.lineWidth = 0.5
-  for (let row = -2; row < H / hexH + 3; row++) {
-    const offsetX = (row % 2 === 0) ? 0 : hexW / 2
-    for (let col = -2; col < W / hexW + 3; col++) {
-      const cx = col * hexW + offsetX
-      const cy = row * hexH * 0.5
-      const pulse = 1 + Math.sin(time * 0.008 + cx * 0.01 + cy * 0.01) * 0.4
-      ctx.globalAlpha = 0.5 + pulse * 0.5
-      ctx.beginPath()
-      for (let i = 0; i < 6; i++) {
-        const angle = (Math.PI / 3) * i - Math.PI / 6
-        const x = cx + hexSize * Math.cos(angle)
-        const y = cy + hexSize * Math.sin(angle)
-        if (i === 0) ctx.moveTo(x, y)
-        else ctx.lineTo(x, y)
-      }
-      ctx.closePath()
-      ctx.stroke()
+  for (const hex of hexVerticesCache!) {
+    const { cx, cy } = hex
+    const pulse = 1 + Math.sin(time * 0.008 + cx * 0.01 + cy * 0.01) * 0.4
+    ctx.globalAlpha = 0.5 + pulse * 0.5
+    ctx.beginPath()
+    for (let i = 0; i < 6; i++) {
+      const angle = (Math.PI / 3) * i - Math.PI / 6
+      const x = cx + hexSize * Math.cos(angle)
+      const y = cy + hexSize * Math.sin(angle)
+      if (i === 0) ctx.moveTo(x, y)
+      else ctx.lineTo(x, y)
     }
+    ctx.closePath()
+    ctx.stroke()
   }
   ctx.globalAlpha = 1
 
@@ -220,10 +262,8 @@ function animate() {
     const dx = route.toX - route.fromX
     const dy = route.toY - route.fromY
     const len = Math.sqrt(dx * dx + dy * dy)
-    const ux = dx / len
-    const uy = dy / len
+    if (len < 1) continue
 
-    // 虚线：绘制4段，根据progress偏移
     const dashLen = len * 0.12
     const gapLen = len * 0.08
     const totalUnit = dashLen + gapLen
@@ -272,19 +312,17 @@ function animate() {
     p.y += p.vy
     p.life += 0.002
 
-    if (p.y > H + 20 || p.x < -20 || p.x > W + 20 || p.life > 1) {
+    if (p.y > ih + 20 || p.x < -20 || p.x > iw + 20 || p.life > 1) {
       weatherParticles[i] = createWeatherParticle(p.type)
       continue
     }
 
     if (p.type === 0) {
-      // 沙尘
       ctx.fillStyle = `rgba(160, 130, 80, ${p.alpha * (1 - p.life)})`
       ctx.beginPath()
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
       ctx.fill()
     } else if (p.type === 1) {
-      // 细雨
       ctx.strokeStyle = `rgba(180, 190, 200, ${p.alpha * (1 - p.life)})`
       ctx.lineWidth = 0.5
       ctx.beginPath()
@@ -292,7 +330,6 @@ function animate() {
       ctx.lineTo(p.x - p.vx * 2, p.y - p.vy * 0.5)
       ctx.stroke()
     } else {
-      // 雪
       ctx.fillStyle = `rgba(220, 215, 200, ${p.alpha * (1 - p.life)})`
       ctx.beginPath()
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
@@ -301,12 +338,13 @@ function animate() {
   }
 
   // 6. 墨晕暗角
-  const vignette = ctx.createRadialGradient(W / 2, H / 2, W * 0.25, W / 2, H / 2, W * 0.8)
+  const vignette = ctx.createRadialGradient(iw / 2, ih / 2, iw * 0.25, iw / 2, ih / 2, iw * 0.8)
   vignette.addColorStop(0, 'rgba(0, 0, 0, 0)')
   vignette.addColorStop(1, 'rgba(0, 0, 0, 0.4)')
   ctx.fillStyle = vignette
-  ctx.fillRect(0, 0, W, H)
+  ctx.fillRect(0, 0, iw, ih)
 
+  ctx.restore()
   animId = requestAnimationFrame(animate)
 }
 </script>

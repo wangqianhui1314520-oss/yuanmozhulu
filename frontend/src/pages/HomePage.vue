@@ -7,7 +7,7 @@
     <header class="top-bar">
       <div class="version-badge">
         <span class="badge-seal">元末</span>
-        <span class="version-text">逐鹿 3.0</span>
+        <span class="version-text">{{ displayVersion }}</span>
       </div>
       <div class="top-actions">
         <button v-audio class="icon-btn" :title="muted ? '开启音效' : '静音'" @click="toggleMute">
@@ -41,6 +41,7 @@
           <span v-for="(c, i) in titleChars" :key="i" class="title-char" :style="{ animationDelay: `${0.6 + i * 0.15}s` }">{{ c }}</span>
         </h1>
         <p class="game-subtitle">大元至正十一年 · 六边形乱世AI国策</p>
+        <p class="game-credit">腾魄斯特团队 · 倾力呈现</p>
         <div class="divider">
           <span class="line"></span>
           <span class="knot">◇</span>
@@ -171,6 +172,9 @@ import SettingsPanel from '@/components/SettingsPanel.vue'
 import { healthCheck, listSaves } from '@/services/api'
 import { audioManager } from '@/utils/audioManager'
 import { useFullscreen } from '@/composables/useFullscreen'
+import pkg from '../../package.json'
+
+const displayVersion = `逐鹿 ${pkg.version.split('.').slice(0, 2).join('.')}`
 
 const router = useRouter()
 
@@ -590,6 +594,22 @@ onMounted(async () => {
   letter-spacing: 5px;
   font-family: var(--font-annotation, "SimSun", serif);
   margin-bottom: 14px;
+}
+
+.game-credit {
+  font-family: var(--font-seal, "FangSong", serif);
+  font-size: 12px;
+  color: rgba(184, 150, 62, 0.55);
+  letter-spacing: 5px;
+  text-align: center;
+  margin: 0 0 8px;
+  opacity: 0;
+  animation: creditFadeIn 0.7s ease 1.8s forwards;
+}
+
+@keyframes creditFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* 分割线 */

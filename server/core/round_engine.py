@@ -64,6 +64,9 @@ class RoundEngine:
         self._ending_engine: EndingEngine = EndingEngine(world)
         get_ending_engine(world)  # 注册到全局单例
 
+        # v3.5: AI战报收集队列 — 本回合所有战斗的上下文，由A9批量生成
+        self._pending_battle_reports: list[dict] = []
+
         # 懒加载子引擎
         self._settle_engine = None
         self._march_engine = None
@@ -174,11 +177,6 @@ class RoundEngine:
                             "error": f"{type(e).__name__}: {str(e)[:200]}",
                         }
             
-            try:
-                self._advance_time()
-            except Exception as e:
-                logger.error(f"回合{new_round} 时间推进异常: {type(e).__name__}: {e}")
-            
             # 3.1: 追加权责统计到摘要
             try:
                 summary["responsibility_stats"] = self._resp_tracker.get_stats()
@@ -187,10 +185,25 @@ class RoundEngine:
                 summary["responsibility_stats"] = {"error": "unavailable"}
             
             # Bug #4 修复: 如果所有阶段都失败了，回滚回合号
+            # P0修复: 回滚检查必须在 _advance_time() 之前，防止时间推进后回滚不完整
             if len(phases_with_errors) >= len(phase_runners):
                 self.world.current_round -= 1
+                # 同步回滚操作锁中的回合号，避免锁状态与 world 不一致
+                self._op_lock.new_round(self.world.current_round)
                 summary["round_rolled_back"] = True
-                logger.error(f"回合{new_round}全部阶段失败，已回滚回合号至{self.world.current_round}")
+                logger.error(f"回合{new_round}全部阶段失败，已回滚回合号至{self.world.current_round}，操作锁已同步")
+                # 不推进时间，直接返回
+                if phases_with_errors:
+                    summary["partial_failure"] = True
+                    summary["failed_phases"] = phases_with_errors
+                return summary
+            
+            # P0修复: _advance_time() 移到回滚检查之后，确保只有成功回合才推进时间
+            try:
+                self._advance_time()
+            except Exception as e:
+                logger.error(f"回合{new_round} 时间推进异常: {type(e).__name__}: {e}")
+            
             # 3.2: 记录失败阶段
             if phases_with_errors:
                 summary["partial_failure"] = True
@@ -465,10 +478,13 @@ class RoundEngine:
                 return {"valid": False, "reason": f"地块{tile_id}不存在"}
             if tile.faction_id != player.faction_id:
                 return {"valid": False, "reason": f"地块{tile_id}不属于你方"}
-            valid_buildings = ["granary", "armory", "stable", "port", "clinic", "ship", "shipyard"]
+            valid_buildings = ["granary", "armory", "stable", "port", "clinic",
+                              "farmland", "workshop", "barracks", "beacon", "temple", "wall", "dock"]
             if building not in valid_buildings:
                 return {"valid": False, "reason": f"未知建筑类型: {building}，支持: {valid_buildings}"}
-            costs = {"granary": 800, "armory": 800, "stable": 800, "port": 1200, "clinic": 600, "ship": 200, "shipyard": 400}
+            costs = {"granary": 250, "armory": 800, "stable": 600, "port": 400, "clinic": 200,
+                     "farmland": 300, "workshop": 500, "barracks": 350, "beacon": 200,
+                     "temple": 400, "wall": 600, "dock": 400}
             cost = costs.get(building, 500)
             if player.treasury < cost:
                 return {"valid": False, "reason": f"银两不足（需要{cost}，现有{player.treasury}）"}
@@ -1107,6 +1123,13 @@ class RoundEngine:
                 player.grain -= grain_cost
                 loot_silver = min(tile.population * 2, 2000)
                 loot_grain = min(tile.population, 1000)
+                # 从被劫掠方扣除资源（v4.3: 修复劫掠虚空产资源Bug）
+                target_faction = self.world.factions.get(tile.faction_id)
+                if target_faction:
+                    target_faction.treasury = max(0, target_faction.treasury - loot_silver)
+                    target_faction.grain = max(0, target_faction.grain - loot_grain)
+                tile.treasury = max(0, getattr(tile, 'treasury', 0) - loot_silver)
+                tile.grain = max(0, tile.grain - loot_grain)
                 tile.morale = max(0, tile.morale - 20)
                 tile.population = max(100, tile.population - troops // 2)
                 tile.development_level = max(0, getattr(tile, 'development_level', 0) - 1)
@@ -1229,7 +1252,7 @@ class RoundEngine:
     
     async def _phase_ai_step(self, summary: dict):
         """
-        ③ AI推演：通过Orchestrator调度A1~A8智能体 + AIExecutor执行落地
+        ③ AI推演：通过Orchestrator调度A1~A10智能体 + AIExecutor执行落地（v4.0）
         
         核心规则：
         - 玩家操控势力(player_faction_id)的A2 RulerAgent强制休眠，完全跳过AI决策
@@ -1255,6 +1278,7 @@ class RoundEngine:
                 from server.agent.ai_executor import AIExecutor
                 
                 orch = get_orchestrator()
+                self._orchestrator = orch  # v4.3.3: 存储到实例，供 A10/A3/A4/A7 子阶段复用
                 # 使用轻量快照替代 model_dump()，节省 95%+ 序列化开销
                 # Agent 管线不需要 tiles（~1300 地块）等大字段
                 world_dict = self.world.to_agent_snapshot() if hasattr(self.world, 'to_agent_snapshot') else {}
@@ -1281,7 +1305,7 @@ class RoundEngine:
                 )
                 
                 if a2_agents_ran > 0 and a2_non_empty == 0:
-                    # 所有势力 LLM 调用都返回了空文本 → 降级
+                    # 所有势力 LLM 调用都返回了空文本 → 完全降级
                     logger.warning(
                         f"_phase_ai_step: LLM管线运行完成但 {a2_agents_ran} 个势力决策均为空，"
                         f"降级到数值方案"
@@ -1289,6 +1313,23 @@ class RoundEngine:
                     summary["phases"]["ai_step"] = self._fallback_ai_step()
                     summary["phases"]["ai_step"]["degraded_from"] = "llm_empty_results"
                 else:
+                    # v3.4: 部分降级 — 对LLM返回空文本的势力单独使用数值方案
+                    partial_fallback_factions = []
+                    for r in a2_results:
+                        if not r.get("full_response", "").strip():
+                            fid = r.get("faction_id", "unknown")
+                            partial_fallback_factions.append(fid)
+                    
+                    if partial_fallback_factions:
+                        logger.info(
+                            f"_phase_ai_step: {len(partial_fallback_factions)}/{a2_agents_ran} "
+                            f"个势力LLM返回空，对这些势力启用数值降级: {partial_fallback_factions}"
+                        )
+                        # 对空文本势力补充数值方案
+                        self._ensure_engines()
+                        for fid in partial_fallback_factions:
+                            self._apply_fallback_for_faction(fid)
+                    
                     # ② AIExecutor：将AI决策落地为游戏操作
                     self._ensure_engines()
                     executor = AIExecutor(
@@ -1305,6 +1346,26 @@ class RoundEngine:
                         executed["A2_warlord_actions"] = executor.execute_warlord_decisions(a2_results)
                         total_actions = sum(len(a.get('actions', [])) for a in executed["A2_warlord_actions"])
                         logger.info(f"A2 执行落地: {len(a2_results)} 个势力, 共 {total_actions} 个操作")
+                        
+                        # v4.3: 收集A2君主决策反思，存入events_log供前端展示
+                        a2_reflections = 0
+                        for r in a2_results:
+                            reflection = r.get("ruler_reflection", "").strip()
+                            if reflection and len(reflection) > 10:
+                                fid = r.get("faction_id", "")
+                                ruler_name = r.get("ruler", fid)
+                                self.world.events_log.append({
+                                    "event_id": f"reflection_{fid}_{self.world.current_round}",
+                                    "event_type": "ruler_reflection",
+                                    "severity": "minor",
+                                    "faction_id": fid,
+                                    "ruler": ruler_name,
+                                    "description": reflection,
+                                    "round": self.world.current_round,
+                                })
+                                a2_reflections += 1
+                        if a2_reflections:
+                            logger.info(f"A2 决策反思: 记录了 {a2_reflections} 个势力的君主独白")
                     
                     # A4 谍报分析 → 细作行动
                     a4_data = phases.get("A4_espionage", {})
@@ -1332,6 +1393,59 @@ class RoundEngine:
                     if a7_results:
                         executed["A7_royal_updates"] = executor.apply_royal_updates(a7_results)
                         logger.info(f"A7 执行落地: {executed['A7_royal_updates'].get('factions_updated', 0)} 个势力")
+                    
+                    # v4.3: 叙事引擎输出 → 存入 events_log 供前端展示（纯叙事，不影响数值）
+                    narrative_events = 0
+                    
+                    # 朝堂廷议
+                    court_data = phases.get("court_debate", {})
+                    court_results = court_data.get("results", [])
+                    for debate in court_results:
+                        if debate.get("narrative"):
+                            self.world.events_log.append({
+                                "event_id": f"court_{debate.get('faction_id', '?')}_{self.world.current_round}",
+                                "event_type": "court_debate",
+                                "severity": "minor",
+                                "faction_id": debate.get("faction_id", ""),
+                                "ruler": debate.get("ruler", ""),
+                                "description": debate["narrative"],
+                                "round": self.world.current_round,
+                            })
+                            narrative_events += 1
+                    
+                    # 市井舆情
+                    sentiment_data = phases.get("public_sentiment", {})
+                    rumors = sentiment_data.get("rumors", [])
+                    for rumor in rumors:
+                        if rumor.get("text"):
+                            self.world.events_log.append({
+                                "event_id": f"rumor_{self.world.current_round}_{hash(rumor['text']) % 10000}",
+                                "event_type": "public_rumor",
+                                "severity": "minor",
+                                "category": rumor.get("category", ""),
+                                "description": rumor["text"],
+                                "round": self.world.current_round,
+                            })
+                            narrative_events += 1
+                    
+                    # 将领列传
+                    chronicles_data = phases.get("general_chronicles", {})
+                    entries = chronicles_data.get("entries", [])
+                    for entry in entries:
+                        if entry.get("narrative"):
+                            self.world.events_log.append({
+                                "event_id": f"chronicle_{self.world.current_round}_{hash(entry.get('name', '')) % 10000}",
+                                "event_type": "general_chronicle",
+                                "severity": "minor",
+                                "general_name": entry.get("name", ""),
+                                "description": entry["narrative"],
+                                "round": self.world.current_round,
+                            })
+                            narrative_events += 1
+                    
+                    if narrative_events > 0:
+                        logger.info(f"v4.3叙事引擎: 存入了 {narrative_events} 条叙事事件")
+                    executed["narrative_events_stored"] = narrative_events
                     
                     summary["phases"]["ai_step"] = {
                         **phases,
@@ -1361,9 +1475,273 @@ class RoundEngine:
             logger.error(f"征伐AI编排失败: {e}", exc_info=True)
             summary["phases"]["war_ai"] = {"error": str(e)}
 
+        # ③.6 v3.5: A9 AI战报生成 — 为本回合所有战斗生成古风战报
+        try:
+            # 扫描 events_log 收集本轮所有战斗
+            self._scan_battle_events_from_log()
+            if self._pending_battle_reports and self._llm_clients and self._llm_available:
+                from server.agent.a9_battle_report import get_a9_battle_report_agent
+                a9 = get_a9_battle_report_agent()
+                reports = await a9.generate_batch(
+                    self._pending_battle_reports, self._llm_clients
+                )
+                # 将战报回写到 events_log
+                self._apply_battle_reports(reports)
+                logger.info(
+                    f"A9 军机处: 生成了 {len(reports)} 份AI战报 "
+                    f"(共{len(self._pending_battle_reports)}场战斗)"
+                )
+                summary["phases"]["ai_step"]["a9_battle_reports"] = len(reports)
+                
+                # v4.3: A9 战局综述 — 综合所有战斗生成全局战局分析（纯叙事）
+                try:
+                    ws = self._get_world_dict()
+                    war_summary = await a9.generate_war_summary(
+                        self._pending_battle_reports, ws, self._llm_clients
+                    )
+                    if war_summary:
+                        # 将战局综述追加到 events_log 供前端展示
+                        self.world.events_log.append({
+                            "event_id": f"war_summary_{self.world.current_round}",
+                            "event_type": "war_summary",
+                            "severity": "major",
+                            "description": war_summary,
+                            "round": self.world.current_round,
+                            "year": self.world.current_year,
+                            "season": self.world.current_season,
+                        })
+                        summary["phases"]["ai_step"]["a9_war_summary"] = war_summary[:200]
+                        logger.info(f"A9 战局综述已生成 ({len(war_summary)}字)")
+                except Exception as ws_e:
+                    logger.warning(f"A9 战局综述生成失败（非致命）: {ws_e}")
+        except Exception as e:
+            logger.error(f"A9战报生成失败: {e}", exc_info=True)
+
+        # ③.7 v4.0: A10 度支司 — AI经济决策（税率/粮储/贸易/建设）
+        try:
+            if self._llm_clients and self._llm_available:
+                from server.agent.a10_treasury import get_a10_treasury_agent
+                a10 = get_a10_treasury_agent()
+                econ_results = []
+                ws = self._get_world_dict()
+                for fid, faction in self.world.factions.items():
+                    if not faction.is_alive or fid == player_faction_id:
+                        continue
+                    try:
+                        ws = self._get_world_dict()
+                        policy = await a10.formulate_policy(fid, ws, self._llm_clients)
+                        applied = self._orchestrator.a10_apply_policies(fid, ws, policy)
+                        econ_results.append({"faction_id": fid, "policy": policy, "applied": applied})
+                    except Exception as inner_e:
+                        logger.warning(f"A10 度支 [{fid}] 失败: {inner_e}")
+                logger.info(f"A10 度支司: 为 {len(econ_results)} 个势力制定了经济政策")
+                summary["phases"]["ai_step"]["a10_economy_policies"] = len(econ_results)
+        except Exception as e:
+            logger.error(f"A10度支政策失败: {e}", exc_info=True)
+
+        # ③.8 v4.0: A3 吏部 — AI官员任免
+        try:
+            if self._llm_clients and self._llm_available:
+                ws = self._get_world_dict()  # v4.3.3: 防御性定义，避免依赖 A10 作用域
+                official_results = []
+                for fid, faction in self.world.factions.items():
+                    if not faction.is_alive or fid == player_faction_id:
+                        continue
+                    npcs = faction.npcs if hasattr(faction, 'npcs') else []
+                    if not npcs:
+                        continue
+                    try:
+                        result = await self._orchestrator.a3_manage_officials(
+                            fid, ws, self._llm_clients, list(npcs))
+                        official_results.append({"faction_id": fid, "result": result})
+                    except Exception as inner_e:
+                        logger.warning(f"A3 吏部 [{fid}] 失败: {inner_e}")
+                if official_results:
+                    logger.info(f"A3 吏部: 完成了 {len(official_results)} 个势力的官员考核")
+                    summary["phases"]["ai_step"]["a3_official_reviews"] = len(official_results)
+        except Exception as e:
+            logger.error(f"A3吏部失败: {e}", exc_info=True)
+
+        # ③.9 v4.0: A4 谍报司 — AI间谍策略计划
+        try:
+            if self._llm_clients and self._llm_available:
+                ws = self._get_world_dict()  # v4.3.3: 防御性定义，避免依赖 A10 作用域
+                spy_plans = []
+                for fid, faction in self.world.factions.items():
+                    if not faction.is_alive or fid == player_faction_id:
+                        continue
+                    try:
+                        plan = await self._orchestrator.a4_plan_spy_strategy(
+                            fid, ws, self._llm_clients)
+                        if plan.get("actions"):
+                            spy_plans.append({"faction_id": fid, "plan": plan})
+                    except Exception as inner_e:
+                        logger.warning(f"A4 谍报策略 [{fid}] 失败: {inner_e}")
+                if spy_plans:
+                    logger.info(f"A4 谍报司: 制定了 {len(spy_plans)} 个势力的谍报计划")
+                    summary["phases"]["ai_step"]["a4_spy_strategies"] = len(spy_plans)
+        except Exception as e:
+            logger.error(f"A4谍报策略失败: {e}", exc_info=True)
+
+        # ③.10 v4.0: A7 宗室府 — AI王朝管理（储位+联姻+历练）
+        try:
+            if self._llm_clients and self._llm_available:
+                ws = self._get_world_dict()  # v4.3.3: 防御性定义，避免依赖 A10 作用域
+                dynasty_results = []
+                for fid, faction in self.world.factions.items():
+                    if not faction.is_alive or fid == player_faction_id:
+                        continue
+                    try:
+                        result = await self._orchestrator.a7_manage_dynasty(
+                            fid, ws, self._llm_clients)
+                        dynasty_results.append({"faction_id": fid, "result": result})
+                    except Exception as inner_e:
+                        logger.warning(f"A7 王朝管理 [{fid}] 失败: {inner_e}")
+                if dynasty_results:
+                    logger.info(f"A7 宗室府: 完成了 {len(dynasty_results)} 个势力的王朝管理")
+                    summary["phases"]["ai_step"]["a7_dynasty_management"] = len(dynasty_results)
+        except Exception as e:
+            logger.error(f"A7王朝管理失败: {e}", exc_info=True)
+
         for hook in self._phase_hooks[3]:
             await hook(self.world)
     
+    def _scan_battle_events_from_log(self):
+        """扫描 events_log，收集本回合所有未生成战报的战斗事件"""
+        current_round = self.world.current_round
+        for event in self.world.events_log:
+            if event.get("round") != current_round:
+                continue
+            if event.get("event_type") != "battle":
+                continue
+
+            # 检查是否已经生成了AI战报
+            narrative = event.get("narrative", "")
+            if narrative and ("军机处报" in narrative):
+                continue  # 已经是AI战报，跳过
+
+            # 已有上下文队列中的，跳过
+            event_id = event.get("event_id", "")
+            if any(b.get("event_id") == event_id for b in self._pending_battle_reports):
+                continue
+
+            # 从event数据构建上下文
+            effects = event.get("effects", {})
+            atk_fid = effects.get("attacker", "")
+            def_fid = effects.get("defender", "")
+            atk_f = self.world.get_faction(atk_fid)
+            def_f = self.world.get_faction(def_fid)
+
+            result_map = {"victory": atk_fid, "defeat": def_fid, "stalemate": None}
+            ctx_result = effects.get("result", "stalemate")
+            winner_fid = result_map.get(ctx_result)
+            winner_name = ""
+            if winner_fid:
+                wf = self.world.get_faction(winner_fid)
+                winner_name = wf.name if wf else winner_fid
+
+            context = {
+                "attacker_name": atk_f.name if atk_f else atk_fid,
+                "defender_name": def_f.name if def_f else def_fid,
+                "tile_name": event.get("title", "").replace("攻占 · ", "").replace("败绩 · ", "").replace("鏖战 · ", "").replace("围困 · ", ""),
+                "terrain": effects.get("terrain", "平原"),
+                "season": self.world.current_season.value if self.world.current_season else "春",
+                "attacker_troops": effects.get("attacker_losses", 0) + effects.get("attacker_remaining", 0),
+                "defender_troops": effects.get("defender_losses", 0) + effects.get("defender_remaining", 0),
+                "attacker_losses": effects.get("attacker_losses", 0),
+                "defender_losses": effects.get("defender_losses", 0),
+                "attacker_remaining": effects.get("attacker_remaining", 0),
+                "defender_remaining": effects.get("defender_remaining", 0),
+                "result": ctx_result,
+                "winner_name": winner_name,
+                "is_siege": effects.get("is_siege", False),
+                "tile_captured": ctx_result == "victory",
+                "fortification": effects.get("fortification", 0),
+                "engine": effects.get("_engine", "simple"),
+                "tactics_used": effects.get("_tactics_used", []),
+                "power_ratio": effects.get("_power_ratio"),
+                "event_id": event_id,
+            }
+            self._pending_battle_reports.append(context)
+
+    def _apply_battle_reports(self, reports: list[dict]):
+        """将AI生成的战报回写到 events_log 的对应事件中"""
+        for report in reports:
+            idx = report.get("battle_index", -1)
+            narrative = report.get("narrative", "")
+            if idx < 0 or idx >= len(self._pending_battle_reports) or not narrative:
+                continue
+
+            event_id = self._pending_battle_reports[idx].get("event_id", "")
+            if not event_id:
+                continue
+
+            for event in self.world.events_log:
+                if event.get("event_id") == event_id:
+                    event["narrative"] = narrative
+                    event["ai_generated_narrative"] = True
+                    break
+
+        # 清空待处理队列
+        self._pending_battle_reports.clear()
+
+    def _get_world_dict(self) -> dict:
+        """将WorldState转换为字典格式供Agent使用"""
+        if hasattr(self.world, 'to_agent_snapshot'):
+            return self.world.to_agent_snapshot()
+        # v4.3.3: 降级路径与 to_agent_snapshot() 保持字段对齐
+        return {
+            "current_round": self.world.current_round,
+            "current_year": getattr(self.world, 'current_year', 1351),
+            "current_month": getattr(self.world, 'current_month', 1),
+            "current_season": str(self.world.current_season) if self.world.current_season else "春",
+            "disaster_index": getattr(self.world, 'disaster_index', 0),
+            "player_faction_id": getattr(self.world, 'player_faction_id', ""),
+            "factions": {
+                fid: {
+                    "name": f.name if hasattr(f, 'name') else fid,
+                    "alive": f.is_alive if hasattr(f, 'is_alive') else True,
+                    "troops": f.troops if hasattr(f, 'troops') else 0,
+                    "total_troops": getattr(f, 'total_troops', f.troops if hasattr(f, 'troops') else 0),
+                    "treasury": f.treasury if hasattr(f, 'treasury') else 0,
+                    "grain": f.grain if hasattr(f, 'grain') else 0,
+                    "reputation": f.reputation if hasattr(f, 'reputation') else 50,
+                    "realm_stability": f.realm_stability if hasattr(f, 'realm_stability') else 50,
+                    "court_stability": getattr(f, 'court_stability', 50),
+                    "tile_count": f.tile_count if hasattr(f, 'tile_count') else 0,
+                    "total_population": getattr(f, 'total_population', f.population if hasattr(f, 'population') else 0),
+                    "population": f.population if hasattr(f, 'population') else 0,
+                    "neighbors": f.neighbors if hasattr(f, 'neighbors') else [],
+                    "heirs": getattr(f, 'heirs', []),
+                    "is_player": getattr(f, 'is_player', False),
+                    "is_alive": f.is_alive if hasattr(f, 'is_alive') else True,
+                    "personality_tags": getattr(f, 'personality_tags', []),
+                    "personality": getattr(f, 'personality', []),
+                    "capital_tile_id": getattr(f, 'capital_tile_id', ""),
+                    "navy_power": getattr(f, 'navy_power', 0),
+                    "ruler_name": f.ruler_name if hasattr(f, 'ruler_name') else fid,
+                    "ruler_age": f.ruler_age if hasattr(f, 'ruler_age') else 40,
+                    "buildings": getattr(f, 'buildings', {}),
+                    "tax_rate": getattr(f, 'tax_rate', 0.15),
+                }
+                for fid, f in self.world.factions.items()
+            },
+            "relations": {
+                rkey: r.model_dump() if hasattr(r, 'model_dump') else {
+                    "faction_a": r.faction_a if hasattr(r, 'faction_a') else "",
+                    "faction_b": r.faction_b if hasattr(r, 'faction_b') else "",
+                    "status": str(r.stance) if hasattr(r, 'stance') else "neutral",
+                    "value": getattr(r, 'value', 0),
+                }
+                for rkey, r in self.world.relations.items()
+            },
+            "spy_networks": getattr(self.world, 'spy_networks', {}),
+            "siege_states": getattr(self.world, 'siege_states', {}),
+            "coalitions": getattr(self.world, 'coalitions', {}),
+            "vassal_relations": getattr(self.world, 'vassal_relations', {}),
+            "recent_events": self.world.events_log[-30:] if getattr(self.world, 'events_log', None) else [],
+        }
+
     def _fallback_ai_step(self) -> dict:
         """
         AI降级：利用AIExecutor增强版降级方案
@@ -1394,6 +1772,42 @@ class RoundEngine:
         
         return results
 
+    def _apply_fallback_for_faction(self, faction_id: str):
+        """
+        v3.4: 对单个势力应用数值降级方案
+        
+        当LLM对某个势力返回空文本时，不放弃该势力，
+        而是用数值驱动方案为其做出基础决策（征募/建造/驻防等）。
+        
+        Args:
+            faction_id: 需要降级处理的势力ID
+        """
+        from server.agent.ai_executor import AIExecutor
+        executor = AIExecutor(
+            self.world, self.faction_configs,
+            march_engine=self._march_engine,
+            spy_engine=self._spy_engine,
+            diplomacy_engine=self._diplomacy_engine,
+        )
+        
+        # 使用增强版降级，但仅处理指定势力
+        # 通过构造临时 skip 集合实现（skip 除当前势力外的所有势力）
+        all_factions = [f.faction_id if hasattr(f, 'faction_id') else f.id 
+                       for f in self.world.factions.values()]
+        results = executor.fallback_ai_step_enhanced(
+            skip_faction_id=self.world.player_faction_id
+        )
+        
+        # 从结果中提取仅目标势力的操作
+        if results and "actions" in results:
+            faction_actions = [
+                a for a in results.get("actions", [])
+                if a.get("faction_id") == faction_id
+            ]
+            logger.info(
+                f"部分降级: {faction_id} 使用数值方案生成 {len(faction_actions)} 个操作"
+            )
+
     async def _orchestrate_active_wars(self, summary: dict) -> dict:
         """
         征伐全链路AI联动：处理所有活跃战争
@@ -1412,9 +1826,20 @@ class RoundEngine:
         new_wars = self._detect_new_wars()
         for war_info in new_wars:
             try:
+                # 3.0: 检查该势力对是否已有活跃战争，避免双重结算
+                atk_id, dff_id = war_info["attacker"], war_info["defender"]
+                already_active = False
+                for ctx_existing in self._war_orchestrator.active_wars.values():
+                    if ((ctx_existing.attacker_faction == atk_id and ctx_existing.defender_faction == dff_id) or
+                        (ctx_existing.attacker_faction == dff_id and ctx_existing.defender_faction == atk_id)):
+                        already_active = True
+                        break
+                if already_active:
+                    continue
+
                 ctx = await self._war_orchestrator.on_war_declared(
-                    attacker=war_info["attacker"],
-                    defender=war_info["defender"],
+                    attacker=atk_id,
+                    defender=dff_id,
                     reason=war_info.get("reason", ""),
                 )
                 war_summary["new_wars"] += 1
@@ -1461,6 +1886,8 @@ class RoundEngine:
 
         # 检查外交关系变化（recent tile_changes）
         for change in getattr(self.world, 'tile_changes', [])[-20:]:
+            if not isinstance(change, dict):
+                continue  # Pydantic 模型保护（兼容 _has_recent_battle 模式）
             if (change.get("change_type") == "conquer" and
                 change.get("old_faction_id") and
                 change.get("new_faction_id")):
@@ -1523,6 +1950,10 @@ class RoundEngine:
             "governance_logs": len(self.world.governance_logs),
         }
         
+        # 3.0: 裁剪 events_log（保留最近 600 条，240回合×2.5条/回合约足够）
+        if len(self.world.events_log) > 600:
+            self.world.events_log = self.world.events_log[-600:]
+
         for hook in self._phase_hooks[4]:
             await hook(self.world)
     
@@ -1534,6 +1965,16 @@ class RoundEngine:
         """⑤ 数值结算：税收、粮耗、兵力、人口、天灾"""
         self._ensure_engines()
         settle_result = self._settle_engine.phase_settle()
+        
+        # 3.0: 推进所有活跃围城结算（每回合自动消耗守军粮食、降低城防）
+        for siege_id in list(self.world.siege_states.keys()):
+            try:
+                siege_result = self._settle_engine.resolve_siege(siege_id)
+                if siege_result.get("tile_captured"):
+                    settle_result.setdefault("siege_captures", []).append(siege_result)
+                    logger.info(f"[回合结算] 围城破城: {siege_result.get('tile_name', siege_id)}")
+            except Exception as e:
+                logger.warning(f"[回合结算] 围城推进失败 {siege_id}: {e}")
         
         # 贸易收益结算（从 faction_configs["_game_const"] 读取每条约收益，默认 100）
         # 3.3: 所有存活势力（含NPC）均享受贸易收入，不再仅限玩家
@@ -1572,6 +2013,24 @@ class RoundEngine:
             },
         }
         
+        # v4.3: LLM经济结算审阅 — 结算完成后审阅并微调税率/粮策
+        try:
+            if self._llm_clients and self._llm_available:
+                from server.core.llm_review import SettlementReview
+                ws = self._get_world_dict()
+                review = await SettlementReview.review_all(ws, settle_result, self._llm_clients)
+                if review.get("reviewed_count", 0) > 0:
+                    applied = SettlementReview.apply_adjustments(ws, review)
+                    summary["phases"]["settle"]["llm_review"] = {
+                        "reviewed": review["reviewed_count"],
+                        "applied": applied["applied_count"],
+                        "narrative": review.get("narrative", "")[:200],
+                    }
+                    if applied["applied_count"] > 0:
+                        logger.info(f"LLM结算审阅: 调整了 {applied['applied_count']} 个势力的经济参数")
+        except Exception as e:
+            logger.warning(f"LLM结算审阅失败（非致命）: {e}")
+        
         for hook in self._phase_hooks[5]:
             await hook(self.world)
     
@@ -1607,6 +2066,41 @@ class RoundEngine:
 
         # 3.2: 外交自动调整——根据战争/地盘变更自动修正外交状态
         auto_diplo_changes = self._auto_adjust_diplomacy()
+        
+        # v4.3: LLM外交关系审阅 — 自动调整后审阅所有势力对，生成细微态度漂移
+        try:
+            if self._llm_clients and self._llm_available:
+                from server.core.llm_review import DiplomacyReview
+                ws = self._get_world_dict()
+                diplo_review = await DiplomacyReview.review_all(ws, self._llm_clients)
+                if diplo_review.get("reviewed_pairs", 0) > 0:
+                    applied = DiplomacyReview.apply_drifts(ws, diplo_review)
+                    summary["phases"]["refresh"]["llm_diplomacy_review"] = {
+                        "reviewed_pairs": diplo_review["reviewed_pairs"],
+                        "applied_shifts": applied["applied_count"],
+                    }
+                    if applied["applied_count"] > 0:
+                        logger.info(f"LLM外交审阅: 微调了 {applied['applied_count']} 对关系")
+        except Exception as e:
+            logger.warning(f"LLM外交审阅失败（非致命）: {e}")
+        
+        # v4.3: LLM战斗态势审阅 — 审阅所有势力军事态势，输出下回合士气修正
+        try:
+            if self._llm_clients and self._llm_available:
+                from server.core.llm_review import CombatStanceReview
+                ws = self._get_world_dict()
+                combat_review = await CombatStanceReview.review_all(ws, self._llm_clients)
+                if combat_review.get("reviewed_count", 0) > 0:
+                    applied = CombatStanceReview.apply_stances(ws, combat_review)
+                    summary["phases"]["refresh"]["llm_combat_stance"] = {
+                        "reviewed": combat_review["reviewed_count"],
+                        "applied": applied["applied_count"],
+                        "narrative": combat_review.get("narrative", "")[:200],
+                    }
+                    if applied["applied_count"] > 0:
+                        logger.info(f"LLM战斗态势审阅: 更新了 {applied['applied_count']} 个势力的战斗士气")
+        except Exception as e:
+            logger.warning(f"LLM战斗态势审阅失败（非致命）: {e}")
         
         # 藩镇检测（对所有势力生效）
         vassal_events = []
@@ -1742,17 +2236,18 @@ class RoundEngine:
                     })
                     continue
 
-                # 规则2: 战争状态长时间无交战 → 自动提议停战
+                # 规则2: 战争状态长时间无交战 → 自动提议停战（3.0: 正确转为 TRUCE 而非 NEUTRAL）
                 if rel.stance == DiplomaticStance.WAR:
                     rounds_since_battle = self._rounds_since_last_battle(fa, fb)
                     peace_threshold = 8  # 8回合无战事则自动停战
                     if rounds_since_battle >= peace_threshold:
-                        rel.stance = DiplomaticStance.NEUTRAL
+                        rel.stance = DiplomaticStance.TRUCE
                         rel.attitude = 0
+                        rel.treaty_expiry = self.world.current_round + 12
                         changes.append({
-                            "faction_a": fa, "faction_b": fb,
-                            "from": "war", "to": "neutral",
-                            "reason": f"已{rounds_since_battle}回合无交战，自动停战",
+                        "faction_a": fa, "faction_b": fb,
+                        "from": "war", "to": "truce",
+                        "reason": f"已{rounds_since_battle}回合无交战，自动停战",
                         })
                         self.world.events_log.append({
                             "event_id": f"auto_peace_{fa}_{fb}_{self.world.current_round}",
@@ -1763,13 +2258,14 @@ class RoundEngine:
                             "effects": {"auto_adjusted": True},
                         })
 
-                # 规则3: 同盟好感度过低 → 自动破裂
+                # 规则3: 同盟好感度过低 → 自动破裂（3.0: 先进入 TRUCE 缓冲，不直接跳到 NEUTRAL）
                 if rel.stance == DiplomaticStance.ALLIANCE and rel.attitude < -20:
-                    rel.stance = DiplomaticStance.NEUTRAL
+                    rel.stance = DiplomaticStance.TRUCE
                     rel.trade_active = False
+                    rel.treaty_expiry = self.world.current_round + 6
                     changes.append({
                         "faction_a": fa, "faction_b": fb,
-                        "from": "alliance", "to": "neutral",
+                        "from": "alliance", "to": "truce",
                         "reason": f"好感度过低({rel.attitude})，同盟自动破裂",
                     })
                     self.world.events_log.append({

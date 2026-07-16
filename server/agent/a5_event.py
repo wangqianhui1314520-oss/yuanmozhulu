@@ -143,8 +143,10 @@ class A5EventAgent(BaseAgent):
 
             for fid in affected:
                 faction = factions.get(fid, {})
-                # 计算影响数值
-                impact = self._calculate_disaster_impact(disaster_type, disaster_index, faction)
+                # ★ v3.5: AI驱动影响计算（替代固定公式）
+                impact = await self.calculate_disaster_impact_ai(
+                    disaster_type, disaster_index, faction, event_narrative, clients
+                )
                 affected_factions.append({
                     "faction_id": fid,
                     "faction_name": faction.get("name", fid),
@@ -295,11 +297,119 @@ class A5EventAgent(BaseAgent):
             logger.warning(f"A5流民叙事生成失败: {e}，使用默认叙事")
             return f"{season}，流民四起，百姓流离失所。"
 
+    async def calculate_disaster_impact_ai(
+        self, disaster_type: str, disaster_index: int,
+        faction: dict, disaster_narrative: str,
+        clients: dict,
+    ) -> dict:
+        """
+        AI驱动天灾影响计算（替代固定公式）
+
+        让LLM基于灾害叙事+势力状况，自主判断影响范围和程度。
+        数值系统仅做上下界校验（不能为负，不能超过上限）。
+
+        Args:
+            disaster_type: 灾害类型
+            disaster_index: 灾厄指数
+            faction: 势力数据
+            disaster_narrative: LLM生成的灾害叙事
+            clients: LLM客户端
+
+        Returns:
+            {"grain_loss": int, "population_loss": int, "troop_loss": int,
+             "reputation_change": int, "morale_change": int, "ai_reasoning": str}
+        """
+        client: TencentHunyuanClient = clients.get("enemy")
+        if not client:
+            return self._calculate_disaster_impact(disaster_type, disaster_index, faction)
+
+        faction_name = faction.get("name", "某势力")
+        base_grain = faction.get("grain", 1000)
+        base_pop = faction.get("population", 5000)
+        base_troops = faction.get("troops", 1000)
+        tile_count = faction.get("tile_count", 5)
+        has_granary = faction.get("has_granary", False)
+        has_hospital = faction.get("has_hospital", False)
+
+        prompt = (
+            f"【灾害】{disaster_type}，灾厄指数{disaster_index}/20\n"
+            f"【灾害叙事】{disaster_narrative[:200]}\n\n"
+            f"【受灾势力】{faction_name}\n"
+            f"- 粮草：{base_grain}石\n"
+            f"- 人口：{base_pop}人\n"
+            f"- 兵力：{base_troops}人\n"
+            f"- 领地数：{tile_count}块\n"
+            f"- 有粮仓：{'是' if has_granary else '否'}\n"
+            f"- 有医馆：{'是' if has_hospital else '否'}\n\n"
+            f"请根据上述信息，判断此灾害对该势力的具体影响数值。\n"
+            f"考虑因素：灾害严重程度、势力准备程度（粮仓可减粮损、医馆可减人口损）、领地大小（大势力恢复力强）\n\n"
+            f"输出格式（严格JSON，不要额外文字）：\n"
+            f'{{"grain_loss": 数字, "population_loss": 数字, "troop_loss": 数字, '
+            f'"reputation_change": 数字(-10到+5), "morale_change": 数字(-20到+5), '
+            f'"reasoning": "对灾害影响的分析(50字内)"}}'
+        )
+
+        try:
+            raw = await client.chat_fast(
+                prompt=prompt,
+                system_prompt=(
+                    "你是元末乱世的灾害评估官。根据灾害类型、严重程度和势力状况，"
+                    "给出合理的数值影响。不要过于极端——最严重的灾害也不应超过势力"
+                    "对应资源的30%。输出必须是合法JSON。"
+                ),
+                temperature=0.5,  # 较低温度保证数值合理性
+            )
+
+            ai_impact = self._parse_impact_json(raw)
+
+            # 数值校验与边界裁剪
+            validated = {
+                "grain_loss": max(0, min(ai_impact.get("grain_loss", 0), int(base_grain * 0.3))),
+                "population_loss": max(0, min(ai_impact.get("population_loss", 0), int(base_pop * 0.3))),
+                "troop_loss": max(0, min(ai_impact.get("troop_loss", 0), int(base_troops * 0.3))),
+                "reputation_change": max(-10, min(ai_impact.get("reputation_change", 0), 5)),
+                "morale_change": max(-20, min(ai_impact.get("morale_change", 0), 5)),
+                "ai_reasoning": ai_impact.get("reasoning", "AI评估"),
+            }
+
+            logger.info(
+                f"A5 AI灾害影响 [{faction_name}][{disaster_type}]: "
+                f"粮损{validated['grain_loss']} 人损{validated['population_loss']} "
+                f"兵损{validated['troop_loss']} — {validated['ai_reasoning']}"
+            )
+            return validated
+
+        except Exception as e:
+            logger.warning(f"A5 AI灾害影响计算失败: {e}，降级到固定公式")
+            fallback = self._calculate_disaster_impact(disaster_type, disaster_index, faction)
+            fallback["ai_reasoning"] = "降级到固定公式"
+            return fallback
+
+    @staticmethod
+    def _parse_impact_json(raw: str) -> dict:
+        """解析LLM输出的影响JSON"""
+        import re
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            pass
+
+        json_match = re.search(
+            r'\{"grain_loss".*\}', raw, re.DOTALL
+        )
+        if json_match:
+            try:
+                return json.loads(json_match.group())
+            except json.JSONDecodeError:
+                pass
+
+        return {}
+
     @staticmethod
     def _calculate_disaster_impact(
         disaster_type: str, disaster_index: int, faction: dict
     ) -> dict:
-        """计算天灾对势力的具体影响数值"""
+        """计算天灾对势力的具体影响数值（固定公式降级）"""
         base_grain = faction.get("grain", 1000)
         base_pop = faction.get("population", 5000)
         base_troops = faction.get("troops", 1000)
@@ -370,6 +480,92 @@ class A5EventAgent(BaseAgent):
             "type": "omen",
             "round": current_round,
             "narrative": response[:200],
+        }
+
+    async def analyze_world_situation(
+        self, world_state: dict, clients: dict
+    ) -> dict:
+        """
+        v4.3 新增：每回合生成「天下大势分析」（无论是否触发事件）
+        
+        与 run_all_factions（事件判定+影响计算）互补：
+        - run_all_factions: 骰子判定 → 触发则计算影响
+        - analyze_world_situation: 始终运行 → 生成战略观察报告
+        
+        纯叙事，不影响游戏数值。用于前端展示和A8国史参考。
+        
+        Args:
+            world_state: 全局世界状态
+            clients: LLM客户端
+        
+        Returns:
+            {"narrative": str, "trends": [...], "round": int}
+        """
+        client: TencentHunyuanClient = clients.get("enemy")
+        if not client:
+            return {"narrative": "时局不明。", "trends": [], "round": world_state.get("current_round", 0)}
+        
+        round_num = world_state.get("current_round", 0)
+        year = world_state.get("current_year", 1351)
+        season = world_state.get("current_season", "春")
+        disaster_index = world_state.get("disaster_index", 0)
+        
+        # 势力概况
+        factions = world_state.get("factions", {})
+        faction_summary = ""
+        for fid, f in factions.items():
+            if f.get("alive", True):
+                faction_summary += (
+                    f"  {f.get('name', fid)}: "
+                    f"兵{f.get('troops', 0)} 领{f.get('tile_count', 0)} "
+                    f"粮{f.get('grain', 0)} 声望{f.get('reputation', 0)}\n"
+                )
+        
+        # 活跃战争
+        wars = world_state.get("active_battles", []) or world_state.get("active_wars", []) or []
+        war_summary = ""
+        for w in wars[:5]:
+            a_name = w.get("attacker_name", w.get("attacker", "?"))
+            d_name = w.get("defender_name", w.get("defender", "?"))
+            tile = w.get("tile_name", w.get("location", "某地"))
+            war_summary += f"  {a_name} vs {d_name} 于{tile}\n"
+        if not war_summary:
+            war_summary = "  当前无活跃战事。\n"
+        
+        prompt = (
+            f"=== 元末天下大势分析 ===\n"
+            f"年份：{year}年 {season}，第{round_num}回合\n"
+            f"灾厄指数：{disaster_index}/20\n\n"
+            f"【群雄割据】\n{faction_summary}\n"
+            f"【活跃战事】\n{war_summary}\n"
+            f"请以军师/谋士口吻，撰写一份天下大势分析报告（约150-200字）。\n"
+            f"需分析：当前谁强谁弱、潜在的战略转折点、预测下一回合最可能发生的冲突。\n"
+            f"语言风格：仿《隆中对》或《出师表》，古文雅致但不晦涩。"
+        )
+        
+        try:
+            response = await client.chat_fast(
+                prompt=prompt,
+                system_prompt=(
+                    "你是元末乱世中的隐士军师，洞察天下大势。"
+                    "你善于从纷乱的信息中发现战略趋势，语言精辟入里。"
+                ),
+                temperature=0.7,
+            )
+            narrative = response[:500] if response else "天下大势，分久必合，合久必分。"
+        except Exception as e:
+            logger.warning(f"A5 天下大势分析LLM调用失败: {e}")
+            narrative = f"{year}年{season}，群雄并立，天下未定。各方势力蓄势待发。"
+        
+        logger.info(f"A5 天下大势分析: 已生成 (round={round_num}, {len(narrative)}字)")
+        
+        return {
+            "narrative": narrative,
+            "round": round_num,
+            "year": year,
+            "season": season,
+            "faction_count": sum(1 for f in factions.values() if f.get("alive", True)),
+            "active_wars": len(wars),
         }
 
     def roll_event(self) -> Optional[str]:

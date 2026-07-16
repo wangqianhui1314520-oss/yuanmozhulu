@@ -20,13 +20,27 @@ from typing import Optional, Any
 
 import httpx
 
-from .config import LLMConfig, HUNYUAN_API_BASE, API_TIMEOUT
+from .config import (
+    LLMConfig, HUNYUAN_API_BASE, API_TIMEOUT,
+    API_TIMEOUT_ADVISOR, API_TIMEOUT_LAW, API_TIMEOUT_ENEMY,
+)
+from .cost_tracker import get_cost_tracker
 
 logger = logging.getLogger("yuanmo.llm.hunyuan")
 
-# 全局并发信号量
+# 全局并发信号量 — 按 agent_group 分组，避免 advisor 组占满全部槽位阻塞 law/enemy
 MAX_CONCURRENT_AGENTS = 20
+_CONCURRENCY_BY_GROUP = {
+    "advisor": asyncio.Semaphore(10),  # 角色对话：最多10个并发
+    "law": asyncio.Semaphore(5),       # 战略推演：最多5个并发
+    "enemy": asyncio.Semaphore(5),     # 快速推演：最多5个并发
+}
+# 向后兼容的通用信号量（用于未分组的调用）
 _concurrency_semaphore = asyncio.Semaphore(MAX_CONCURRENT_AGENTS)
+
+def _get_concurrency_semaphore(agent_group: str = "") -> asyncio.Semaphore:
+    """根据 agent_group 返回对应的并发信号量"""
+    return _CONCURRENCY_BY_GROUP.get(agent_group, _concurrency_semaphore)
 
 
 @dataclass
@@ -58,11 +72,8 @@ _global_call_count = 0
 
 _last_call_result: dict = {"label": "", "tokens": 0, "latency": 0.0, "ts": 0.0}
 
-# 违规词模式
-FORBIDDEN_PATTERNS = re.compile(
-    r"(习近平|毛泽东|邓小平|江泽民|胡锦涛|共产党|中共|党中央|政治局|文革|六四|法轮功|台独|藏独|疆独)",
-    re.IGNORECASE
-)
+# 违规词模式 — 复用 prompt_registry 中的统一定义
+from .prompt_registry import FORBIDDEN_TERMS as FORBIDDEN_PATTERNS
 
 # 古文清洗映射
 TEXT_CLEAN_MAP = {
@@ -85,28 +96,38 @@ class TencentHunyuanClient:
     支持三层模型体系 + FunctionCall工具调用
     """
 
-    def __init__(self, config: LLMConfig):
+    def __init__(self, config: LLMConfig, agent_group: str = "unknown"):
         self.config = config
         self.api_base = config.api_base.rstrip("/")
         self.api_key = config.api_key
         self.model_name = config.model_name
         self.temperature = config.temperature
         self.max_tokens = config.max_tokens
+        self.agent_group = agent_group  # advisor / law / enemy
         self.fallback_mode = False
         self._fallback_since: float = 0.0  # P3: 记录降级时间，用于自动恢复
         self._fallback_recovery_interval: float = 600.0  # 10分钟后尝试恢复
+        self._fallback_lock = asyncio.Lock()  # 保护 fallback_mode 读写竞争
         self._client: Optional[httpx.AsyncClient] = None
+        self._set_fallback = self._set_fallback_mode  # 便捷别名
         # Token 消耗追踪
         self._token_usage = TokenUsage()
         self._call_count = 0
         self._total_latency = 0.0
 
     async def _get_client(self) -> httpx.AsyncClient:
-        """懒加载httpx客户端（标准 Bearer Token 认证）"""
+        """懒加载httpx客户端（标准 Bearer Token 认证），按分组使用不同超时"""
         if self._client is None:
-            # 3.2 修复: 使用配置的 API_TIMEOUT + 连接池限制，防止资源耗尽
+            # 按 agent_group 选择超时时间
+            timeout_map = {
+                "advisor": API_TIMEOUT_ADVISOR,
+                "law": API_TIMEOUT_LAW,
+                "enemy": API_TIMEOUT_ENEMY,
+            }
+            group_timeout = timeout_map.get(self.agent_group, API_TIMEOUT)
+            # 3.2 修复: 使用配置的超时 + 连接池限制，防止资源耗尽
             self._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(API_TIMEOUT, connect=15.0),
+                timeout=httpx.Timeout(group_timeout, connect=15.0),
                 limits=httpx.Limits(
                     max_keepalive_connections=10,
                     max_connections=30,
@@ -125,6 +146,12 @@ class TencentHunyuanClient:
             await self._client.aclose()
             self._client = None
 
+    async def _set_fallback_mode(self):
+        """线程安全地设置降级模式"""
+        async with self._fallback_lock:
+            self.fallback_mode = True
+            self._fallback_since = time.time()
+
     # ============================================================
     # 三层模型调用接口
     # ============================================================
@@ -135,6 +162,7 @@ class TencentHunyuanClient:
         system_prompt: str = "",
         temperature: Optional[float] = None,
         world_json: Optional[str] = None,
+        model: Optional[str] = None,
     ) -> str:
         """
         角色对话模型 (deepseek-v3 via CodeBuddy)
@@ -146,6 +174,7 @@ class TencentHunyuanClient:
             system_prompt: 系统人设底座
             temperature: 温度参数(默认0.7，agent_config可覆盖)
             world_json: 世界局势JSON（可选，注入system）
+            model: 模型名覆盖（None=使用客户端默认模型）
         """
         messages = self._build_messages(
             system_prompt=system_prompt,
@@ -156,6 +185,7 @@ class TencentHunyuanClient:
             messages=messages,
             temperature=temperature or self.temperature,
             label="chat_role",
+            model=model,
         )
 
     async def chat_strategy(
@@ -164,6 +194,7 @@ class TencentHunyuanClient:
         world_json: str,
         system_prompt: str = "",
         temperature: Optional[float] = None,
+        model: Optional[str] = None,
     ) -> str:
         """
         战略推演模型 (deepseek-v3 via CodeBuddy)
@@ -175,6 +206,7 @@ class TencentHunyuanClient:
             world_json: 完整世界局势JSON（注入system message）
             system_prompt: 额外系统提示
             temperature: 温度参数(默认0.6)
+            model: 模型名覆盖（None=使用客户端默认模型）
         """
         # 战略推演使用超长上下文，world_json注入system
         full_system = world_json
@@ -189,6 +221,7 @@ class TencentHunyuanClient:
             messages=messages,
             temperature=temperature or 0.6,
             label="chat_strategy",
+            model=model,
         )
 
     async def chat_fast(
@@ -196,6 +229,7 @@ class TencentHunyuanClient:
         prompt: str,
         system_prompt: str = "",
         temperature: Optional[float] = None,
+        model: Optional[str] = None,
     ) -> str:
         """
         快速推演模型 (deepseek-v3 via CodeBuddy)
@@ -206,6 +240,7 @@ class TencentHunyuanClient:
             prompt: 快速推演指令
             system_prompt: 系统提示
             temperature: 温度参数(默认0.65)
+            model: 模型名覆盖（None=使用客户端默认模型）
         """
         messages = self._build_messages(
             system_prompt=system_prompt,
@@ -215,6 +250,7 @@ class TencentHunyuanClient:
             messages=messages,
             temperature=temperature or 0.65,
             label="chat_fast",
+            model=model,
         )
 
     async def chat_role_with_tools(
@@ -257,15 +293,50 @@ class TencentHunyuanClient:
         user_prompt: str,
         world_json: Optional[str] = None,
     ) -> list[dict]:
-        """构建messages数组"""
+        """构建messages数组（3.0 增强：注入检测 + 长度限制）"""
+        from .prompt_registry import sanitize_user_input, INJECTION_PATTERNS
+        
         messages = []
-
-        system_content = system_prompt
+        
+        # 安全检测：system prompt 中的注入模式
+        if system_prompt and INJECTION_PATTERNS.search(system_prompt):
+            logger.warning("检测到 system_prompt 中疑似注入模式，已清理")
+            system_prompt = INJECTION_PATTERNS.sub("[已过滤]", system_prompt)
+        
+        # 安全检测：user prompt 净化
+        user_prompt = sanitize_user_input(user_prompt, max_length=4000)
+        
+        # 限制 system prompt 总长度（防止上下文溢出）
+        MAX_SYSTEM_LENGTH = 8000
+        system_content = system_prompt or ""
         if world_json:
+            json_str = world_json if isinstance(world_json, str) else json.dumps(world_json, ensure_ascii=False)
+            if len(json_str) > 6000:
+                logger.warning(f"world_json 过长 ({len(json_str)} 字符)，智能精简中")
+                try:
+                    wd = json.loads(json_str) if isinstance(json_str, str) else world_json
+                    slim = {
+                        "round": wd.get("round", 0),
+                        "factions": {
+                            k: {"name": v.get("name", k), "troops": v.get("troops", 0),
+                                "territory": v.get("territory_count", 0),
+                                "grain": v.get("grain", 0), "gold": v.get("gold", 0),
+                                "stability": v.get("realm_stability", 50)}
+                            for k, v in wd.get("factions", {}).items()
+                        },
+                        "summary": f"(共{len(wd.get('tiles', {}))}个地块细节省略)",
+                    }
+                    json_str = json.dumps(slim, ensure_ascii=False)
+                except Exception:
+                    json_str = json_str[:6000] + "..."
             if system_content:
-                system_content = f"{system_content}\n\n当前天下全局局势沙盘数据:\n{world_json}"
+                system_content = f"{system_content}\n\n当前天下全局局势沙盘数据:\n{json_str}"
             else:
-                system_content = f"当前天下全局局势沙盘数据:\n{world_json}"
+                system_content = f"当前天下全局局势沙盘数据:\n{json_str}"
+        
+        if len(system_content) > MAX_SYSTEM_LENGTH:
+            logger.warning(f"system_content 超长 ({len(system_content)} > {MAX_SYSTEM_LENGTH})，截断")
+            system_content = system_content[:MAX_SYSTEM_LENGTH] + "\n...(截断)"
 
         if system_content:
             messages.append({"role": "system", "content": system_content})
@@ -279,6 +350,7 @@ class TencentHunyuanClient:
         temperature: float,
         label: str = "chat",
         max_retries: int = 2,
+        model: Optional[str] = None,
     ) -> str:
         """
         调用API（优先流式，失败回退非流式）
@@ -295,49 +367,60 @@ class TencentHunyuanClient:
             logger.warning(f"[{label}] API Key未配置，返回空文本")
             return ""
 
-        if self.fallback_mode:
-            # P3: 自动恢复 — 降级超过 N 分钟后尝试重新调用 API
-            if time.time() - self._fallback_since > self._fallback_recovery_interval:
-                logger.info(f"[{label}] 尝试从 fallback_mode 恢复...")
-                self.fallback_mode = False
-                # 不直接 return，继续走正常 API 调用流程
-            else:
-                return self._local_fallback(label)
+        async with self._fallback_lock:
+            if self.fallback_mode:
+                # P3: 自动恢复 — 降级超过 N 分钟后尝试重新调用 API
+                if time.time() - self._fallback_since > self._fallback_recovery_interval:
+                    logger.info(f"[{label}] 尝试从 fallback_mode 恢复...")
+                    self.fallback_mode = False
+                    # 不直接 return，继续走正常 API 调用流程
+                else:
+                    return self._local_fallback(label)
 
         start_ts = time.time()
 
-        # 3.2 修复: v2 API 仅支持流式，优先流式调用（带完整异常防护）
+        # 优先流式调用（带完整异常防护）
+        skip_non_stream = False  # True 表示流式遇到401/403等不可重试错误
         try:
             result, usage = await asyncio.wait_for(
-                self._call_api_stream(messages, temperature, label, max_retries),
-                timeout=API_TIMEOUT + 30,  # 比 HTTP timeout 略长做兜底
+                self._call_api_stream(messages, temperature, label, max_retries, model),
+                timeout=API_TIMEOUT + 30,  # 兜底超时（内层 httpx timeout 更短，先触发）
             )
             if result:
-                self._record_usage(usage, label, time.time() - start_ts)
+                await self._record_usage(usage, label, time.time() - start_ts)
                 return result
+            # result 为 None → 流式失败但可回退；result 为 "" → 401/403 等不可重试
+            # 检查 result 是 None 还是 "" 来决定是否跳过非流式
+            if result is not None:
+                # result 是 ""，说明遇到了 401/403 等认证错误，不回退非流式
+                skip_non_stream = True
+            # 注意: result is None → 流式失败但可回退非流式
+            #       result is "" → 认证错误，不回退（避免重复无效调用）
         except asyncio.TimeoutError:
-            logger.warning(f"[{label}] 流式调用超时（asyncio层面），回退非流式")
+            logger.warning(f"[{label}] 流式调用外层超时，回退非流式")
         except Exception as e:
             logger.warning(f"[{label}] 流式调用异常: {type(e).__name__}: {e}，回退非流式")
 
         # 流式失败，回退非流式（兼容旧版API）
-        try:
-            result, usage = await asyncio.wait_for(
-                self._call_api_non_stream(messages, temperature, label, max_retries),
-                timeout=API_TIMEOUT + 30,
-            )
-            if result is not None:
-                self._record_usage(usage, label, time.time() - start_ts)
-                return result
-        except asyncio.TimeoutError:
-            logger.error(f"[{label}] 非流式调用也超时，降至本地fallback")
+        if not skip_non_stream:
+            try:
+                result, usage = await asyncio.wait_for(
+                    self._call_api_non_stream(messages, temperature, label, max_retries, model),
+                    timeout=API_TIMEOUT + 30,
+                )
+                if result is not None:
+                    await self._record_usage(usage, label, time.time() - start_ts)
+                    return result
+            except asyncio.TimeoutError:
+                logger.error(f"[{label}] 非流式调用也超时，降至本地fallback")
+            except Exception as e:
+                logger.error(f"[{label}] 非流式调用异常: {type(e).__name__}: {e}")
+
+        # 全部失败，降级
+        async with self._fallback_lock:
             self.fallback_mode = True
             self._fallback_since = time.time()
-            return self._local_fallback(label)
-        except Exception as e:
-            logger.error(f"[{label}] 非流式调用异常: {type(e).__name__}: {e}")
-
-        return ""
+        return self._local_fallback(label)
 
     async def _call_api_non_stream(
         self,
@@ -345,25 +428,28 @@ class TencentHunyuanClient:
         temperature: float,
         label: str,
         max_retries: int,
+        model: Optional[str] = None,
     ) -> tuple[Optional[str], TokenUsage]:
         """非流式调用，返回 (文本, TokenUsage)"""
         usage = TokenUsage()
+        effective_model = model or self.model_name
         payload = {
-            "model": self.model_name,
+            "model": effective_model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": self.max_tokens,
             "stream": False,
         }
 
-        async with _concurrency_semaphore:
+        sem = _get_concurrency_semaphore(self.agent_group)
+        async with sem:
             for attempt in range(max_retries + 1):
                 try:
                     client = await self._get_client()
                     url = f"{self.api_base}/chat/completions"
 
                     logger.info(
-                        f"[{label}] 非流式调用 {self.model_name} "
+                        f"[{label}] 非流式调用 {effective_model} "
                         f"(attempt={attempt+1}, t={temperature})"
                     )
 
@@ -385,8 +471,7 @@ class TencentHunyuanClient:
 
                     elif status == 429:
                         logger.warning(f"[{label}] 额度耗尽(429): {response.text[:200]}")
-                        self.fallback_mode = True
-                        self._fallback_since = time.time()
+                        await self._set_fallback_mode()
                         return self._local_fallback(label), usage
 
                     elif status in (401, 403):
@@ -422,25 +507,28 @@ class TencentHunyuanClient:
         temperature: float,
         label: str,
         max_retries: int,
+        model: Optional[str] = None,
     ) -> tuple[str, TokenUsage]:
         """流式调用，返回 (文本, TokenUsage)"""
         usage = TokenUsage()
+        effective_model = model or self.model_name
         payload = {
-            "model": self.model_name,
+            "model": effective_model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": self.max_tokens,
             "stream": True,
         }
 
-        async with _concurrency_semaphore:
+        sem = _get_concurrency_semaphore(self.agent_group)
+        async with sem:
             for attempt in range(max_retries + 1):
                 try:
                     client = await self._get_client()
                     url = f"{self.api_base}/chat/completions"
 
                     logger.info(
-                        f"[{label}] 流式调用 {self.model_name} "
+                        f"[{label}] 流式调用 {effective_model} "
                         f"(attempt={attempt+1}, t={temperature})"
                     )
 
@@ -468,6 +556,16 @@ class TencentHunyuanClient:
                                         continue
                             # 从最后一个chunk提取usage
                             usage = _extract_usage({"usage": last_usage_raw} if last_usage_raw else {})
+                            # 如果流式未返回usage，尝试从响应头估算
+                            if usage.total_tokens == 0:
+                                logger.debug(f"[{label}] 流式未返回usage，使用估算")
+                                prompt_est = sum(len(m.get("content", "")) // 2 for m in messages)
+                                comp_est = len(full_content) // 2
+                                usage = TokenUsage(
+                                    prompt_tokens=prompt_est,
+                                    completion_tokens=comp_est,
+                                    total_tokens=prompt_est + comp_est,
+                                )
                             logger.info(
                                 f"[{label}] 流式成功 (content_len={len(full_content)}, "
                                 f"tokens={usage.total_tokens} "
@@ -478,8 +576,7 @@ class TencentHunyuanClient:
                         elif status == 429:
                             body = await response.aread()
                             logger.warning(f"[{label}] 流式额度耗尽(429): {body.decode()[:200]}")
-                            self.fallback_mode = True
-                            self._fallback_since = time.time()
+                            await self._set_fallback_mode()
                             return self._local_fallback(label), usage
 
                         elif status in (401, 403):
@@ -493,25 +590,26 @@ class TencentHunyuanClient:
                             if attempt < max_retries:
                                 await asyncio.sleep(2 ** attempt)
                                 continue
-                            return "", usage
+                            # 返回 None 而非 ""，让 _call_api 尝试非流式回退
+                            return None, usage
 
                 except httpx.TimeoutException:
                     logger.warning(f"[{label}] 流式超时 (attempt={attempt+1})")
                     if attempt < max_retries:
                         await asyncio.sleep(2 ** attempt)
                         continue
-                    self.fallback_mode = True
-                    self._fallback_since = time.time()
-                    return self._local_fallback(label), usage
+                    # 流式超时 → 设置降级但返回 None，让 _call_api 尝试非流式回退
+                    await self._set_fallback_mode()
+                    return None, usage
 
                 except Exception as e:
                     logger.error(f"[{label}] 流式异常: {type(e).__name__}: {e}")
                     if attempt < max_retries:
                         await asyncio.sleep(2 ** attempt)
                         continue
-                    return "", usage
+                    return None, usage
 
-        return "", usage
+        return None, usage
 
     async def _call_api_with_tools(
         self,
@@ -559,7 +657,8 @@ class TencentHunyuanClient:
             "stream": False,
         }
 
-        async with _concurrency_semaphore:
+        sem = _get_concurrency_semaphore(self.agent_group)
+        async with sem:
             for attempt in range(max_retries + 1):
                 try:
                     client = await self._get_client()
@@ -599,13 +698,12 @@ class TencentHunyuanClient:
                             f"(content_len={len(content)}, tool_calls={len(tool_calls)}, "
                             f"tokens={usage.total_tokens})"
                         )
-                        self._record_usage(usage, "chat_role_with_tools", 0)
+                        await self._record_usage(usage, "chat_role_with_tools", 0)
                         return {"content": self._clean_text(content), "tool_calls": tool_calls}
 
                     elif status == 429:
                         logger.warning(f"[chat_role_with_tools] 非流式额度耗尽(429): {response.text[:200]}")
-                        self.fallback_mode = True
-                        self._fallback_since = time.time()
+                        await self._set_fallback_mode()
                         return {"content": self._local_fallback("tools"), "tool_calls": []}
 
                     elif status in (401, 403):
@@ -653,7 +751,8 @@ class TencentHunyuanClient:
             "stream": True,
         }
 
-        async with _concurrency_semaphore:
+        sem = _get_concurrency_semaphore(self.agent_group)
+        async with sem:
             for attempt in range(max_retries + 1):
                 try:
                     client = await self._get_client()
@@ -722,14 +821,13 @@ class TencentHunyuanClient:
                                 f"(content_len={len(full_content)}, tool_calls={len(tool_calls)}, "
                                 f"tokens={usage.total_tokens})"
                             )
-                            self._record_usage(usage, "chat_role_with_tools", 0)
+                            await self._record_usage(usage, "chat_role_with_tools", 0)
                             return {"content": self._clean_text(full_content), "tool_calls": tool_calls}
 
                         elif status == 429:
                             body = await response.aread()
                             logger.warning(f"[chat_role_with_tools] 流式额度耗尽(429): {body.decode()[:200]}")
-                            self.fallback_mode = True
-                            self._fallback_since = time.time()
+                            await self._set_fallback_mode()
                             return {"content": self._local_fallback("tools"), "tool_calls": []}
 
                         elif status in (401, 403):
@@ -750,8 +848,7 @@ class TencentHunyuanClient:
                     if attempt < max_retries:
                         await asyncio.sleep(2 ** attempt)
                         continue
-                    self.fallback_mode = True
-                    self._fallback_since = time.time()
+                    await self._set_fallback_mode()
                     return {"content": self._local_fallback("tools"), "tool_calls": []}
 
                 except Exception as e:
@@ -767,20 +864,34 @@ class TencentHunyuanClient:
     # Token 消耗追踪
     # ============================================================
 
-    def _record_usage(self, usage: TokenUsage, label: str, latency: float):
-        """记录一次API调用的Token消耗"""
+    async def _record_usage(self, usage: TokenUsage, label: str, latency: float):
+        """记录一次API调用的Token消耗（使用异步锁保护全局计数器）+ 成本追踪"""
         global _global_token_usage, _global_call_count, _last_call_result
         self._token_usage += usage
         self._call_count += 1
         self._total_latency += latency
-        _global_token_usage += usage
-        _global_call_count += 1
+        async with _global_token_lock:
+            _global_token_usage += usage
+            _global_call_count += 1
         _last_call_result = {
             "label": label,
             "tokens": usage.total_tokens,
             "latency": round(latency, 3),
             "ts": time.time(),
         }
+        # 集成成本追踪器
+        try:
+            cost_tracker = get_cost_tracker()
+            cost_tracker.record(
+                agent_group=self.agent_group,
+                model=self.model_name,
+                prompt_tokens=usage.prompt_tokens,
+                completion_tokens=usage.completion_tokens,
+                latency=latency,
+                label=label,
+            )
+        except Exception as e:
+            logger.debug(f"成本追踪写入失败（不影响主流程）: {e}")
         if usage.total_tokens > 0:
             logger.info(
                 f"[TOKEN] {label} 消耗 {usage.total_tokens} tokens "
@@ -824,9 +935,9 @@ class TencentHunyuanClient:
         if not text:
             return ""
 
-        # 现代词汇映射
+        # 现代词汇映射（使用词边界匹配，避免误伤包含这些字母的正常词）
         for modern, ancient in TEXT_CLEAN_MAP.items():
-            text = text.replace(modern, ancient)
+            text = re.sub(r'\b' + re.escape(modern) + r'\b', ancient, text)
 
         # 去除Markdown标记
         text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)   # **粗体**
@@ -843,10 +954,49 @@ class TencentHunyuanClient:
         return text.strip()
 
     def _local_fallback(self, label: str = "") -> str:
-        """本地降级兜底"""
+        """本地降级兜底 — 按 Agent 分组和标签提供更智能的降级文本"""
+        # 按模型分组提供上下文降级
+        if self.agent_group == "advisor":
+            # 角色对话类 — 保持角色沉浸感
+            advisor_fallbacks = {
+                "chat_role": "时局未明，容臣思之。",
+                "advisor": "主公当务之急：稳固根基，静待天时。臣以为，不可冒进，当以守为攻。",
+                "law": "此案证据不足，本官需再行查证，不可草率定谳。",
+                "ruler": "今日暂且休朝。诸卿各司其职，有事明日再议。",
+                "royal": "宗室之事，事关重大。容臣仔细斟酌，再行禀报。",
+                "tools": "暂且按兵不动。",
+            }
+            return advisor_fallbacks.get(label, "时局未明，容臣思之。")
+        
+        elif self.agent_group == "law":
+            # 战略推演类 — 提供有实质内容的分析
+            strategy_fallbacks = {
+                "chat_strategy": (
+                    "主公当务之急有三：其一，稳固根基，广积粮草，精练士卒；"
+                    "其二，静观天下大势，不可贸然出击；"
+                    "其三，加强与盟友之联络，以防不测。"
+                    "天下大势，分久必合，合久必分。此刻当以守为攻，蓄势待发。"
+                ),
+                "diplomacy": "当前外交局势复杂，宜以静制动。保持现有盟约，同时密派使臣探查各方动态。",
+                "history": "史官秉笔直书，此间大事当如实记载，传之后世。",
+                "tools": "暂且观望。",
+            }
+            return strategy_fallbacks.get(label, strategy_fallbacks.get("chat_strategy", "容臣思之。"))
+        
+        elif self.agent_group == "enemy":
+            # 快速推演类 — 简洁明了
+            enemy_fallbacks = {
+                "chat_fast": "无事。",
+                "espionage": "禀主公：暂无紧要军情。各处眼线皆无异动。",
+                "event": "今日无事。",
+                "tools": "暂且按兵不动。",
+            }
+            return enemy_fallbacks.get(label, "无事。")
+        
+        # 通用降级
         fallbacks = {
             "chat_role": "时局未明，容臣思之。",
-            "chat_strategy": "主公当务之急：稳固根基，广积粮草，精练士卒，静待天时。天下大势，分久必合，合久必分。",
+            "chat_strategy": "主公当务之急：稳固根基，广积粮草，精练士卒，静待天时。",
             "chat_fast": "无事。",
             "tools": "暂且按兵不动。",
         }
@@ -890,6 +1040,13 @@ def reset_global_token_usage():
 
 _global_clients: Optional[dict] = None
 _global_lock = asyncio.Lock()
+
+
+def reset_global_clients():
+    """清除全局客户端缓存（热更新后调用，强制从文件重建）"""
+    global _global_clients
+    _global_clients = None
+    logger.info("全局LLM客户端缓存已清除")
 
 
 async def get_global_clients() -> dict:

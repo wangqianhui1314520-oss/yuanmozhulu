@@ -441,16 +441,13 @@ class PeaceNegotiationEngine:
         """设置停战关系（Bug #22修复: 添加战争状态检查）"""
         from server.models.world_state import DiplomaticStance
         # 检查双方是否处于战争状态
-        rel = self.world.relations.get(WorldState.relation_key(faction_a, faction_b))
+        rel = self.world.relations.get(self.world.relation_key(faction_a, faction_b))
         if not rel or rel.stance != DiplomaticStance.WAR:
             logger.debug(f"[Peace] {faction_a} vs {faction_b}: 双方未处于战争状态，跳过停战")
             return
-        key = self.world.relation_key(faction_a, faction_b)
-        rel = self.world.relations.get(key)
-        if rel:
-            rel.stance = DiplomaticStance.TRUCE
-            rel.attitude = 0
-            rel.truce_rounds_remaining = 12  # 停战 12 回合
+        rel.stance = DiplomaticStance.TRUCE
+        rel.attitude = 0
+        rel.treaty_expiry = self.world.current_round + 12  # 3.0: 统一使用 treaty_expiry
 
     def _transfer_tile(self, tile_id: str, proposal: PeaceProposal,
                        attacker: str, defender: str, result: dict):
@@ -496,23 +493,17 @@ class PeaceNegotiationEngine:
                 rel.tribute_amount = 300
 
     def _set_vassal(self, attacker: str, defender: str, is_from_attacker: bool):
-        """建立附庸关系"""
+        """建立附庸关系（3.0: 正确使用 VASSAL stance + 同步 vassal_relations）"""
         key = self.world.relation_key(attacker, defender)
         rel = self.world.relations.get(key)
         if rel:
             from server.models.world_state import DiplomaticStance
-            rel.stance = DiplomaticStance.ALLIANCE if hasattr(DiplomaticStance, 'ALLIANCE') else DiplomaticStance.TRUCE
+            rel.stance = DiplomaticStance.VASSAL
             rel.attitude = -20 if is_from_attacker else 20
-            # 附庸关系
+            # 同步 vassal_relations 字典
             if is_from_attacker:
-                from dataclasses import dataclass as dc
-                @dc
-                class _VS: pass
-                vs = _VS()
-                vs.suzerain = attacker
-                vs.vassal = defender
-                vs.type = "vassal"
-                rel.vassal_suzerain = vs
+                self.world.vassal_relations[defender] = attacker
+                rel.vassal_suzerain = {"suzerain": attacker, "vassal": defender, "type": "vassal"}
 
     def _set_trade(self, faction_a: str, faction_b: str):
         """建立贸易关系"""
@@ -522,14 +513,18 @@ class PeaceNegotiationEngine:
             rel.trade_active = True
 
     def _release_prisoners(self, attacker: str, defender: str) -> list[str]:
-        """释放被俘将领"""
+        """释放被俘将领（修复字段名：held_by/captured_from 替换 captor_faction/original_faction）"""
         released = []
-        if hasattr(self.world, 'prisoners'):
-            for prisoner in list(self.world.prisoners):
-                if (prisoner.captor_faction == attacker and prisoner.original_faction == defender) or \
-                   (prisoner.captor_faction == defender and prisoner.original_faction == attacker):
-                    prisoner.freed = True
+        if hasattr(self.world, 'prisoners') and isinstance(self.world.prisoners, dict):
+            to_release = []
+            for prisoner_id, prisoner in self.world.prisoners.items():
+                if (prisoner.held_by == attacker and prisoner.captured_from == defender) or \
+                   (prisoner.held_by == defender and prisoner.captured_from == attacker):
                     released.append(prisoner.name)
+                    to_release.append(prisoner_id)
+            # 从字典中移除已释放的俘虏
+            for pid in to_release:
+                self.world.prisoners.pop(pid, None)
         return released
 
     def propose_peace(

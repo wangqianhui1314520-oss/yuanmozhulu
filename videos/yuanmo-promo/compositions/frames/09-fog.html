@@ -1,0 +1,53 @@
+<template>
+<div id="root" data-composition-id="09-fog" data-width="1920" data-height="1080">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&display=swap');
+  #root { width: 1920px; height: 1080px; overflow: hidden; position: relative; }
+  .clip { position: absolute; }
+  .bg { inset: 0; background: #0D0D0D; }
+  .grid-bg { position: absolute; inset: 0; opacity: 0.15;
+    background-image: radial-gradient(circle, rgba(218,165,32,0.3) 1px, transparent 1px);
+    background-size: 40px 40px; }
+  .fog { position: absolute; inset: 0; background: rgba(13,13,13,1); }
+  .vision { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 150px; height: 150px; border-radius: 50%;
+    box-shadow: 0 0 0 2000px rgba(13,13,13,0.85); clip-path: circle(50%); }
+  .supply { position: absolute; height: 2px; background: rgba(218,165,32,0.6); opacity: 0; transform-origin: left center; }
+  .big { position: absolute; font-family: 'Noto Serif SC', serif; font-weight: 900;
+    color: #DAA520; font-size: 120px; top: 38%; left: 50%; opacity: 0; text-align: center; width: 800px; }
+  .bar { position: absolute; bottom: 0; left: 0; height: 8px; background: #8B0000; width: 0%; }
+</style>
+<div class="clip bg" data-start="0" data-duration="7" data-track-index="0"></div>
+<div class="grid-bg" id="grid"></div>
+<div class="fog" id="fog"></div>
+<div class="vision" id="vis"></div>
+<div class="supply" id="s1" style="left:120px;top:740px;width:400px;transform:rotate(-25deg)"></div>
+<div class="supply" id="s2" style="left:500px;top:650px;width:300px;transform:rotate(-15deg)"></div>
+<div class="supply" id="s3" style="left:780px;top:580px;width:200px;transform:rotate(-5deg)"></div>
+<div class="big" id="big">整场战争</div>
+<div class="bar" id="bar"></div>
+<script>
+(function(){
+  const t=gsap.timeline({paused:true});
+  t.to("#bar",{width:"20%",duration:1.5},0)
+   .set("#vis",{scale:0.8},0)
+   .to("#fog",{opacity:0.95,duration:0.5},0)
+   .to("#bar",{width:"40%",duration:2},1.5)
+   .to("#vis",{scale:1.6,duration:2,ease:"power3.out"},1.8)
+   .to("#fog",{opacity:0.65,duration:2,ease:"power3.out"},1.8)
+   .to("#bar",{width:"60%",duration:1.5},3.8)
+   .fromTo("#s1",{opacity:0,scaleX:0},{opacity:1,scaleX:1,duration:0.6},4.0)
+   .fromTo("#s2",{opacity:0,scaleX:0},{opacity:1,scaleX:1,duration:0.5},4.3)
+   .fromTo("#s3",{opacity:0,scaleX:0},{opacity:1,scaleX:1,duration:0.4},4.6)
+   .to("#bar",{width:"75%",duration:1},5.2)
+   .to("#fog",{opacity:0.2,duration:1},5.5)
+   .to("#vis",{opacity:0,duration:0.5},5.5)
+   .fromTo("#big",{opacity:0,scale:4,rotation:-5},{opacity:1,scale:1,rotation:-5,duration:0.8,ease:"back.out(1.2)"},5.5)
+   .to("#big",{scale:1.1,duration:0.4,ease:"sine.inOut"},6.3)
+   .to("#bar",{width:"100%",duration:0.3},6.7);
+  window.__timelines=window.__timelines||{};
+  window.__timelines["09-fog"]=t;
+})();
+</script>
+</div>
+</template>

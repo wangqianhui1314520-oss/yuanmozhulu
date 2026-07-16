@@ -1,29 +1,41 @@
 {
-  "version": "2.0",
-  "description": "LLM运行时配置 - CodeBuddy代理调用DeepSeek-V3",
+  "version": "2.2",
+  "description": "LLM运行时配置 - API Key 通过环境变量 TENCENT_API_KEY 或前端玩家设置注入。provider 统一为 hunyuan（底层通过 copilot.tencent.com/v2 代理调用 deepseek-v3）。",
   "max_concurrent": 20,
   "fallback_enabled": true,
   "advisors": {
-    "provider": "deepseek",
-    "model": "deepseek-v3",
+    "provider": "hunyuan",
+    "model": "deepseek-v4-flash",
     "temperature": 0.7,
     "max_tokens": 4096,
-    "comment": "君主/文臣/百姓对话/廷议辩论"
+    "comment": "君主/文臣/百姓对话/廷议辩论",
+    "api_base": "https://copilot.tencent.com/v2",
+    "api_key": "ck_fs9ptujropvk.8vM_FLBOMRGcoXd5f3l0-KcxUYiUf-NOQD0LWrufoiA"
   },
   "laws": {
-    "provider": "deepseek",
-    "model": "deepseek-v3",
+    "provider": "hunyuan",
+    "model": "deepseek-v4-flash",
     "temperature": 0.6,
     "max_tokens": 8192,
-    "comment": "年度战略推演/合纵判定/结局传记"
+    "comment": "年度战略推演/合纵判定/结局传记",
+    "api_base": "https://copilot.tencent.com/v2",
+    "api_key": "ck_fs9ptujropvk.8vM_FLBOMRGcoXd5f3l0-KcxUYiUf-NOQD0LWrufoiA"
   },
   "enemies": {
-    "provider": "deepseek",
-    "model": "deepseek-v3",
+    "provider": "hunyuan",
+    "model": "deepseek-v4-flash",
     "temperature": 0.65,
     "max_tokens": 2048,
-    "comment": "瞬时灾害/战斗结算/贪腐判定/寿命检查/瘟疫传播"
+    "comment": "瞬时灾害/战斗结算/贪腐判定/寿命检查/瘟疫传播",
+    "api_base": "https://copilot.tencent.com/v2",
+    "api_key": "ck_fs9ptujropvk.8vM_FLBOMRGcoXd5f3l0-KcxUYiUf-NOQD0LWrufoiA"
   },
-  "api_key": "ck_fs4cjj6ekv0g.tmkjgnH4yZBFqfGXaZF0wJiITiZ_7RB8-6PHo4hLPRg",
-  "api_base": "https://copilot.tencent.com/v2"
+  "api_base": "https://copilot.tencent.com/v2",
+  "edict": {
+    "api_base": "https://copilot.tencent.com/v2",
+    "model": "deepseek-v4-flash",
+    "temperature": 0.4,
+    "max_tokens": 4096,
+    "api_key": "ck_fs9ptujropvk.8vM_FLBOMRGcoXd5f3l0-KcxUYiUf-NOQD0LWrufoiA"
+  }
 }

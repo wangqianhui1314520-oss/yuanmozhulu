@@ -1,9 +1,9 @@
 /* ============================================================
- * 《元末逐鹿》全局视觉规范 V4.1 — 竹简为骨·墨色为肉·朱批为魂·金铜为印
- * 统一配色 · 三层字体 · 书卷动画 · 三类按钮 · 古风质感
+ * 《元末逐鹿》全局视觉规范 V6.0 — 器物差异化 · 案牍之上 批阅天下
+ * 六类器物风格（圣旨/军报/密函/典籍/奏章/屏风）· 12原则动画 · 完整浅色主题
  * ============================================================ */
 
-/* ===== CSS 变量：V4.1 竹简深色调（默认主模式） ===== */
+/* ===== CSS 变量：V5.0 竹简深色调（默认主模式） ===== */
 :root {
   /* 底色系统 — 竹简深底/木牍肌理 */
   --bg-base: #181410;
@@ -37,6 +37,7 @@
   /* 翠绿 — 正面/增益 */
   --jade: #5b8c5a;
   --jade-dim: #3d6b3c;
+  --jade-hover: #6ca06b;
 
   /* 九大势力色（适配竹简深底） */
   --color-yuan: #b88a2a;
@@ -55,7 +56,16 @@
   --season-autumn: #c8a040;
   --season-winter: #6a7a8a;
 
-  /* 间距/圆角 — 古风小切角 */
+  /* 间距（4px基准刻度） */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+  --spacing-2xl: 32px;
+  --spacing-3xl: 48px;
+
+  /* 圆角 — 古风小切角 */
   --radius-sm: 2px;
   --radius-md: 3px;
   --radius-lg: 4px;
@@ -69,20 +79,72 @@
   --fs-xxl: 28px;
   --fs-title: 36px;
 
-  /* 过渡 */
-  --ease-out: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-in: cubic-bezier(0.4, 0, 1, 1);
-  --duration-fast: 0.15s;
-  --duration-normal: 0.25s;
-  --duration-slow: 0.4s;
+  /* V5.0 动画标度（CSS-Native 12原则驱动） */
+  --ease-squash: cubic-bezier(0.34, 1.56, 0.64, 1);    /* 弹性回弹 */
+  --ease-out: cubic-bezier(0.4, 0, 0.2, 1);              /* 标准缓出 */
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);                 /* 加速入场 */
+  --ease-ink: cubic-bezier(0.22, 0.61, 0.36, 1);         /* 水墨洇开 */
+  --ease-dramatic: cubic-bezier(0.16, 1, 0.3, 1);        /* 叙事级 */
+  --dur-micro: 0.15s;     /* 微交互(100-200ms) */
+  --dur-feedback: 0.3s;   /* 按钮反馈(150-300ms) */
+  --dur-transition: 0.5s; /* 面板过渡(300-500ms) */
+  --dur-narrative: 1s;    /* 叙事动画(500-1000ms) */
 
-  /* V4.1 新增：字体系统 */
-  --font-seal: "STKaiti", "KaiTi", "FZShuTi", "STSong", serif;
-  --font-body: "SimSun", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", serif;
-  --font-annotation: "FangSong", "FangSong_GB2312", serif;
+  /* V5.0 字体系统（V8.0 Web字体增强 + 系统降级） */
+  --font-seal: "Ma Shan Zheng", "STKaiti", "KaiTi", "FZShuTi", "STSong", serif;
+  --font-body: "Noto Serif SC", "SimSun", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", serif;
+  --font-annotation: "ZCOOL XiaoWei", "FangSong", "FangSong_GB2312", serif;
+
+  /* V8.0 五行配色 — 功能模块语义色 */
+  --wuxing-fire: #c43a3a;     /* 火·赤 — 战争/军事 */
+  --wuxing-water: #3a4a6a;    /* 水·玄 — 外交/情报 */
+  --wuxing-wood: #3a5a40;     /* 木·青 — 人事/发展 */
+  --wuxing-earth: #8a7030;    /* 土·黄 — 经济/建设 */
+  --wuxing-metal: #b8963e;    /* 金·白 — 律法/朝政 */
+
+  /* V6.0 器物基调色 — 六类器物各具底色微调 */
+  --artifact-edict-bg: #1e1812;
+  --artifact-edict-border: #6a5530;
+  --artifact-edict-accent: #c8a848;
+  --artifact-dispatch-bg: #1c1712;
+  --artifact-dispatch-border: #4a3a28;
+  --artifact-dispatch-accent: #d45a3a;
+  --artifact-secret-bg: #15141a;
+  --artifact-secret-border: #2a2535;
+  --artifact-secret-accent: #8a6aaa;
+  --artifact-codex-bg: #1a1812;
+  --artifact-codex-border: #3a3020;
+  --artifact-codex-accent: #7a8a60;
+  --artifact-memorial-bg: #161a18;
+  --artifact-memorial-border: #2a3528;
+  --artifact-memorial-accent: #5a7a50;
+  --artifact-personnel-bg: #1e1814;
+  --artifact-personnel-border: #4a3528;
+  --artifact-personnel-accent: #b88050;
+
+  /* V6.0 器物动画时长 */
+  --dur-artifact: 0.6s;
+  --duration-fast: 0.15s;
+
+  /* V7.0 响应式布局变量 — 统一面板尺寸与定位 */
+  --topbar-h: 56px;
+  --bottombar-h: 100px;
+  --toolbar-w: 48px;
+  /* 面板宽度4档 */
+  --panel-sm: 360px;
+  --panel-md: 460px;
+  --panel-lg: 600px;
+  --panel-xl: 720px;
+  /* 面板定位 */
+  --panel-offset-right: calc(var(--toolbar-w) + 12px);
+  --panel-offset-left: calc(var(--toolbar-w) + 12px);
+  --panel-top: var(--topbar-h);
+  /* 地图安全区 */
+  --map-min-w: 400px;
+  --map-min-h: 300px;
 }
 
-/* ===== 浅色阅览模式 ===== */
+/* ===== 浅色阅览模式（V5.0 完整覆盖） ===== */
 .theme-light {
   --bg-base: #f5efe0;
   --bg-parchment: #f5efe0;
@@ -99,7 +161,57 @@
   --text-secondary: #5c4030;
   --text-dim: #8b7355;
   --text-muted: #a89878;
+
+  --gold: #8b6914;
+  --gold-dim: #6a4f10;
+  --gold-dark: #4a3608;
+
+  --danger: #b83232;
+  --danger-hover: #c94040;
+  --danger-dark: #7a1e1e;
+
+  --jade: #4a7a49;
+  --jade-dim: #3a6039;
+  --jade-hover: #5a8a59;
 }
+
+/* 浅色模式按钮覆盖 */
+.theme-light .btn {
+  background: linear-gradient(180deg, #eee5d5 0%, #e8dcc0 100%);
+  border-color: var(--border-main);
+  color: var(--text-main);
+}
+.theme-light .btn:hover {
+  background: linear-gradient(180deg, #e8dcc0 0%, #ddd0b0 100%);
+  border-color: var(--border-strong);
+}
+.theme-light .btn-gold {
+  background: linear-gradient(180deg, var(--gold) 0%, var(--gold-dim) 100%);
+  border-color: var(--gold);
+  color: #f5efe0;
+}
+.theme-light .btn-gold:hover {
+  background: linear-gradient(180deg, #a07e18 0%, var(--gold) 100%);
+}
+.theme-light .btn-danger {
+  background: linear-gradient(180deg, var(--danger) 0%, var(--danger-dark) 100%);
+  color: #f5efe0;
+}
+.theme-light .modal-panel {
+  box-shadow: 0 4px 24px rgba(0,0,0,0.15), inset 0 1px 0 rgba(139,105,20,0.08);
+}
+.theme-light .modal-header {
+  background: linear-gradient(180deg, #eee5d5 0%, #e8dcc0 100%);
+}
+.theme-light .modal-header h3 { color: var(--gold); }
+.theme-light .tab-btn { color: var(--text-dim); }
+.theme-light .tab-btn:hover { color: var(--text-secondary); }
+.theme-light .tab-btn.active { color: var(--gold); }
+.theme-light .tab-btn.active::after { background: var(--gold); }
+.theme-light .card { background: var(--bg-card); border-color: var(--border-light); }
+.theme-light .card:hover { border-color: var(--border-main); }
+.theme-light .notice-banner { background: rgba(139,105,20,0.06); }
+.theme-light .notice-banner.danger { background: rgba(184,50,50,0.06); }
 
 /* ===== 全局重置 ===== */
 *, *::before, *::after {
@@ -121,6 +233,9 @@ html, body {
   color: var(--text-main);
   user-select: none;
   -webkit-user-select: none;
+  /* V8.0 明暗模式平滑过渡 */
+  transition: background 0.6s var(--ease-ink),
+              color 0.6s var(--ease-ink);
 }
 
 #app {
@@ -128,55 +243,16 @@ html, body {
   height: 100%;
 }
 
-/* ===== V4.1 竹简纹理覆盖层 — 纤维+木牍肌理+墨晕暗角 ===== */
+/* ===== V4.1 竹简纹理（已移除 fixed 覆盖层，避免遮盖 Konva 画布） ===== */
 .yuanmo-app {
   width: 100%;
   height: 100%;
   position: relative;
   overflow: hidden;
+  background: var(--bg-base);
 }
 
-.yuanmo-app::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: 99998;
-  pointer-events: none;
-  background:
-    /* 竖纹 — 仿竹简纤维（加粗加密） */
-    repeating-linear-gradient(
-      90deg,
-      transparent,
-      transparent 2px,
-      rgba(184, 150, 62, 0.018) 2px,
-      rgba(184, 150, 62, 0.018) 4px
-    ),
-    /* 横纹 — 仿木牍年轮纹理 */
-    repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 4px,
-      rgba(184, 150, 62, 0.025) 4px,
-      rgba(184, 150, 62, 0.025) 5px
-    ),
-    /* 不规则木纹 — 仿天然木牍裂隙 */
-    repeating-linear-gradient(
-      2deg,
-      transparent,
-      transparent 40px,
-      rgba(139, 112, 64, 0.012) 40px,
-      rgba(139, 112, 64, 0.012) 41px
-    ),
-    /* 墨晕 — 四角轻微暗角 */
-    radial-gradient(
-      ellipse at 50% 50%,
-      transparent 55%,
-      rgba(0, 0, 0, 0.2) 100%
-    );
-  mix-blend-mode: multiply;
-}
-
-/* ===== 滚动条 ===== */
+/* ===== 滚动条（V5.0 跨浏览器支持） ===== */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg-panel); }
 ::-webkit-scrollbar-thumb {
@@ -184,8 +260,13 @@ html, body {
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-main) var(--bg-panel);
+}
 
-/* ===== 三类按钮体系 — V4.1 竹简政令风格 ===== */
+/* ===== 三类按钮体系 — V5.0 战地策论风格 + 12原则动画 ===== */
 
 /* 1. 常规政令按钮 — 木牍深褐底色 */
 .btn {
@@ -200,22 +281,41 @@ html, body {
   font-family: inherit;
   font-size: var(--fs-sm);
   cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
+  transition:
+    transform var(--dur-micro) var(--ease-out),
+    background var(--dur-micro) var(--ease-out),
+    border-color var(--dur-micro) var(--ease-out),
+    box-shadow var(--dur-micro) var(--ease-out);
   border-radius: var(--radius-sm);
   letter-spacing: 1px;
+  position: relative;
+  overflow: hidden;
 }
+/* V5.0 墨韵涟漪（Secondary Action） */
+.btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(184,150,62,0.08) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity var(--dur-feedback) var(--ease-out);
+}
+.btn:hover::after { opacity: 1; }
 .btn:hover {
   background: linear-gradient(180deg, #3d3228 0%, #322b20 100%);
   border-color: var(--border-strong);
 }
+/* V5.0 按压反馈（Squash & Stretch） */
 .btn:active {
-  transform: translateY(1px);
+  transform: scale(0.97);
+  transition: transform 0.08s var(--ease-out);
 }
 .btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
   transform: none;
 }
+.btn:disabled::after { opacity: 0; }
 
 /* 2. 确认/执行/开局按钮 — 鎏金底色 */
 .btn-gold {
@@ -225,13 +325,17 @@ html, body {
   font-weight: bold;
   letter-spacing: 2px;
 }
+.btn-gold::after {
+  background: radial-gradient(circle at center, rgba(255,240,200,0.2) 0%, transparent 70%);
+}
 .btn-gold:hover {
   background: linear-gradient(180deg, #c9a848 0%, var(--gold) 100%);
   border-color: #c9a848;
   box-shadow: 0 2px 16px rgba(184, 150, 62, 0.25);
+  transform: scale(1.03);
 }
 .btn-gold:active {
-  transform: translateY(1px);
+  transform: scale(0.96);
   box-shadow: 0 1px 6px rgba(184, 150, 62, 0.18);
 }
 
@@ -242,14 +346,22 @@ html, body {
   color: #e0d5b8;
   letter-spacing: 2px;
 }
+.btn-danger::after {
+  background: radial-gradient(circle at center, rgba(255,100,100,0.15) 0%, transparent 70%);
+}
 .btn-danger:hover {
   background: linear-gradient(180deg, var(--danger-hover) 0%, var(--danger) 100%);
   border-color: var(--danger-hover);
   box-shadow: 0 2px 16px rgba(196, 58, 58, 0.3);
+  transform: scale(1.03);
 }
 .btn-danger:active {
-  transform: translateY(1px);
+  transform: scale(0.96);
 }
+
+/* V5.0 按钮尺寸变体 */
+.btn-sm { padding: 4px 12px; font-size: var(--fs-xs); letter-spacing: 0; }
+.btn-lg { padding: 12px 28px; font-size: var(--fs-md); letter-spacing: 3px; }
 
 /* 兼容旧 className */
 .btn-primary {
@@ -258,6 +370,11 @@ html, body {
   color: #181410;
   font-weight: bold;
 }
+.btn-primary:hover {
+  background: linear-gradient(180deg, #c9a848 0%, var(--gold) 100%);
+  transform: scale(1.03);
+}
+.btn-primary:active { transform: scale(0.96); }
 
 /* ===== 全局弹窗体系 — V4.1 竹简木牍 ===== */
 .modal-overlay {
@@ -273,7 +390,15 @@ html, body {
 
 .modal-panel {
   position: relative;
-  background: var(--bg-panel);
+  background-color: var(--bg-panel);
+  background-image:
+    /* 竹纤维横丝微纹理 */
+    repeating-linear-gradient(
+      0deg, transparent, transparent 2px,
+      rgba(184,150,62,0.012) 2px, rgba(184,150,62,0.012) 3px
+    ),
+    /* 顶部光晕暗角 */
+    radial-gradient(ellipse at 50% 0%, rgba(184,150,62,0.04) 0%, transparent 60%);
   border: 2px solid var(--border-main);
   border-radius: var(--radius-md);
   box-shadow:
@@ -339,17 +464,20 @@ html, body {
   padding: 16px 20px;
 }
 
-/* ===== 弹窗动画：竹简展开/收拢 ===== */
+/* ===== 弹窗动画：竹简展开/收拢（V5.0 墨韵洇开 + 12原则） ===== */
 @keyframes scrollUnfold {
   0% {
     opacity: 0;
-    transform: scaleY(0.3) scaleX(0.7);
-    transform-origin: top center;
-    filter: blur(4px);
+    transform: scaleY(0.6) scaleX(0.85);
+    filter: blur(6px);
   }
-  60% {
+  50% {
+    opacity: 0.8;
+    filter: blur(2px);
+  }
+  70% {
     opacity: 1;
-    transform: scaleY(1.02) scaleX(1.01);
+    transform: scaleY(1.01) scaleX(1.005);
     filter: blur(0);
   }
   100% {
@@ -363,26 +491,40 @@ html, body {
   0% {
     opacity: 1;
     transform: scaleY(1) scaleX(1);
+    filter: blur(0);
   }
   100% {
     opacity: 0;
-    transform: scaleY(0.3) scaleX(0.7);
-    transform-origin: top center;
+    transform: scaleY(0.5) scaleX(0.8);
     filter: blur(4px);
   }
 }
 
+/* V5.0 新增：宣纸展开（替代版） */
+@keyframes parchmentReveal {
+  0% {
+    opacity: 0;
+    clip-path: inset(0 50% 100% 50%);
+  }
+  100% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
 .modal-enter-active {
-  animation: scrollUnfold 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: scrollUnfold 0.4s var(--ease-squash);
+  transform-origin: top center;
 }
 .modal-leave-active {
-  animation: scrollFold 0.25s ease-in;
+  animation: scrollFold 0.25s var(--ease-in);
+  transform-origin: top center;
 }
 
 /* 遮罩淡入淡出 */
 .modal-overlay-enter-active,
 .modal-overlay-leave-active {
-  transition: opacity 0.3s ease;
+  transition: opacity 0.3s var(--ease-out);
 }
 .modal-overlay-enter-from,
 .modal-overlay-leave-to {
@@ -408,12 +550,14 @@ html, body {
   border-bottom: 2px solid transparent;
   cursor: pointer;
   letter-spacing: 2px;
-  transition: all var(--duration-fast);
+  transition: color var(--dur-feedback) var(--ease-out),
+              border-color var(--dur-feedback) var(--ease-out);
   position: relative;
 }
 
 .tab-btn:hover {
   color: var(--text-secondary);
+  border-bottom-color: var(--border-main);
 }
 
 .tab-btn.active {
@@ -430,6 +574,7 @@ html, body {
   height: 1px;
   background: var(--gold);
   opacity: 0.4;
+  animation: inkBloom 0.5s var(--ease-ink) both;
 }
 
 /* ===== 表单控件 ===== */
@@ -500,16 +645,25 @@ input[type="range"]::-webkit-slider-thumb {
   cursor: pointer;
 }
 
-/* ===== 卡片/条目 ===== */
+/* ===== 卡片/条目（V8.0 木牍肌理 + 悬停微升） ===== */
 .card {
-  background: var(--bg-card);
+  background-color: var(--bg-card);
+  background-image:
+    repeating-linear-gradient(
+      90deg, transparent, transparent 3px,
+      rgba(255,255,255,0.005) 3px, rgba(255,255,255,0.005) 4px
+    );
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
   padding: 14px 16px;
-  transition: border-color var(--duration-fast);
+  transition: border-color var(--duration-fast),
+              transform var(--duration-fast),
+              box-shadow var(--duration-fast);
 }
 .card:hover {
-  border-color: var(--border-main);
+  border-color: var(--gold-dim);
+  box-shadow: 0 2px 16px rgba(184, 150, 62, 0.07);
+  transform: translateY(-1px);
 }
 
 /* ===== 提示工具 ===== */
@@ -528,7 +682,7 @@ input[type="range"]::-webkit-slider-thumb {
   font-family: var(--font-annotation);
 }
 
-/* ===== Toast 提示 ===== */
+/* ===== Toast 提示（V5.0 从顶部滑入+弹性回弹） ===== */
 .toast {
   position: fixed;
   top: 60px;
@@ -544,7 +698,7 @@ input[type="range"]::-webkit-slider-thumb {
   font-size: var(--fs-sm);
   letter-spacing: 2px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.55);
-  animation: toastIn 0.3s var(--ease-out);
+  animation: toastSlideIn 0.35s var(--ease-squash);
 }
 
 .toast-danger {
@@ -552,9 +706,44 @@ input[type="range"]::-webkit-slider-thumb {
   color: var(--danger);
 }
 
-@keyframes toastIn {
-  from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
-  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast-success {
+  border-color: var(--jade);
+  color: var(--jade);
+}
+
+/* V5.0 Toast 弹性滑入（Anticipation + Squash & Stretch + Slow In） */
+@keyframes toastSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px) scale(0.9);
+  }
+  60% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(4px) scale(1.03);
+  }
+  80% {
+    transform: translateX(-50%) translateY(-2px) scale(0.99);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+/* V5.0 Toast 退出动画 */
+@keyframes toastSlideOut {
+  0% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-12px) scale(0.9);
+  }
+}
+
+.toast-leaving {
+  animation: toastSlideOut 0.2s var(--ease-in) forwards;
 }
 
 /* ===== 印章标记 — V4.1 朱批提升饱和度 ===== */
@@ -591,7 +780,7 @@ input[type="range"]::-webkit-slider-thumb {
   color: var(--danger);
 }
 
-/* ===== 古风分割线 ===== */
+/* ===== 古风分割线（V5.0 增强） ===== */
 .divider-ink {
   display: flex;
   align-items: center;
@@ -608,27 +797,922 @@ input[type="range"]::-webkit-slider-thumb {
 .divider-ink .diamond {
   color: var(--gold-dim);
   font-size: 8px;
+  animation: diamondPulse 3s var(--ease-ink) infinite;
 }
 
-/* ===== 动画工具类 ===== */
+@keyframes diamondPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* ===== V8.0 腰牌标签 — 武将品质/状态令牌 ===== */
+.token-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  font-family: var(--font-seal);
+  font-size: var(--fs-xs);
+  letter-spacing: 1px;
+  border: 1px solid var(--border-main);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  position: relative;
+  transition: border-color var(--dur-feedback),
+              box-shadow var(--dur-feedback);
+}
+.token-tag::before {
+  content: '';
+  position: absolute;
+  top: 1px; left: 1px; right: 1px; bottom: 1px;
+  border: 1px solid rgba(184,150,62,0.1);
+  border-radius: 1px;
+  pointer-events: none;
+}
+.token-tag:hover {
+  border-color: var(--gold-dim);
+  box-shadow: 0 1px 6px rgba(184,150,62,0.12);
+}
+.token-tag.gold   { border-color: var(--gold);      color: var(--gold);      background: rgba(184,150,62,0.08); }
+.token-tag.fire   { border-color: var(--wuxing-fire);   color: var(--danger);    background: rgba(196,58,58,0.08); }
+.token-tag.water  { border-color: var(--wuxing-water);  color: #6a8aba;          background: rgba(58,74,106,0.08); }
+.token-tag.wood   { border-color: var(--wuxing-wood);   color: var(--jade);      background: rgba(58,90,64,0.08); }
+.token-tag.earth  { border-color: var(--wuxing-earth);  color: #b8963e;          background: rgba(138,112,48,0.08); }
+.token-tag.metal  { border-color: var(--wuxing-metal);  color: var(--gold);      background: rgba(184,150,62,0.08); }
+
+/* ===== V8.0 墨迹洇开进度条 ===== */
+.progress-ink {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-light);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+.progress-ink .fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold-dim), var(--gold));
+  border-radius: 2px;
+  transition: width var(--dur-transition) var(--ease-ink);
+  position: relative;
+}
+.progress-ink .fill::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 20px;
+  background: linear-gradient(90deg, transparent, rgba(255,240,200,0.15));
+  animation: inkBloom 1.5s var(--ease-ink) infinite;
+}
+
+/* ===== V5.0 动画工具类 ===== */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInScale {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* V5.0 墨韵洇开（Slow In & Slow Out） */
+@keyframes inkBloom {
+  0% { opacity: 0; filter: blur(8px); transform: scale(0.8); }
+  60% { opacity: 0.6; filter: blur(2px); }
+  100% { opacity: 1; filter: blur(0); transform: scale(1); }
+}
+
+/* V5.0 竹简轻摇（Arc微动 + Follow Through） */
+@keyframes scrollSway {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(0.5deg); }
+  75% { transform: rotate(-0.5deg); }
+}
+
+/* V5.0 鎏金脉动（Staging + Exaggeration） */
 @keyframes pulseGold {
   0%, 100% { box-shadow: 0 0 0 0 rgba(184, 150, 62, 0); }
-  50% { box-shadow: 0 0 10px 3px rgba(184, 150, 62, 0.2); }
+  50% { box-shadow: 0 0 16px 4px rgba(184, 150, 62, 0.2); }
 }
 
 @keyframes pulseDanger {
   0%, 100% { box-shadow: 0 0 0 0 rgba(196, 58, 58, 0); }
-  50% { box-shadow: 0 0 8px 3px rgba(196, 58, 58, 0.2); }
+  50% { box-shadow: 0 0 12px 4px rgba(196, 58, 58, 0.25); }
+}
+
+/* V5.0 印章落下（Anticipation + Slow In） */
+@keyframes sealStamp {
+  0% { opacity: 0; transform: rotate(-5deg) scale(2); }
+  30% { opacity: 1; transform: rotate(-5deg) scale(0.9); }
+  50% { transform: rotate(-5deg) scale(1.08); }
+  70% { transform: rotate(-5deg) scale(0.97); }
+  100% { opacity: 1; transform: rotate(-5deg) scale(1); }
+}
+
+/* V5.0 朱批竖线渐显（Staging） */
+@keyframes vermilionStrike {
+  0% { transform: scaleY(0); opacity: 0; }
+  60% { transform: scaleY(1.05); opacity: 0.8; }
+  100% { transform: scaleY(1); opacity: 1; }
+}
+
+/* V5.0 邸报闪烁入场 */
+@keyframes heraldArrive {
+  0% { opacity: 0; transform: translateX(-20px); }
+  50% { opacity: 0.6; }
+  100% { opacity: 1; transform: translateX(0); }
 }
 
 .animate-fade-in { animation: fadeIn 0.3s var(--ease-out); }
-.animate-pulse-gold { animation: pulseGold 2s infinite; }
-.animate-pulse-danger { animation: pulseDanger 2s infinite; }
+.animate-fade-in-up { animation: fadeInUp 0.4s var(--ease-out); }
+.animate-fade-in-scale { animation: fadeInScale 0.35s var(--ease-out); }
+.animate-ink-bloom { animation: inkBloom 0.6s var(--ease-ink); }
+.animate-scroll-sway { animation: scrollSway 4s var(--ease-ink) infinite; }
+.animate-pulse-gold { animation: pulseGold 2s var(--ease-ink) infinite; }
+.animate-pulse-danger { animation: pulseDanger 2s var(--ease-ink) infinite; }
+.animate-seal-stamp { animation: sealStamp 0.5s var(--ease-squash); }
+.animate-vermillion-strike { animation: vermilionStrike 0.4s var(--ease-out); transform-origin: top center; }
+.animate-herald-arrive { animation: heraldArrive 0.4s var(--ease-out); }
+
+/* ============================================================
+ * V6.0 器物差异化系统 — 六类时代器物面板
+ * ============================================================ */
+
+/* ----- 纹理基类：SVG滤镜定义（竹纹/绢帛噪点/木纹） ----- */
+@supports (filter: url(#noise-silk)) {
+  .artifact-texture-silk {
+    filter: url(#noise-silk);
+  }
+}
+
+/* 通用器物面板基类（V8.0 添加竹简底纹） */
+.artifact-panel {
+  position: relative;
+  overflow: hidden;
+  background-image:
+    repeating-linear-gradient(
+      90deg, transparent, transparent 4px,
+      rgba(255,255,255,0.006) 4px, rgba(255,255,255,0.006) 5px
+    );
+  transition: background var(--dur-transition) var(--ease-out),
+              border-color var(--dur-transition) var(--ease-out);
+}
+
+/* 器物标题栏共同样式 */
+.artifact-title {
+  font-family: var(--font-seal);
+  letter-spacing: 4px;
+  padding: 10px 18px;
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  position: relative;
+}
+
+/* ----- 1. 圣旨/诏书 (.artifact-edict) — 绢帛卷轴+玉玺 ----- */
+.artifact-edict {
+  --_bg: var(--artifact-edict-bg);
+  --_border: var(--artifact-edict-border);
+  --_accent: var(--artifact-edict-accent);
+  background:
+    /* 绢帛肌理：细微水平丝纹 */
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(200, 168, 72, 0.015) 2px,
+      rgba(200, 168, 72, 0.015) 3px
+    ),
+    /* 卷轴暗角 */
+    radial-gradient(ellipse at 50% 0%, rgba(200, 168, 72, 0.06) 0%, transparent 70%),
+    var(--_bg);
+  border: 2px solid var(--_border);
+  border-image: linear-gradient(
+    180deg,
+    var(--_accent) 0%,
+    var(--artifact-edict-border) 40%,
+    var(--artifact-edict-border) 60%,
+    var(--_accent) 100%
+  ) 1;
+  box-shadow:
+    0 6px 32px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(200, 168, 72, 0.1);
+}
+
+/* 圣旨顶部云纹装饰 */
+.artifact-edict::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 10%; right: 10%; height: 2px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    var(--_accent) 20%,
+    var(--_accent) 80%,
+    transparent 100%
+  );
+  opacity: 0.5;
+}
+
+.artifact-edict .artifact-title {
+  background: linear-gradient(180deg, rgba(200,168,72,0.12) 0%, transparent 100%);
+  border-bottom-color: var(--artifact-edict-border);
+  color: var(--_accent);
+  text-align: center;
+  font-size: var(--fs-lg);
+}
+
+/* 圣旨展开动画 */
+@keyframes edictUnfurl {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.08) scaleX(0.9);
+    filter: blur(4px);
+  }
+  40% {
+    opacity: 0.7;
+    transform: scaleY(0.6) scaleX(0.95);
+    filter: blur(1px);
+  }
+  70% {
+    opacity: 1;
+    transform: scaleY(1.02) scaleX(1.005);
+    filter: blur(0);
+  }
+  85% {
+    transform: scaleY(0.99) scaleX(1);
+  }
+  100% {
+    opacity: 1;
+    transform: scaleY(1) scaleX(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes edictFurl {
+  0% { opacity: 1; transform: scaleY(1); filter: blur(0); }
+  100% { opacity: 0; transform: scaleY(0.05) scaleX(0.85); filter: blur(4px); }
+}
+
+.artifact-edict.artifact-enter {
+  animation: edictUnfurl var(--dur-artifact) var(--ease-dramatic);
+  transform-origin: top center;
+}
+.artifact-edict.artifact-leave {
+  animation: edictFurl 0.35s var(--ease-in);
+}
+
+/* 圣旨玉玺落印（微交互） */
+@keyframes jadeSealStamp {
+  0% { opacity: 0; transform: rotate(-8deg) scale(1.6); }
+  40% { opacity: 1; transform: rotate(-5deg) scale(0.92); }
+  60% { transform: rotate(-5deg) scale(1.06); }
+  80% { transform: rotate(-5deg) scale(0.97); }
+  100% { opacity: 1; transform: rotate(-5deg) scale(1); }
+}
+.seal-stamp {
+  animation: jadeSealStamp 0.55s var(--ease-squash) both;
+}
+
+/* ----- 2. 军报/羽檄 (.artifact-dispatch) — 竹简+火漆+羽檄 ----- */
+.artifact-dispatch {
+  --_bg: var(--artifact-dispatch-bg);
+  --_border: var(--artifact-dispatch-border);
+  --_accent: var(--artifact-dispatch-accent);
+  background:
+    /* 竹简水平条纹 */
+    repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      rgba(74, 58, 40, 0.15) 1px,
+      transparent 1px,
+      transparent 5px
+    ),
+    var(--_bg);
+  border: 1px solid var(--_border);
+  border-left: 4px solid var(--_accent);
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.4),
+    inset 0 0 30px rgba(212, 90, 58, 0.03);
+}
+
+/* 军报火漆封印（左上角） */
+.artifact-dispatch::before {
+  content: '';
+  position: absolute;
+  top: -6px; left: 14px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%,
+    #d45a3a 0%, #9a3020 60%, #6a1a10 100%
+  );
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5), inset 0 1px 2px rgba(255,200,150,0.3);
+  z-index: 5;
+}
+
+.artifact-dispatch .artifact-title {
+  background: linear-gradient(90deg, rgba(212,90,58,0.1) 0%, transparent 100%);
+  border-bottom-color: rgba(74, 58, 40, 0.6);
+  color: var(--text-main);
+  border-left: 3px solid var(--_accent);
+  padding-left: 14px;
+}
+
+/* 军报疾驰入场（横向） */
+@keyframes dispatchRush {
+  0% {
+    opacity: 0;
+    transform: translateX(-30px) scale(0.95);
+    filter: blur(2px);
+  }
+  30% {
+    opacity: 0.6;
+    filter: blur(1px);
+  }
+  65% {
+    opacity: 1;
+    transform: translateX(4px) scale(1.01);
+    filter: blur(0);
+  }
+  80% {
+    transform: translateX(-2px) scale(0.995);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes dispatchRetreat {
+  0% { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(30px) scale(0.95); filter: blur(2px); }
+}
+
+.artifact-dispatch.artifact-enter {
+  animation: dispatchRush 0.5s var(--ease-squash);
+}
+.artifact-dispatch.artifact-leave {
+  animation: dispatchRetreat 0.3s var(--ease-in);
+}
+
+/* 羽檄急报闪烁（微交互） */
+@keyframes dispatchUrgent {
+  0%, 100% { border-left-color: var(--_accent); }
+  50% { border-left-color: #ff6a4a; }
+}
+.artifact-dispatch.dispatch-urgent {
+  animation: dispatchUrgent 1.5s ease-in-out infinite;
+}
+
+/* ----- 3. 密函/蜡丸 (.artifact-secret) — 蜡封+暗格 ----- */
+.artifact-secret {
+  --_bg: var(--artifact-secret-bg);
+  --_border: var(--artifact-secret-border);
+  --_accent: var(--artifact-secret-accent);
+  background:
+    /* 封蜡暗纹 */
+    radial-gradient(ellipse at 15% 15%, rgba(138, 106, 170, 0.06) 0%, transparent 50%),
+    var(--_bg);
+  border: 1px solid var(--_border);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.6),
+    inset 0 0 40px rgba(0, 0, 0, 0.2);
+}
+
+/* 密函蜡封线 */
+.artifact-secret::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 24px;
+  width: 2px; height: 100%;
+  background: linear-gradient(180deg,
+    rgba(138, 106, 170, 0.4) 0%,
+    rgba(138, 106, 170, 0.1) 50%,
+    rgba(138, 106, 170, 0.4) 100%
+  );
+  opacity: 0.4;
+}
+
+.artifact-secret .artifact-title {
+  background: linear-gradient(90deg, rgba(138,106,170,0.08) 0%, transparent 100%);
+  border-bottom-color: var(--artifact-secret-border);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  letter-spacing: 3px;
+}
+
+/* 蜡封裂开展示 */
+@keyframes sealCrackReveal {
+  0% {
+    opacity: 0;
+    clip-path: circle(0% at 15% 15%);
+    transform: scale(0.9);
+  }
+  30% {
+    opacity: 0.5;
+    clip-path: circle(30% at 15% 15%);
+    transform: scale(0.95);
+  }
+  70% {
+    opacity: 0.9;
+    clip-path: circle(80% at 15% 15%);
+    transform: scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    clip-path: circle(150% at 15% 15%);
+    transform: scale(1);
+  }
+}
+
+@keyframes sealCrackHide {
+  0% { opacity: 1; clip-path: circle(150% at 15% 15%); }
+  100% { opacity: 0; clip-path: circle(0% at 15% 15%); transform: scale(0.9); }
+}
+
+.artifact-secret.artifact-enter {
+  animation: sealCrackReveal 0.55s var(--ease-ink);
+}
+.artifact-secret.artifact-leave {
+  animation: sealCrackHide 0.3s var(--ease-in);
+}
+
+/* 蜡封闪烁（微交互） */
+@keyframes waxGleam {
+  0%, 100% { box-shadow: 0 4px 24px rgba(0,0,0,0.6), inset 0 0 40px rgba(0,0,0,0.2); }
+  50% { box-shadow: 0 4px 28px rgba(138,106,170,0.15), inset 0 0 40px rgba(0,0,0,0.2); }
+}
+.artifact-secret.seal-active {
+  animation: waxGleam 3s var(--ease-ink) infinite;
+}
+
+/* ----- 4. 典籍/版刻 (.artifact-codex) — 线装书+木版印刷 ----- */
+.artifact-codex {
+  --_bg: var(--artifact-codex-bg);
+  --_border: var(--artifact-codex-border);
+  --_accent: var(--artifact-codex-accent);
+  background:
+    /* 书页纸纤维 */
+    repeating-linear-gradient(
+      90deg,
+      transparent 0px,
+      rgba(122, 138, 96, 0.02) 1px,
+      transparent 1px,
+      transparent 8px
+    ),
+    var(--_bg);
+  border: 1px solid var(--_border);
+  border-right: 3px solid var(--_border);
+  box-shadow:
+    3px 4px 16px rgba(0, 0, 0, 0.45),
+    inset -2px 0 8px rgba(0, 0, 0, 0.15);
+}
+
+/* 线装书针脚（右侧） */
+.artifact-codex::after {
+  content: '';
+  position: absolute;
+  right: -2px; top: 15%; bottom: 15%;
+  width: 4px;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px,
+    transparent 20px,
+    rgba(122, 138, 96, 0.4) 20px,
+    rgba(122, 138, 96, 0.4) 22px,
+    transparent 22px,
+    transparent 40px
+  );
+}
+
+.artifact-codex .artifact-title {
+  background: linear-gradient(90deg, rgba(122,138,96,0.08) 0%, transparent 100%);
+  border-bottom-color: var(--artifact-codex-border);
+  color: var(--_accent);
+  letter-spacing: 3px;
+  font-size: var(--fs-md);
+}
+
+/* 翻页动画 */
+@keyframes pageTurn {
+  0% {
+    opacity: 0;
+    transform: perspective(800px) rotateY(-15deg);
+    filter: brightness(0.6);
+  }
+  50% {
+    opacity: 0.8;
+    transform: perspective(800px) rotateY(-3deg);
+    filter: brightness(0.9);
+  }
+  75% {
+    opacity: 1;
+    transform: perspective(800px) rotateY(1deg);
+    filter: brightness(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: perspective(800px) rotateY(0deg);
+    filter: brightness(1);
+  }
+}
+
+@keyframes pageTurnBack {
+  0% { opacity: 1; transform: perspective(800px) rotateY(0deg); }
+  100% { opacity: 0; transform: perspective(800px) rotateY(15deg); filter: brightness(0.5); }
+}
+
+.artifact-codex.artifact-enter {
+  animation: pageTurn 0.55s var(--ease-dramatic);
+  transform-origin: left center;
+}
+.artifact-codex.artifact-leave {
+  animation: pageTurnBack 0.3s var(--ease-in);
+}
+
+/* 书页眉批标记（微交互） */
+@keyframes marginaliaAppear {
+  0% { opacity: 0; transform: translateY(4px); }
+  100% { opacity: 0.7; transform: translateY(0); }
+}
+.marginalia-note {
+  animation: marginaliaAppear 0.4s var(--ease-out) both;
+}
+
+/* ----- 5. 奏章/案牍 (.artifact-memorial) — 官牍+朱批+算盘格 ----- */
+.artifact-memorial {
+  --_bg: var(--artifact-memorial-bg);
+  --_border: var(--artifact-memorial-border);
+  --_accent: var(--artifact-memorial-accent);
+  background:
+    /* 官牍横格线 */
+    repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      transparent 23px,
+      rgba(42, 53, 40, 0.2) 23px,
+      rgba(42, 53, 40, 0.2) 24px
+    ),
+    var(--_bg);
+  border: 1px solid var(--_border);
+  border-top: 3px solid var(--_border);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+}
+
+.artifact-memorial .artifact-title {
+  background: linear-gradient(180deg, rgba(90,122,80,0.08) 0%, transparent 100%);
+  border-bottom: 1px solid var(--artifact-memorial-border);
+  color: var(--text-main);
+  font-size: var(--fs-md);
+  text-align: left;
+  letter-spacing: 2px;
+}
+
+/* 奏章展开 */
+@keyframes memorialUnfold {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+    filter: blur(3px);
+  }
+  40% {
+    opacity: 0.6;
+    transform: scale(0.98);
+    filter: blur(1px);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.01);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes memorialFold {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.9); filter: blur(2px); }
+}
+
+.artifact-memorial.artifact-enter {
+  animation: memorialUnfold 0.45s var(--ease-ink);
+}
+.artifact-memorial.artifact-leave {
+  animation: memorialFold 0.28s var(--ease-in);
+}
+
+/* 朱笔圈画（微交互） */
+@keyframes redInkCircle {
+  0% {
+    box-shadow: 0 0 0 0 rgba(196, 58, 58, 0);
+    border-color: transparent;
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(196, 58, 58, 0.25);
+    border-color: var(--danger);
+  }
+  100% {
+    box-shadow: 0 0 0 1px rgba(196, 58, 58, 0.12);
+    border-color: rgba(196, 58, 58, 0.4);
+  }
+}
+.ink-approve {
+  animation: redInkCircle 0.5s var(--ease-out) both;
+  border-style: solid;
+  border-width: 1px;
+}
+
+/* ----- 6. 屏风/人物 (.artifact-personnel) — 木框屏风+茶盏香炉 ----- */
+.artifact-personnel {
+  --_bg: var(--artifact-personnel-bg);
+  --_border: var(--artifact-personnel-border);
+  --_accent: var(--artifact-personnel-accent);
+  background:
+    /* 木纹肌理 */
+    repeating-linear-gradient(
+      85deg,
+      transparent 0px,
+      rgba(184, 128, 80, 0.04) 2px,
+      transparent 2px,
+      transparent 6px
+    ),
+    /* 暖光 */
+    radial-gradient(ellipse at 70% 30%, rgba(184, 128, 80, 0.08) 0%, transparent 60%),
+    var(--_bg);
+  border: 2px solid var(--_border);
+  border-radius: var(--radius-md);
+  box-shadow:
+    0 6px 28px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(184, 128, 80, 0.08);
+}
+
+/* 屏风铜角装饰 */
+.artifact-personnel::before {
+  content: '';
+  position: absolute;
+  top: 4px; right: 4px;
+  width: 10px; height: 10px;
+  border-top: 2px solid rgba(184, 128, 80, 0.4);
+  border-right: 2px solid rgba(184, 128, 80, 0.4);
+  opacity: 0.6;
+}
+.artifact-personnel::after {
+  content: '';
+  position: absolute;
+  bottom: 4px; left: 4px;
+  width: 10px; height: 10px;
+  border-bottom: 2px solid rgba(184, 128, 80, 0.4);
+  border-left: 2px solid rgba(184, 128, 80, 0.4);
+  opacity: 0.6;
+}
+
+.artifact-personnel .artifact-title {
+  background: linear-gradient(90deg, rgba(184,128,80,0.1) 0%, transparent 100%);
+  border-bottom-color: rgba(74, 53, 40, 0.5);
+  color: var(--_accent);
+  letter-spacing: 3px;
+}
+
+/* 屏风推移 */
+@keyframes screenSlide {
+  0% {
+    opacity: 0;
+    transform: translateX(40px);
+    filter: blur(3px);
+  }
+  60% {
+    opacity: 0.9;
+    transform: translateX(-4px);
+    filter: blur(0);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes screenSlideBack {
+  0% { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(-40px); filter: blur(2px); }
+}
+
+.artifact-personnel.artifact-enter {
+  animation: screenSlide 0.55s var(--ease-squash);
+}
+.artifact-personnel.artifact-leave {
+  animation: screenSlideBack 0.3s var(--ease-in);
+}
+
+/* 茶烟袅袅（微交互） */
+@keyframes teaSteam {
+  0%, 100% { opacity: 0.15; transform: translateY(0) scaleX(1); }
+  50% { opacity: 0.35; transform: translateY(-4px) scaleX(1.3); }
+}
+.tea-warmth {
+  animation: teaSteam 3s var(--ease-ink) infinite;
+}
+
+/* ============================================================
+ * V6.0 Game-Feel 器物化微交互
+ * ============================================================ */
+
+/* 火漆滴落（确认操作反馈） */
+@keyframes waxDrip {
+  0% { transform: scaleY(0); opacity: 1; }
+  30% { transform: scaleY(0.3); }
+  60% { transform: scaleY(1.08); opacity: 1; }
+  80% { transform: scaleY(0.95); }
+  100% { transform: scaleY(1); opacity: 1; }
+}
+.wax-seal-confirm {
+  border-color: var(--danger) !important;
+  animation: waxDrip 0.5s var(--ease-squash);
+  transition: border-color 0.2s;
+}
+
+/* 墨锭研磨（加载状态隐喻） */
+@keyframes inkGrind {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.ink-grinding {
+  position: relative;
+}
+.ink-grinding::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 2px solid transparent;
+  border-top-color: var(--gold-dim);
+  border-radius: 50%;
+  animation: inkGrind 1.5s linear infinite;
+}
+
+/* 算盘珠响（数值变化反馈） */
+@keyframes abacusClick {
+  0%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-3px); }
+  60% { transform: translateY(1px); }
+}
+.abacus-change {
+  animation: abacusClick 0.3s var(--ease-out);
+}
+
+/* 邸报飞入（事件通知） */
+@keyframes heraldFlyIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-40px) rotate(-3deg);
+    filter: blur(2px);
+  }
+  40% {
+    opacity: 0.8;
+    transform: translateX(6px) rotate(0.5deg);
+    filter: blur(0);
+  }
+  70% {
+    transform: translateX(-3px) rotate(-0.3deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) rotate(0deg);
+    filter: blur(0);
+  }
+}
+.herald-fly-in {
+  animation: heraldFlyIn 0.55s var(--ease-squash);
+}
+
+/* 烛光摇曳（面板氛围光） */
+@keyframes candleFlicker {
+  0%, 100% { opacity: 0.03; }
+  25% { opacity: 0.06; }
+  50% { opacity: 0.02; }
+  75% { opacity: 0.07; }
+}
+.candle-glow {
+  position: relative;
+}
+.candle-glow::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: radial-gradient(ellipse at 60% 20%, rgba(184, 150, 62, 0.08), transparent 70%);
+  animation: candleFlicker 4s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 墨渍洇开（hover效果） */
+@keyframes inkBleed {
+  0% { box-shadow: 0 0 0 0 rgba(184, 150, 62, 0); }
+  100% { box-shadow: 0 0 12px 3px rgba(184, 150, 62, 0.15); }
+}
+.ink-bleed-hover {
+  transition: box-shadow var(--dur-feedback) var(--ease-ink);
+}
+.ink-bleed-hover:hover {
+  animation: inkBleed 0.4s var(--ease-ink) both;
+}
+
+/* V3.1 全局页面过渡 — 路由切换时淡入+上移 */
+.page-enter-active {
+  animation: pageReveal 0.4s var(--ease-ink);
+}
+@keyframes pageReveal {
+  0% { opacity: 0; transform: translateY(12px); filter: blur(4px); }
+  100% { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+/* V3.1 列表项交错淡入 — 配合 animation-delay 使用 */
+@keyframes listItemReveal {
+  0% { opacity: 0; transform: translateX(-10px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+.stagger-item {
+  opacity: 0;
+  animation: listItemReveal 0.35s var(--ease-out) forwards;
+}
+
+/* V3.1 数值变化弹跳（用于资源数字变更） */
+@keyframes numberPop {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.2); color: var(--gold); }
+  100% { transform: scale(1); }
+}
+.number-changed {
+  animation: numberPop 0.4s var(--ease-squash);
+}
+
+/* ===== V6.0 器物面板在浅色主题下的适配 ===== */
+.theme-light .artifact-edict {
+  background:
+    repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(139,105,20,0.03) 2px, rgba(139,105,20,0.03) 3px),
+    radial-gradient(ellipse at 50% 0%, rgba(139,105,20,0.06) 0%, transparent 70%),
+    #f8f0e0;
+  border-color: #a08030;
+}
+.theme-light .artifact-dispatch {
+  background:
+    repeating-linear-gradient(0deg, transparent 0px, rgba(180,140,100,0.1) 1px, transparent 1px, transparent 5px),
+    #f5ece0;
+  border-color: #b8a080;
+}
+.theme-light .artifact-secret {
+  background:
+    radial-gradient(ellipse at 15% 15%, rgba(120,100,140,0.04) 0%, transparent 50%),
+    #f0e8e8;
+  border-color: #c0b8c8;
+}
+.theme-light .artifact-codex {
+  background:
+    repeating-linear-gradient(90deg, transparent 0px, rgba(100,120,80,0.03) 1px, transparent 1px, transparent 8px),
+    #f8f0e0;
+  border-color: #b8b090;
+}
+.theme-light .artifact-memorial {
+  background:
+    repeating-linear-gradient(0deg, transparent 0px, transparent 23px, rgba(160,170,150,0.12) 23px, rgba(160,170,150,0.12) 24px),
+    #f2f0e8;
+  border-color: #c0c8b8;
+}
+.theme-light .artifact-personnel {
+  background:
+    repeating-linear-gradient(85deg, transparent 0px, rgba(180,140,100,0.05) 2px, transparent 2px, transparent 6px),
+    radial-gradient(ellipse at 70% 30%, rgba(180,140,100,0.06) 0%, transparent 60%),
+    #f8f0e5;
+  border-color: #c0a080;
+}
+
+/* V5.0 失焦模糊（Staging — 强调前景） */
+.blur-bg {
+  filter: blur(3px);
+  transition: filter var(--dur-transition) var(--ease-out);
+}
+
+/* V5.0 图片加载渐显（Slow In） */
+img {
+  opacity: 1;
+  transition: opacity 0.4s var(--ease-out);
+}
+img[src=""], img:not([src]) {
+  opacity: 0;
+}
 
 /* ===== 通用状态文字 ===== */
 .text-gold { color: var(--gold); }
@@ -637,20 +1721,115 @@ input[type="range"]::-webkit-slider-thumb {
 .text-dim { color: var(--text-dim); }
 .text-muted { color: var(--text-muted); }
 
-/* ===== 响应式适配 ===== */
+/* ===== V8.0 中国画留白节奏 ===== */
+.panel-dense  { --_gap: 8px; }
+.panel-normal { --_gap: 16px; }
+.panel-browse { --_gap: 28px; }
+
+/* ===== V8.0 算筹数字 — 关键数值装饰线 ===== */
+.counter-rod {
+  display: inline-block;
+  position: relative;
+  font-family: var(--font-seal);
+  font-size: var(--fs-xl);
+  color: var(--gold);
+  letter-spacing: 2px;
+  padding: 0 4px;
+}
+.counter-rod::after {
+  content: '';
+  position: absolute;
+  bottom: -2px; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold-dim), transparent);
+}
+
+/* ===== V7.0 响应式适配 — 4级断点体系 ===== */
+/* 断点1: ≤1280px — 紧凑桌面 */
 @media (max-width: 1280px) {
-  .modal-panel { max-width: 95vw; }
   :root {
+    --topbar-h: 48px;
+    --bottombar-h: 88px;
+    --toolbar-w: 42px;
+    --panel-sm: 340px;
+    --panel-md: 90vw;
+    --panel-lg: 90vw;
+    --panel-xl: 92vw;
     --fs-md: 14px;
     --fs-lg: 16px;
   }
+  .modal-panel { max-width: 95vw; }
 }
 
+/* 断点2: ≤1024px — 小平板 */
 @media (max-width: 1024px) {
-  html, body { min-width: 800px; }
+  :root {
+    --topbar-h: 44px;
+    --bottombar-h: 80px;
+    --toolbar-w: 36px;
+    --panel-sm: 92vw;
+    --panel-md: 92vw;
+    --panel-lg: 94vw;
+    --panel-xl: 95vw;
+    --fs-sm: 11px;
+    --fs-md: 13px;
+    --fs-lg: 15px;
+    --fs-xl: 18px;
+    --fs-xxl: 22px;
+    --fs-title: 28px;
+  }
+  html, body { min-width: 768px; }
+  .game-container { min-width: 768px; }
 }
 
+/* 断点3: ≤768px — 竖屏/小屏 */
+@media (max-width: 768px) {
+  :root {
+    --topbar-h: 40px;
+    --bottombar-h: 72px;
+    --toolbar-w: 32px;
+    --panel-sm: 95vw;
+    --panel-md: 95vw;
+    --panel-lg: 95vw;
+    --panel-xl: 95vw;
+    --fs-xs: 10px;
+    --fs-sm: 11px;
+    --fs-md: 12px;
+    --fs-lg: 14px;
+    --fs-xl: 16px;
+    --fs-xxl: 20px;
+    --fs-title: 24px;
+  }
+  .float-panel { max-width: 95vw; }
+}
+
+/* 断点4: ≤480px — 手机 */
+@media (max-width: 480px) {
+  :root {
+    --topbar-h: 36px;
+    --bottombar-h: 64px;
+    --toolbar-w: 28px;
+  }
+  html, body { min-width: 320px; }
+  .game-container { min-width: 320px; overflow-x: auto; }
+}
+
+/* 高度适配：小高度屏 */
 @media (max-height: 700px) {
+  :root {
+    --bottombar-h: 72px;
+  }
   .modal-panel { max-height: 90vh; }
   .modal-body { padding: 10px 14px; }
+}
+
+/* ===== 玩家画面设置全局支持 ===== */
+/* 关闭动画效果（SettingsPanel animationsOn=false） */
+.no-anim *,
+.no-anim *::before,
+.no-anim *::after {
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
 }

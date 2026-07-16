@@ -322,12 +322,15 @@ class WarOrchestrator:
         relations = self.world.relations or {}
         atk_rel_key = self.world.relation_key(fid, attacker_id)
         dff_rel_key = self.world.relation_key(fid, defender_id)
-        atk_rel = relations.get(atk_rel_key, {})
-        dff_rel = relations.get(dff_rel_key, {})
+        atk_rel = relations.get(atk_rel_key)
+        dff_rel = relations.get(dff_rel_key)
 
-        if atk_rel.get("stance") == "war":
+        atk_stance = atk_rel.stance.value if (atk_rel and hasattr(atk_rel, 'stance') and hasattr(atk_rel.stance, 'value')) else None
+        dff_stance = dff_rel.stance.value if (dff_rel and hasattr(dff_rel, 'stance') and hasattr(dff_rel.stance, 'value')) else None
+
+        if atk_stance == "war":
             stance_score -= 50  # 与攻方已交战，自然支持守方
-        if dff_rel.get("stance") == "war":
+        if dff_stance == "war":
             stance_score += 50  # 与守方已交战，自然支持攻方
 
         # 地缘利益：接壤越多越容易趁火打劫
@@ -364,17 +367,17 @@ class WarOrchestrator:
                     elif target == "defender" and rel_dff not in ("alliance", "vassal"):
                         stance_score += 60
 
-        # 确定最终行动
+        # 确定最终行动（从极端到中庸排序，避免条件覆盖）
         if stance_score >= 30:
             action = "support_attacker"
             narrative = f"{faction.name}决定支援{attacker.name if attacker else attacker_id}！"
+        elif stance_score <= -60:
+            action = "backstab"
+            target = attacker_id if random.random() < 0.5 else defender_id
+            narrative = f"{faction.name}趁乱偷袭！"
         elif stance_score <= -30:
             action = "support_defender"
             narrative = f"{faction.name}决定支援{defender.name if defender else defender_id}！"
-        elif stance_score <= -60:
-            action = "backstab"
-            target = attacker_id if stance_score < -50 else defender_id
-            narrative = f"{faction.name}趁乱偷袭！"
         else:
             action = "neutral"
             narrative = f"{faction.name}坐山观虎斗，按兵不动。"
@@ -393,8 +396,16 @@ class WarOrchestrator:
         """获取两方关系类型"""
         relations = self.world.relations or {}
         key = self.world.relation_key(fid_a, fid_b)
-        rel = relations.get(key, {})
-        return rel.get("stance", "neutral")
+        rel = relations.get(key)
+        if rel is None:
+            return "neutral"
+        # RelationState 是 Pydantic BaseModel，不是 dict
+        if hasattr(rel, 'stance'):
+            stance = rel.stance
+            if hasattr(stance, 'value'):
+                return stance.value
+            return str(stance)
+        return "neutral"
 
     def _count_shared_border(self, fid_a: str, fid_b: str) -> int:
         """计算两方接壤地块数"""
@@ -409,18 +420,18 @@ class WarOrchestrator:
         return count
 
     def _get_neighbor_ids(self, tile_id: str) -> list:
-        """获取地块的邻居ID列表"""
+        """获取地块的邻居ID列表（v3.0: O(1)坐标索引替代O(n)遍历）"""
         tile = self.world.get_tile(tile_id)
         if not tile:
             return []
-        col, row = tile.col, tile.row
+        q, r = tile.q, tile.r
+        # 坐标→ID 索引（一次性构建，避免每六方向重复遍历 tiles）
+        coord_map = {(t.q, t.r): tid for tid, t in self.world.tiles.items()}
         neighbors = []
-        for dc, dr in [(+1, 0), (+1, -1), (0, -1), (-1, 0), (-1, +1), (0, +1)]:
-            nc, nr = col + dc, row + dr
-            for tid, t in self.world.tiles.items():
-                if t.col == nc and t.row == nr:
-                    neighbors.append(tid)
-                    break
+        for dq, dr in [(+1, 0), (+1, -1), (0, -1), (-1, 0), (-1, +1), (0, +1)]:
+            nid = coord_map.get((q + dq, r + dr))
+            if nid:
+                neighbors.append(nid)
         return neighbors
 
     def _log_diplomacy_stances(self, ctx: WarfareContext, result: dict):
@@ -620,7 +631,7 @@ class WarOrchestrator:
             t = world.get_tile(tid)
             if not t:
                 continue
-            dist = abs(source_tile.col - t.col) + abs(source_tile.row - t.row)
+            dist = abs(source_tile.q - t.q) + abs(source_tile.r - t.r)
             if dist < best_dist:
                 best_dist = dist
                 best = t
@@ -867,8 +878,8 @@ class WarOrchestrator:
                     ]
                     if safe_tiles:
                         safe = min(safe_tiles,
-                                   key=lambda t: abs(t.col - routed_tile.col) +
-                                                 abs(t.row - routed_tile.row))
+                                   key=lambda t: abs(t.q - routed_tile.q) +
+                                                 abs(t.r - routed_tile.r))
                         safe.troops += settlement["survivors"]
 
         return settlements
@@ -879,14 +890,16 @@ class WarOrchestrator:
         # 地形加成
         terrain_atk = {
             "mountain": 0.7, "pass": 0.6, "city": 0.8,
-            "water": 0.5, "desert": 0.8, "grassland": 1.1,
+            "water": 0.5, "sea": 0.4, "ocean": 0.3,
+            "desert": 0.8, "grassland": 1.1, "jungle": 0.75,
             "farmland": 1.0, "coast": 1.0, "port": 0.9,
         }.get(dff_tile.tile_type.value if hasattr(dff_tile.tile_type, 'value')
               else str(dff_tile.tile_type), 1.0)
 
         terrain_dff = {
             "mountain": 1.4, "pass": 1.6, "city": 1.5,
-            "water": 1.2, "desert": 1.1, "grassland": 0.9,
+            "water": 1.2, "sea": 1.3, "ocean": 1.2,
+            "desert": 1.1, "grassland": 0.9, "jungle": 1.3,
             "farmland": 0.9, "coast": 1.0, "port": 1.1,
         }.get(dff_tile.tile_type.value if hasattr(dff_tile.tile_type, 'value')
               else str(dff_tile.tile_type), 1.0)
@@ -956,6 +969,33 @@ class WarOrchestrator:
             result["old_faction"] = old_faction
             ctx.territory_changes.append(result)
 
+            # v3.0: 记录领土变更到 world.tile_changes（修复 WarOrchestrator 路径遗漏）
+            old_f_name = ""
+            if old_faction:
+                old_f = self.world.get_faction(old_faction)
+                old_f_name = old_f.name if old_f else old_faction
+            new_f_name = atk.name if atk else ctx.attacker_faction
+            change_narrative = (
+                f"【攻占】{new_f_name}从{old_f_name}手中夺取了{dff_tile.tile_name}！"
+                if old_f_name and new_f_name
+                else f"攻占了{dff_tile.tile_name}"
+            )
+            self.world.tile_changes.append({
+                "change_id": f"tc_{self.world.current_round}_{dff_tile.tile_id}_{random.randint(1000,9999)}",
+                "round": self.world.current_round,
+                "tile_id": dff_tile.tile_id,
+                "tile_name": dff_tile.tile_name,
+                "region": getattr(dff_tile, 'region', ''),
+                "old_faction_id": old_faction or "",
+                "new_faction_id": ctx.attacker_faction,
+                "old_faction_name": old_f_name,
+                "new_faction_name": new_f_name,
+                "change_type": "conquer",
+                "troops_involved": dff_tile.troops,
+                "battle_result": "victory",
+                "narrative": change_narrative,
+            })
+
             # 声望变化
             if atk:
                 atk.reputation = min(100, atk.reputation + 1)
@@ -1017,13 +1057,14 @@ class WarOrchestrator:
 
         # 遍历radius范围内的地块
         for tid, tile in self.world.tiles.items():
-            dist = max(abs(tile.col - center.col), abs(tile.row - center.row))
+            dist = max(abs(tile.q - center.q), abs(tile.r - center.r))
             if dist <= radius:
-                # 使用 fog_of_war 的视野机制
+                # 使用 fog_of_war 的视野机制（3.0: list 替代 set 保证 JSON 可序列化）
                 if not hasattr(tile, 'explored_by'):
-                    tile.explored_by = set()
-                if hasattr(tile, 'explored_by') and isinstance(tile.explored_by, set):
-                    tile.explored_by.add(faction_id)
+                    tile.explored_by = []
+                if hasattr(tile, 'explored_by') and isinstance(tile.explored_by, list):
+                    if faction_id not in tile.explored_by:
+                        tile.explored_by.append(faction_id)
 
     # ================================================================
     # ⑦ 谋略AI - 离间/刺杀/流言等计策
@@ -1305,3 +1346,90 @@ class WarOrchestrator:
         """结束一场征伐"""
         ctx.stage = WarfareStage.AFTERMATH
         logger.info(f"[征伐编排] 战争结束: {ctx.war_id}, outcome={outcome}")
+
+    # ================================================================
+    # 3.0: 存档序列化 — 活跃战争持久化
+    # ================================================================
+
+    def serialize_active_wars(self) -> list[dict]:
+        """将活跃战争序列化为可 JSON 存储的 dict 列表"""
+        result = []
+        for war_id, ctx in self._active_wars.items():
+            try:
+                # 跳过不可序列化的 _war_score_tracker（懒加载重建）
+                ctx_dict = {
+                    "war_id": ctx.war_id,
+                    "attacker_faction": ctx.attacker_faction,
+                    "defender_faction": ctx.defender_faction,
+                    "declared_round": ctx.declared_round,
+                    "stage": ctx.stage.value,
+                    "casus_belli": ctx.casus_belli,
+                    "casus_belli_name": ctx.casus_belli_name,
+                    "war_goal_tiles": list(ctx.war_goal_tiles) if isinstance(ctx.war_goal_tiles, set) else ctx.war_goal_tiles,
+                    "can_seize_territory": ctx.can_seize_territory,
+                    "can_demand_tribute": ctx.can_demand_tribute,
+                    "can_enforce_vassal": ctx.can_enforce_vassal,
+                    "war_score_multiplier": ctx.war_score_multiplier,
+                    "diplomacy_result": ctx.diplomacy_result,
+                    "military_counter": ctx.military_counter,
+                    "civil_adjustments": ctx.civil_adjustments,
+                    "rebellion_risks": ctx.rebellion_risks,
+                    "battle_settlements": ctx.battle_settlements,
+                    "territory_changes": ctx.territory_changes,
+                    "stratagem_actions": ctx.stratagem_actions,
+                    "attacker_allies": ctx.attacker_allies,
+                    "defender_allies": ctx.defender_allies,
+                    "backstabbers": ctx.backstabbers,
+                    "neutrals": ctx.neutrals,
+                }
+                result.append(ctx_dict)
+            except Exception as e:
+                logger.warning(f"[存档] 序列化战争 {war_id} 失败: {e}")
+        return result
+
+    def deserialize_active_wars(self, data: list[dict]):
+        """从存档恢复活跃战争列表"""
+        if not data:
+            return
+        self._active_wars = {}
+        for ctx_dict in data:
+            try:
+                war_id = ctx_dict.get("war_id", "")
+                if not war_id:
+                    continue
+                stage_str = ctx_dict.get("stage", "declaration")
+                try:
+                    stage = WarfareStage(stage_str)
+                except ValueError:
+                    stage = WarfareStage.DECLARATION
+
+                ctx = WarfareContext(
+                    war_id=war_id,
+                    attacker_faction=ctx_dict.get("attacker_faction", ""),
+                    defender_faction=ctx_dict.get("defender_faction", ""),
+                    declared_round=ctx_dict.get("declared_round", 0),
+                    stage=stage,
+                    casus_belli=ctx_dict.get("casus_belli", ""),
+                    casus_belli_name=ctx_dict.get("casus_belli_name", ""),
+                    war_goal_tiles=ctx_dict.get("war_goal_tiles", []),
+                    can_seize_territory=ctx_dict.get("can_seize_territory", True),
+                    can_demand_tribute=ctx_dict.get("can_demand_tribute", False),
+                    can_enforce_vassal=ctx_dict.get("can_enforce_vassal", False),
+                    war_score_multiplier=ctx_dict.get("war_score_multiplier", 1.0),
+                    diplomacy_result=ctx_dict.get("diplomacy_result", {}),
+                    military_counter=ctx_dict.get("military_counter", {}),
+                    civil_adjustments=ctx_dict.get("civil_adjustments", {}),
+                    rebellion_risks=ctx_dict.get("rebellion_risks", []),
+                    battle_settlements=ctx_dict.get("battle_settlements", []),
+                    territory_changes=ctx_dict.get("territory_changes", []),
+                    stratagem_actions=ctx_dict.get("stratagem_actions", []),
+                    attacker_allies=ctx_dict.get("attacker_allies", []),
+                    defender_allies=ctx_dict.get("defender_allies", []),
+                    backstabbers=ctx_dict.get("backstabbers", []),
+                    neutrals=ctx_dict.get("neutrals", []),
+                )
+                self._active_wars[war_id] = ctx
+            except Exception as e:
+                logger.warning(f"[读档] 恢复战争 {ctx_dict.get('war_id', '?')} 失败: {e}")
+        if self._active_wars:
+            logger.info(f"[读档] 恢复活跃战争: {len(self._active_wars)} 场")

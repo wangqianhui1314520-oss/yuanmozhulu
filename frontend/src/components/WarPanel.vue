@@ -5,7 +5,7 @@
     :style="overlayStyle"
     @click.self="$emit('close')"
   >
-    <div class="war-panel glass-card">
+    <div class="war-panel glass-card artifact-panel artifact-dispatch">
       <!-- 头部 -->
       <div class="panel-header">
         <h2>天下兵戈</h2>
@@ -228,11 +228,10 @@ const overlayStyle = computed(() => ({
   background: rgba(0, 0, 0, 0.5);
 }
 .war-panel {
-  width: 520px; max-height: 80vh; overflow-y: auto;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-  border: 1px solid rgba(255, 200, 60, 0.25);
-  border-radius: 12px; padding: 20px;
+  width: 520px; max-width: 95vw; max-height: 80vh; overflow-y: auto;
+  padding: 20px;
   color: #e0d5c1;
+  box-shadow: inset 3px 0 0 var(--wuxing-fire);
 }
 .panel-header {
   display: flex; align-items: center; gap: 12px; margin-bottom: 16px;

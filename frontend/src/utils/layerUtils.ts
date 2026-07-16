@@ -175,6 +175,8 @@ export interface LayerRuntimeState {
   zoomMin: number
   zoomMax: number
   tooltip: string
+  _zoomHidden?: boolean
+  _prevVisible?: boolean
 }
 
 export function useMapLayers() {
@@ -312,14 +314,14 @@ export function useMapLayers() {
       if (layer.zoomMin > 0 && scale < layer.zoomMin) {
         // 缩放过小，该图层细节无意义，自动隐藏
         if (layer.visible && !layer._zoomHidden) {
-          (layer as any)._zoomHidden = true
-          (layer as any)._prevVisible = true
+          layer._zoomHidden = true
+          layer._prevVisible = true
         }
-      } else if ((layer as any)._zoomHidden && layer.zoomMin > 0 && scale >= layer.zoomMin) {
-        delete (layer as any)._zoomHidden
-        if ((layer as any)._prevVisible) {
+      } else if (layer._zoomHidden && layer.zoomMin > 0 && scale >= layer.zoomMin) {
+        layer._zoomHidden = undefined
+        if (layer._prevVisible) {
           layer.visible = true
-          delete (layer as any)._prevVisible
+          layer._prevVisible = undefined
         }
       }
     }

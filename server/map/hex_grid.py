@@ -29,8 +29,8 @@ v4.1 规范 (按沙盘地图系统文档 v3.0):
 
 from __future__ import annotations
 import math
-from typing import Iterator, Set, Tuple
-from dataclasses import dataclass, field
+from typing import Iterator, List, Set, Tuple
+from dataclasses import dataclass
 
 
 # ============================================================
@@ -55,6 +55,13 @@ GEO_LAT_MAX = 60.0      # 最北纬度
 _territory_loaded = False
 _territory_excluded: Set[Tuple[int, int]] = set()
 
+# ----------------
+# V4.2 优化：预计算缓存
+# ----------------
+_active_coords_cache: List[HexCoord] | None = None  # 疆域内所有坐标的预计算列表
+_all_coords_cache: List[HexCoord] | None = None      # 矩形网格所有坐标的预计算列表
+_row_widths_cache: List[int] | None = None            # 每行列数的预计算列表
+
 def _ensure_territory_loaded():
     """延迟加载疆域遮罩"""
     global _territory_loaded, _territory_excluded
@@ -66,6 +73,36 @@ def _ensure_territory_loaded():
     except ImportError:
         _territory_excluded = set()
     _territory_loaded = True
+
+
+def warm_cache():
+    """V4.2: 预热所有坐标缓存（在服务器启动时调用一次）"""
+    global _active_coords_cache, _all_coords_cache, _row_widths_cache, TOTAL_TILES
+    _ensure_territory_loaded()
+
+    # 行宽缓存
+    _row_widths_cache = [
+        GRID_MAX_COLS if r % 2 == 0 else GRID_ODD_COLS
+        for r in range(GRID_ROWS)
+    ]
+
+    # 全部坐标（矩形网格）
+    _all_coords_cache = [
+        HexCoord(col, row)
+        for row in range(GRID_ROWS)
+        for col in range(_row_widths_cache[row])
+    ]
+
+    # 疆域内坐标
+    if _territory_excluded:
+        _active_coords_cache = [
+            c for c in _all_coords_cache
+            if (c.col, c.row) not in _territory_excluded
+        ]
+    else:
+        _active_coords_cache = list(_all_coords_cache)
+
+    TOTAL_TILES = len(_active_coords_cache)
 
 
 def is_active_hex(col: int, row: int) -> bool:
@@ -102,9 +139,18 @@ AXIAL_DIRECTIONS: list[tuple[int, int]] = [
 
 @dataclass
 class HexCoord:
-    """Offset 坐标 (col, row) — 主存储坐标"""
+    """Offset 坐标 (col, row) — 主存储坐标
+    
+    V4.2: axial 坐标在构造时预计算，避免重复转换
+    """
     col: int
     row: int
+
+    def __post_init__(self):
+        """预计算 axial 坐标（V4.2 优化）"""
+        # 使用 object.__setattr__ 避免 dataclass frozen 限制
+        object.__setattr__(self, '_axial_q', self.col - (self.row - (self.row & 1)) // 2)
+        object.__setattr__(self, '_axial_r', self.row)
 
     def __hash__(self) -> int:
         return hash((self.col, self.row))
@@ -118,10 +164,8 @@ class HexCoord:
         return f"Hex({self.col},{self.row})"
 
     def to_axial(self) -> tuple[int, int]:
-        """Offset → Axial (Flat-Top, odd-row offset)"""
-        q = self.col - (self.row - (self.row & 1)) // 2
-        r = self.row
-        return (q, r)
+        """Offset → Axial (Flat-Top, odd-row offset) — V4.2: 直接返回预计算值"""
+        return (self._axial_q, self._axial_r)
 
     @staticmethod
     def from_axial(q: int, r: int) -> "HexCoord":
@@ -132,15 +176,15 @@ class HexCoord:
 
     @property
     def q(self) -> int:
-        return self.to_axial()[0]
+        return self._axial_q
 
     @property
     def axial_r(self) -> int:
-        return self.to_axial()[1]
+        return self._axial_r
 
     def neighbors(self, territory_only: bool = True) -> list["HexCoord"]:
         """返回邻居的 Offset 坐标"""
-        aq, ar = self.to_axial()
+        aq, ar = self._axial_q, self._axial_r
         result = []
         for dq, dr in AXIAL_DIRECTIONS:
             nq, nr = aq + dq, ar + dr
@@ -160,12 +204,10 @@ class HexCoord:
         return self.neighbors(territory_only=False)
 
     def distance_to(self, other: "HexCoord") -> int:
-        """六边形曼哈顿距离"""
-        aq1, ar1 = self.to_axial()
-        aq2, ar2 = other.to_axial()
-        dq = aq1 - aq2
-        dr = ar1 - ar2
-        ds = (-aq1 - ar1) - (-aq2 - ar2)
+        """六边形曼哈顿距离 (V4.2: 使用预计算坐标)"""
+        dq = self._axial_q - other._axial_q
+        dr = self._axial_r - other._axial_r
+        ds = (-self._axial_q - self._axial_r) - (-other._axial_q - other._axial_r)
         return (abs(dq) + abs(dr) + abs(ds)) // 2
 
     def to_key(self) -> str:
@@ -194,7 +236,9 @@ def is_valid_active_coord(coord: HexCoord) -> bool:
 
 
 def get_row_width(row: int) -> int:
-    """获取指定行的列数"""
+    """获取指定行的列数 (V4.2: 使用缓存加速)"""
+    if _row_widths_cache is not None and 0 <= row < len(_row_widths_cache):
+        return _row_widths_cache[row]
     if row % 2 == 0:
         return GRID_MAX_COLS
     else:
@@ -206,10 +250,10 @@ def total_tile_count() -> int:
 
 
 def rect_tile_count() -> int:
-    count = 0
-    for r in range(GRID_ROWS):
-        count += get_row_width(r)
-    return count
+    """V4.2: 返回矩形网格总数（无需遍历计算）"""
+    if _row_widths_cache:
+        return sum(_row_widths_cache)
+    return sum(get_row_width(r) for r in range(GRID_ROWS))
 
 
 # ============================================================
@@ -217,13 +261,19 @@ def rect_tile_count() -> int:
 # ============================================================
 
 def iter_all_coords(include_excluded: bool = False) -> Iterator[HexCoord]:
-    """遍历所有有效格子坐标"""
+    """遍历所有有效格子坐标 (V4.2: 使用预计算缓存)"""
     if include_excluded:
+        if _all_coords_cache is not None:
+            yield from _all_coords_cache
+            return
         for row in range(GRID_ROWS):
             width = get_row_width(row)
             for col in range(width):
                 yield HexCoord(col, row)
     else:
+        if _active_coords_cache is not None:
+            yield from _active_coords_cache
+            return
         _ensure_territory_loaded()
         for row in range(GRID_ROWS):
             width = get_row_width(row)
@@ -332,7 +382,7 @@ _verified = False
 
 
 def verify_grid() -> bool:
-    """启动时验证网格完整性"""
+    """启动时验证网格完整性 (V4.2: 同时预热缓存)"""
     global _verified, TOTAL_TILES
     if _verified:
         return True
@@ -340,6 +390,9 @@ def verify_grid() -> bool:
     rect_count = rect_tile_count()
     assert rect_count == TOTAL_TILES_RECT, f"矩形网格总数错误: 预期{TOTAL_TILES_RECT}, 实际{rect_count}"
 
+    # V4.2: 预热所有缓存
+    warm_cache()
+    
     count = total_tile_count()
     TOTAL_TILES = count
 
@@ -352,5 +405,6 @@ def verify_grid() -> bool:
 
     print(f"  网格验证通过: {count} 个疆域内格子 (矩形共{TOTAL_TILES_RECT}格, 排除{len(_territory_excluded)}格)")
     print(f"  地理映射: 经度{GEO_LON_MIN}°E~{GEO_LON_MAX}°E, 纬度{GEO_LAT_MIN}°N~{GEO_LAT_MAX}°N")
+    print(f"  V4.2: 坐标缓存已预热 (活跃坐标{len(_active_coords_cache)}个, 全网格{len(_all_coords_cache)}个)")
     _verified = True
     return True

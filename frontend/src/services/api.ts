@@ -97,6 +97,26 @@ if (typeof document !== 'undefined') {
 }
 
 // ============================================================
+// ============================================================
+// 玩家会话标识（多玩家数据隔离）
+// ============================================================
+const PLAYER_ID_KEY = 'yuanmo_player_id'
+
+function getPlayerId(): string {
+  let pid = localStorage.getItem(PLAYER_ID_KEY)
+  if (!pid) {
+    // 生成唯一玩家 ID（UUID v4）
+    pid = 'player_' + crypto.randomUUID()
+    localStorage.setItem(PLAYER_ID_KEY, pid)
+  }
+  return pid
+}
+
+export function getCurrentPlayerId(): string {
+  return getPlayerId()
+}
+
+// ============================================================
 // Axios 实例
 // ============================================================
 
@@ -109,10 +129,19 @@ export const apiClient: AxiosInstance = axios.create({
 // 内部别名，兼容已有代码
 const api = apiClient
 
-// 请求拦截器
+// 请求拦截器 — 注入玩家会话 ID + API Key
 api.interceptors.request.use(
   (config) => {
-    // 可在此添加 loading 状态
+    config.headers['X-Player-ID'] = getPlayerId()
+    // 从 localStorage 读取玩家 API Key 并注入请求头（比放在 POST body 更安全）
+    try {
+      const savedKeys = JSON.parse(localStorage.getItem('yuanmo_llm_api_keys') || '{}')
+      const apiKey = savedKeys?.advisor || savedKeys?.law || savedKeys?.enemy || ''
+      if (apiKey) config.headers['X-API-Key'] = apiKey
+      // ElevenLabs TTS Key（独立于 LLM Key）
+      const elevenKey = savedKeys?.elevenlabs || ''
+      if (elevenKey) config.headers['X-ElevenLabs-Key'] = elevenKey
+    } catch { /* localStorage 不可用时静默降级 */ }
     return config
   },
   (error) => {
@@ -136,6 +165,15 @@ api.interceptors.response.use(
       return response
     }
 
+    // 兜底：如果 code 字段缺失，按 HTTP 状态码处理
+    if (code === undefined || code === null) {
+      const httpStatus = response.status
+      if (httpStatus >= 200 && httpStatus < 300) {
+        return response  // 视为成功
+      }
+      return Promise.reject(new Error(msg || `服务器错误 (HTTP ${httpStatus})`))
+    }
+
     // 业务错误
     if (code === 400) {
       showToast(msg || '参数有误', 'error')
@@ -149,7 +187,7 @@ api.interceptors.response.use(
       showToast(msg || '服务器异常', 'error')
     }
 
-    return Promise.reject(new Error(msg || `请求失败 (${code})`))
+    return Promise.reject(new Error(msg || `请求失败 (code ${code})`))
   },
   (error) => {
     if (error.code === 'ECONNABORTED') {
@@ -309,14 +347,23 @@ export async function getDefaultConfig(): Promise<Record<string, any>> {
 /**
  * 真实 AI 模型连通性测试（逐模型发送测试请求）
  * @param models 要测试的模型列表，默认全部 ["advisor", "law", "enemy"]
+ * @param apiKeys 用户填写的 API Key（测试用，不持久化）
+ * @param modelConfigs 用户填写的模型配置（模型名/api地址/温度/maxTokens）
  */
-export async function testLLMConnection(models?: string[]): Promise<{
+export async function testLLMConnection(models?: string[], apiKeys?: Record<string, string>, modelConfigs?: Record<string, any>): Promise<{
   passed: boolean
   configured: boolean
   message: string
   results: Record<string, { status: string; model_name: string; latency_ms: number; error?: string; api_base?: string; response_preview?: string }>
 }> {
-  const { data } = await api.post('/config/test-llm', { models: models || ['advisor', 'law', 'enemy'] })
+  const body: Record<string, any> = { models: models || ['advisor', 'law', 'enemy'] }
+  if (apiKeys && Object.keys(apiKeys).length > 0) {
+    body.api_keys = apiKeys
+  }
+  if (modelConfigs && Object.keys(modelConfigs).length > 0) {
+    body.model_configs = modelConfigs
+  }
+  const { data } = await api.post('/config/test-llm', body)
   return data.data
 }
 
@@ -326,6 +373,7 @@ export async function initGame(params: {
   faction_id: string
   mode?: string
   custom_faction?: Record<string, any>
+  api_key?: string
 }): Promise<{
   world_state: WorldState
   player_faction: any
@@ -336,7 +384,7 @@ export async function initGame(params: {
   events_log: any[]
   mode_info?: any
 }> {
-  const { data } = await withRetry(() => api.post('/game/init', params))
+  const { data } = await withRetry(() => api.post('/game/init', params), MAX_RETRIES, RETRY_DELAY_BASE, undefined, true)  // skipRetry: POST 非幂等，不重试
   if (data.msg && data.msg !== 'success') {
     showToast(data.msg, 'error')  // Bug F3修复: 错误消息用error类型
   }
@@ -373,16 +421,32 @@ export async function getGameStatus(): Promise<{
 
 // P3: 防重复提交 — 同一端点正在 inflight 时拒绝重复调用
 const _inflight = new Map<string, Promise<any>>()
+const DEDUP_TIMEOUT = 180000  // 去重锁最大存活3分钟，超时自动清理
 
-function _withDedup<T>(key: string, fn: () => Promise<T>): Promise<T> {
+function _withDedup<T>(key: string, fn: () => Promise<T>, timeoutMs = DEDUP_TIMEOUT): Promise<T> {
   const existing = _inflight.get(key)
   if (existing) {
     console.warn(`[API] 重复请求已拦截: ${key}`)
     return existing as Promise<T>
   }
-  const promise = fn().finally(() => _inflight.delete(key))
-  _inflight.set(key, promise)
-  return promise
+
+  // P0修复: 创建带超时的包装Promise，防止inflight请求永久卡住去重锁
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      _inflight.delete(key)
+      reject(new Error(`[API] 请求超时并清理去重锁: ${key}`))
+    }, timeoutMs)
+  })
+
+  const taskPromise = fn().finally(() => {
+    if (timeoutId) clearTimeout(timeoutId)
+    _inflight.delete(key)
+  })
+
+  const racedPromise = Promise.race([taskPromise, timeoutPromise])
+  _inflight.set(key, racedPromise)
+  return racedPromise
 }
 
 export function submitCommand(params: {
@@ -422,6 +486,10 @@ export async function advanceTurn(): Promise<{
   locked_actions?: string[]
   cooling_tiles?: Record<string, any[]>
   responsibility_stats?: any
+  current_round?: number
+  current_year?: number
+  current_month?: number
+  current_season?: string
 }> {
   // P3: 防止同时多次推进回合
   return _withDedup('advanceTurn', async () => {
@@ -439,15 +507,6 @@ export async function advanceTurn(): Promise<{
 export async function parseEdict(params: {
   edict_text: string
   faction_id: string
-  turn?: number
-  season?: string
-  treasury?: number
-  grain?: number
-  troops?: number
-  reputation?: number
-  court_stability?: number
-  realm_stability?: number
-  development_level?: number
 }): Promise<EdictResult> {
   const { data } = await api.post('/edict/parse', params)
   return data.data
@@ -573,6 +632,31 @@ export interface NLEdictResult {
   is_cancel: boolean
   needs_clarification: boolean
   route_to_advisor?: boolean
+  // 4.0 新增：AI战略推演数据
+  simulation_used?: boolean
+  simulation?: {
+    situation_analysis: string
+    key_observations: string[]
+    primary_plan_steps: Array<{ step: number; description: string; expected_effect: string }>
+    alternative_plans: Array<{ narrative: string; steps: Array<{ description: string }> }>
+    risk_matrix: Array<{ type: string; description: string; probability: number; impact: string }>
+    overall_risk_level: string
+    geopolitical_impacts: Array<{ faction: string; reaction: string; description: string }>
+    consequence_analysis: string
+    ai_confidence: number
+    resource_projection?: {
+      treasury: { before: number; after: number }
+      grain: { before: number; after: number }
+      troops: { before: number; after: number }
+    }
+    deficit_warning: string
+  }
+  feedback_report?: {
+    deviation_level: string
+    report_text: string
+    adjustment_suggestion: string
+    next_turn_hint: string
+  }
 }
 
 export async function nlProcessEdict(params: {
@@ -580,12 +664,17 @@ export async function nlProcessEdict(params: {
   faction_id: string
   direct_execute?: boolean
   use_ai?: boolean
+  use_simulation?: boolean
 }): Promise<NLEdictResult> {
-  const { data } = await api.post('/edict/nl-process', params)
-  if (data.msg && data.msg !== 'success') {
-    showToast(data.msg, 'error')  // Bug F3修复: 错误消息用error类型
-  }
-  return data.data
+  // P0修复: 去重保护 + 超时设置，防止重复请求和无限等待
+  const dedupKey = `nlProcessEdict:${params.faction_id}:${params.edict_text.slice(0, 40)}`
+  return _withDedup(dedupKey, async () => {
+    const { data } = await api.post('/edict/nl-process', params, { timeout: AI_TIMEOUT })
+    if (data.msg && data.msg !== 'success') {
+      showToast(data.msg, 'error')  // Bug F3修复: 错误消息用error类型
+    }
+    return data.data
+  }, AI_TIMEOUT)
 }
 
 export interface NLValidateResult {
@@ -608,6 +697,28 @@ export interface NLValidateResult {
 
 export async function nlValidateEdict(text: string): Promise<NLValidateResult> {
   const { data } = await api.post('/edict/nl-validate', { edict_text: text })
+  return data.data
+}
+
+// 4.0 新增：AI 战略推演预览接口
+export interface SimulationPreview {
+  intent_category: string
+  sub_intents: string[]
+  confidence: number
+  feasibility: 'feasible' | 'constrained' | 'infeasible'
+  feasibility_reason: string
+  risk_flags: string[]
+  suggested_actions: string[]
+  resource_warning: string
+  needs_clarification: boolean
+}
+
+export async function simulationPreview(text: string): Promise<{
+  edict_text: string
+  ai_preview: SimulationPreview
+  preview_type: 'ai' | 'local'
+}> {
+  const { data } = await api.post('/edict/simulation-preview', { edict_text: text })
   return data.data
 }
 
@@ -636,6 +747,7 @@ export async function updateEdictLLMConfig(config: {
   model_name?: string
   temperature?: number
   max_tokens?: number
+  api_key?: string
 }): Promise<any> {
   const { data } = await api.post('/edict/nl-config', config)
   return data.data
@@ -688,6 +800,11 @@ export async function courtConflict(params: {
 
 // ----- 战斗 -----
 
+/**
+ * [已废弃 v3.2] 战斗结算 — 后端 endpoint 已标注废弃，仅保留向后兼容。
+ * 无 Vue 组件主动调用此函数，全局仅 gameStore.resolveBattleAI 引用。
+ * 未来迁移方向：行军/战斗统一走 /api/march/resolve（参数结构不同，需同步重构调用方）。
+ */
 export async function resolveBattle(params: {
   attacker_faction: string
   defender_faction: string
@@ -891,6 +1008,46 @@ export async function agentDashboard(): Promise<{
   edict_action_count: number
 }> {
   const { data } = await api.get('/agent/dashboard')
+  return data.data
+}
+
+// ----- Agent 对话管理（v4.4 补充） -----
+
+/** 获取 Agent 统计信息 */
+export async function getAgentStats(): Promise<any> {
+  const { data } = await api.get('/agent/stats')
+  return data.data
+}
+
+/** 获取所有对话列表（可按势力过滤） */
+export async function getAgentConversations(factionId?: string): Promise<any> {
+  const params = factionId ? `?faction_id=${factionId}` : ''
+  const { data } = await api.get(`/agent/conversations${params}`)
+  return data.data
+}
+
+/** 获取指定 NPC 的对话历史 */
+export async function getAgentConversation(npcId: string, factionId?: string): Promise<any> {
+  const params = factionId ? `?faction_id=${factionId}` : ''
+  const { data } = await api.get(`/agent/conversations/${npcId}${params}`)
+  return data.data
+}
+
+/** 清除指定 NPC 的对话历史 */
+export async function clearAgentConversation(npcId: string, factionId?: string): Promise<any> {
+  const { data } = await api.post(`/agent/conversations/${npcId}/clear`, factionId ? { faction_id: factionId } : {})
+  return data.data
+}
+
+/** 清除所有对话历史 */
+export async function clearAllAgentConversations(factionId?: string): Promise<any> {
+  const { data } = await api.post('/agent/conversations/clear-all', factionId ? { faction_id: factionId } : {})
+  return data.data
+}
+
+/** 同步对话数据 */
+export async function syncAgentConversations(factionId?: string): Promise<any> {
+  const { data } = await api.post('/agent/conversations/sync', factionId ? { faction_id: factionId } : {})
   return data.data
 }
 
@@ -1209,6 +1366,38 @@ export async function unlockPolicy(params: {
   return data.data
 }
 
+// ----- 国策单人操作（v4.4 补充） -----
+
+/** 获取所有可用国策列表 */
+export async function getAvailablePolicies(): Promise<any> {
+  const { data } = await api.get('/policy/available')
+  return data.data
+}
+
+/** 获取势力已激活的国策 */
+export async function getActivePolicies(factionId: string): Promise<any> {
+  const { data } = await api.get(`/policy/active/${factionId}`)
+  return data.data
+}
+
+/** 激活国策 */
+export async function activatePolicy(params: {
+  faction_id: string
+  policy: string
+}): Promise<any> {
+  const { data } = await api.post('/policy/activate', params)
+  return data.data
+}
+
+/** 废除国策 */
+export async function deactivatePolicy(params: {
+  faction_id: string
+  policy: string
+}): Promise<any> {
+  const { data } = await api.post('/policy/deactivate', params)
+  return data.data
+}
+
 export async function issueDecree(params: {
   faction_id: string
   text: string
@@ -1330,6 +1519,56 @@ export async function batchConstructBuildings(params: {
   faction_id: string
 }): Promise<any> {
   const { data } = await api.post('/building/batch-construct', params)
+  return data.data
+}
+
+// ----- 建筑单人操作（v4.4 补充） -----
+
+/** 获取某地块可建造的建筑列表 */
+export async function getAvailableBuildings(tileId: string): Promise<any> {
+  const { data } = await api.get(`/building/available/${tileId}`)
+  return data.data
+}
+
+/** 在指定地块建造建筑 */
+export async function constructBuilding(params: {
+  tile_id: string
+  building_type: string
+  faction_id: string
+}): Promise<any> {
+  const { data } = await api.post('/building/construct', params)
+  return data.data
+}
+
+/** 升级指定建筑 */
+export async function upgradeBuilding(params: {
+  building_id: string
+  faction_id: string
+}): Promise<any> {
+  const { data } = await api.post('/building/upgrade', params)
+  return data.data
+}
+
+/** 拆除指定建筑 */
+export async function demolishBuilding(params: {
+  building_id: string
+  faction_id: string
+}): Promise<any> {
+  const { data } = await api.post('/building/demolish', params)
+  return data.data
+}
+
+// ----- 补给系统（v4.4 补充） -----
+
+/** 获取指定地块补给状态 */
+export async function getSupplyStatus(tileId: string): Promise<any> {
+  const { data } = await api.get(`/supply/status/${tileId}`)
+  return data.data
+}
+
+/** 获取势力补给总览 */
+export async function getSupplySummary(factionId: string): Promise<any> {
+  const { data } = await api.get(`/supply/summary/${factionId}`)
   return data.data
 }
 
@@ -1567,6 +1806,28 @@ export async function proposePeace(params: {
   reparation_amount?: number
 }): Promise<any> {
   const { data } = await api.post('/war/peace/propose', params)
+  return data.data
+}
+
+// ----- 宣战（v4.4 补充 - 归入战争系统） -----
+
+/** 正式宣战（触发全链路AI联动） */
+export async function declareWar(params: {
+  faction_id: string
+  target_faction: string
+  casus_belli?: string
+  troops?: number
+}): Promise<any> {
+  const { data } = await api.post('/war/declare', params)
+  return data.data
+}
+
+/** 获取两势力间战争状态 */
+export async function getWarStatus(attacker?: string, defender?: string): Promise<any> {
+  const params = new URLSearchParams()
+  if (attacker) params.set('attacker', attacker)
+  if (defender) params.set('defender', defender)
+  const { data } = await api.get(`/war/status?${params.toString()}`)
   return data.data
 }
 
@@ -1876,6 +2137,95 @@ export async function getAgentsStatus(): Promise<any> {
 }
 
 // ============================================================
+// 成就系统 API
+// ============================================================
+
+/** 获取成就列表及解锁状态 */
+export async function getAchievements(factionId: string): Promise<{
+  achievements: any[]
+  total: number
+  unlocked: number
+}> {
+  const { data } = await api.get('/achievements/list', { params: { faction_id: factionId } })
+  return data.data
+}
+
+/** 回合结算后检测成就 */
+export async function checkAchievements(factionId: string): Promise<{
+  newly_unlocked: any[]
+  count: number
+}> {
+  const { data } = await api.post('/achievements/check', { faction_id: factionId })
+  return data.data
+}
+
+// ============================================================
+// 教程系统 API
+// ============================================================
+
+/** 获取教程状态 */
+export async function getTutorialState(factionId: string): Promise<{
+  state: any
+  current_step: any
+}> {
+  const { data } = await api.get('/tutorial/state', { params: { faction_id: factionId } })
+  return data.data
+}
+
+/** 推进教程步骤 */
+export async function advanceTutorial(factionId: string): Promise<{
+  state: any
+  current_step: any
+}> {
+  const { data } = await api.post('/tutorial/advance', { faction_id: factionId })
+  return data.data
+}
+
+/** 跳过教程 */
+export async function skipTutorial(factionId: string): Promise<{
+  state: any
+  skipped: boolean
+}> {
+  const { data } = await api.post('/tutorial/skip', { faction_id: factionId })
+  return data.data
+}
+
+/** 重置教程 */
+export async function resetTutorial(factionId: string): Promise<{
+  state: any
+  current_step: any
+}> {
+  const { data } = await api.post('/tutorial/reset', { faction_id: factionId })
+  return data.data
+}
+
+// ============================================================
+// 科技树（国策）API
+// ============================================================
+
+/** 获取科技树数据 */
+export async function getTechTree(factionId: string): Promise<{
+  categories: any[]
+  unlocked_policies: string[]
+  treasury: number
+}> {
+  const { data } = await api.get('/tech/tree', { params: { faction_id: factionId } })
+  return data.data
+}
+
+/** 研究国策 */
+export async function researchPolicy(factionId: string, policyId: string): Promise<{
+  success: boolean
+  policy_name: string
+  cost: number
+  treasury: number
+  effects: Record<string, number>
+}> {
+  const { data } = await api.post('/tech/research', { faction_id: factionId, policy_id: policyId })
+  return data.data
+}
+
+// ============================================================
 // IOA 安全体系 API
 // ============================================================
 
@@ -1956,6 +2306,137 @@ export async function getEdgeOnePolicy(): Promise<any> {
 /** 获取 WAF 规则 */
 export async function getEdgeOneWAFRules(): Promise<any> {
   const { data } = await api.get('/security/edgeone/waf')
+  return data.data
+}
+
+// ============================================================
+// 回合大事录叙事（AI 文言叙事 + 臣子身份）
+// ============================================================
+
+export interface TurnNarrativeResult {
+  narrative: string
+  minister_name: string
+  minister_title: string
+  ai_generated: boolean
+}
+
+export async function fetchTurnNarrative(round: number): Promise<TurnNarrativeResult> {
+  const { data } = await api.post('/game/turn-narrative', { round })
+  return data.data
+}
+
+// ============================================================
+// LLM 成本追踪（v4.4 补充）
+// ============================================================
+
+/** 获取 LLM 调用成本报告 */
+export async function getCostReport(): Promise<any> {
+  const { data } = await api.get('/cost/report')
+  return data.data
+}
+
+/** 重置成本追踪 */
+export async function resetCostReport(): Promise<any> {
+  const { data } = await api.post('/cost/reset')
+  return data.data
+}
+
+// ============================================================
+// 音频/TTS（v4.4 补充 — 后端 ElevenLabs + edge-tts 双提供商）
+// ============================================================
+
+/** 为指定势力生成 AI 配音 */
+export async function generateFactionVoice(params: {
+  faction_id: string
+  force?: boolean
+  provider?: 'edge' | 'elevenlabs'
+}): Promise<any> {
+  const { data } = await api.post('/audio/generate-voice', params)
+  return data.data
+}
+
+/** 为所有势力批量生成配音 */
+export async function generateAllFactionVoices(force?: boolean): Promise<any> {
+  const { data } = await api.post('/audio/generate-all-voices', { force })
+  return data.data
+}
+
+/** 获取语音合成状态 */
+export async function getVoiceStatus(): Promise<any> {
+  const { data } = await api.get('/audio/voice-status')
+  return data.data
+}
+
+/** 获取语音配置 */
+export async function getVoiceConfig(): Promise<any> {
+  const { data } = await api.get('/audio/voice-config')
+  return data.data
+}
+
+/** 为 NPC 生成配音（ElevenLabs） */
+export async function generateNPCVoice(params: {
+  npc_name: string
+  text: string
+  personality?: string
+  force?: boolean
+}): Promise<any> {
+  const { data } = await api.post('/audio/generate-npc-voice', params)
+  return data.data
+}
+
+/** 搜索 ElevenLabs 可用音色 */
+export async function getElevenLabsVoices(query?: string, gender?: string): Promise<any> {
+  const params = new URLSearchParams()
+  if (query) params.set('query', query)
+  if (gender) params.set('gender', gender)
+  const { data } = await api.get(`/audio/elevenlabs-voices?${params.toString()}`)
+  return data.data
+}
+
+// ============================================================
+// 地图扩展（v4.4 补充）
+// ============================================================
+
+/** 获取全量疆域边界数据 */
+export async function getMapBoundaries(): Promise<any> {
+  const { data } = await api.get('/map/boundaries')
+  return data.data
+}
+
+/** 获取图层配置信息 */
+export async function getMapLayerConfig(): Promise<any> {
+  const { data } = await api.get('/map/layer-config')
+  return data.data
+}
+
+// ============================================================
+// 运维/调试工具（v4.4 补充）
+// ============================================================
+
+/** 获取 API Key 状态 */
+export async function getApiKeyStatus(): Promise<any> {
+  const { data } = await api.get('/config/api-key-status')
+  return data.data
+}
+
+/** 获取原始 game_state（调试用） */
+export async function getGameState(): Promise<any> {
+  const { data } = await api.get('/game/state')
+  return data.data
+}
+
+/** 获取势力历史编年（不同于剧情锚点） */
+export async function getFactionHistory(factionId: string): Promise<any> {
+  const { data } = await api.get(`/history/${factionId}`)
+  return data.data
+}
+
+/** 获取/设置 AI 委任配置 */
+export async function setAIDelegationConfig(params: {
+  faction_id: string
+  domains?: Record<string, any>
+}): Promise<any> {
+  const { data } = await api.post('/ai/delegation/config', params)
   return data.data
 }
 

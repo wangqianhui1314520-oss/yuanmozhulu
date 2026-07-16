@@ -2,7 +2,7 @@
   <Teleport to="body">
     <transition name="modal">
       <div class="batch-recruit-overlay" v-if="visible" @click.self="$emit('close')">
-        <div class="batch-recruit-dialog">
+        <div class="batch-recruit-dialog artifact-panel artifact-dispatch">
           <!-- 标题栏 -->
           <div class="br-header">
             <h2>兵部 · 批量征兵</h2>
@@ -311,14 +311,12 @@ watch(() => props.visible, (v) => {
 }
 
 .batch-recruit-dialog {
-  background: linear-gradient(180deg, #2a2418 0%, #1a1510 100%);
-  border: 2px solid var(--gold);
-  border-radius: 4px;
   width: 680px;
   max-width: 95vw;
   max-height: 85vh;
   display: flex;
   flex-direction: column;
+  box-shadow: inset 3px 0 0 var(--wuxing-earth);
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
 }
 

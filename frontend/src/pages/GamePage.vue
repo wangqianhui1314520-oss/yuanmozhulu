@@ -46,17 +46,17 @@
         <!-- 核心资源 -->
         <div class="resource-group">
           <div class="resource-item gold">
-            <div class="res-icon">💰</div>
+            <div class="res-icon"><span class="sprite sprite-gold"></span></div>
             <div class="res-value">{{ fmtNum(store.playerFaction?.treasury ?? 0) }}</div>
             <div class="res-label">库银</div>
           </div>
           <div class="resource-item grain">
-            <div class="res-icon">🌾</div>
+            <div class="res-icon"><span class="sprite sprite-grain"></span></div>
             <div class="res-value">{{ fmtNum(store.playerFaction?.grain ?? 0) }}</div>
             <div class="res-label">粮草</div>
           </div>
           <div class="resource-item prestige">
-            <div class="res-icon">⭐</div>
+            <div class="res-icon"><span class="sprite sprite-prestige"></span></div>
             <div class="res-value">{{ store.playerFaction?.reputation ?? 0 }}</div>
             <div class="res-label">声望</div>
           </div>
@@ -64,17 +64,17 @@
         <div class="resource-divider"></div>
         <div class="resource-group">
           <div class="resource-item troops">
-            <div class="res-icon">⚔️</div>
+            <div class="res-icon"><span class="sprite sprite-troops"></span></div>
             <div class="res-value">{{ fmtNum(store.totalTroops) }}</div>
             <div class="res-label">兵力</div>
           </div>
           <div class="resource-item horses">
-            <div class="res-icon">🐴</div>
+            <div class="res-icon"><span class="sprite sprite-horses"></span></div>
             <div class="res-value">{{ store.playerFaction?.horses ?? 0 }}</div>
             <div class="res-label">战马</div>
           </div>
           <div class="resource-item arms">
-            <div class="res-icon">🛡️</div>
+            <div class="res-icon"><span class="sprite sprite-arms"></span></div>
             <div class="res-value">{{ store.playerFaction?.arms ?? 0 }}</div>
             <div class="res-label">军械</div>
           </div>
@@ -97,15 +97,15 @@
         </div>
         <!-- 功能按钮 -->
         <div class="top-buttons">
-          <button v-audio class="top-btn war-btn" @click="store.showWarPanel = true" title="天下兵戈">战</button>
+          <button v-audio class="top-btn war-btn" @click="closeAllPanels(); store.showWarPanel = true; panelSide = 'right'" title="天下兵戈">战</button>
           <span class="top-btn-divider"></span>
           <button v-audio class="top-btn" @click="closeAllPanels(); showPolicy = true; panelSide = 'right'" title="国策">策</button>
-          <button v-audio class="top-btn" @click="openAdvisorPopupFn()" title="谋臣献策">谋</button>
+          <button v-audio class="top-btn" @click="openAdvisorPopupFn(); panelSide = 'right'" title="谋臣献策">谋</button>
           <button v-audio class="top-btn" @click="closeAllPanels(); store.togglePanel('factions'); panelSide = 'right'" title="大势">势</button>
           <button v-audio class="top-btn" @click="quickSaveHandler" title="快速存档" :disabled="quickSaving">存</button>
           <button v-audio class="top-btn" @click="$router.push('/save-manager')" title="存档管理">档</button>
-          <button v-audio class="top-btn" @click="showSettings = true" title="设置">⚙</button>
-          <button v-audio class="top-btn" @click="showSecurity = true" title="EdgeOne安全态势">🛡</button>
+          <button v-audio class="top-btn" @click="closeAllPanels(); showSettings = true; panelSide = 'right'" title="设置">⚙</button>
+          <button v-audio class="top-btn" @click="closeAllPanels(); showSecurity = true; panelSide = 'right'" title="EdgeOne安全态势">🛡</button>
           <span class="top-btn-divider"></span>
           <button v-audio class="top-btn" title="切换全屏" @click="toggleFullscreen">
             {{ isFullscreen ? '⤡' : '⤢' }}
@@ -317,7 +317,7 @@
 
     <!-- ============ 圣旨台面板（中下方弹出） ============ -->
     <Transition name="edict-drawer-slide">
-      <div v-if="edictDrawerOpen" class="edict-drawer" :class="{ 'new-commands': pendingCmdAdded }">
+      <div v-if="edictDrawerOpen" class="edict-drawer artifact-edict" :class="{ 'new-commands': pendingCmdAdded }">
         <div class="edict-drawer-body">
           <div class="edict-drawer-header">
             <span class="edict-drawer-title">📜 本回圣旨</span>
@@ -508,7 +508,7 @@
     <SecurityPanel :visible="showSecurity" @close="showSecurity = false" />
     <ReplayPanel :visible="showReplay" @close="showReplay = false" />
     <FloatPanels :panelSide="panelSide" @open-diplomacy-deep="showDiplomacyDeep = true" @open-talent-market="showTalentMarket = true" />
-    <RecruitPanel />
+    <RecruitPanel v-if="store.activePanel === 'recruit'" />
     <MarchPanel
       :visible="store.showMarchPanel"
       :target-tile-id="store.marchTargetTileId"
@@ -529,7 +529,23 @@
     <DiplomacyDeepPanel :visible="showDiplomacyDeep" @close="showDiplomacyDeep = false" />
     <HistoryAnchorPanel :visible="showHistory" @close="showHistory = false" />
     <AIControlPanel :visible="showAIControl" @close="showAIControl = false" />
-    <EndingPanel />
+    <AchievementPanel :visible="showAchievement" :faction-id="store.playerFactionId" @close="showAchievement = false" />
+    <TechTreePanel :visible="showTechTree" :faction-id="store.playerFactionId" @close="showTechTree = false" />
+    <EndingPanel v-if="store.showEnding" />
+    <!-- 回合大事录圣旨弹窗 -->
+    <TurnSummaryScroll
+      :visible="store.showTurnSummary"
+      :year="store.turnSummaryYear"
+      :month="store.turnSummaryMonth"
+      :round="store.turnSummaryRound"
+      :season="store.turnSummarySeason"
+      :narrative="store.turnSummaryNarrative"
+      :minister-name="store.turnSummaryMinister"
+      :minister-title="store.turnSummaryTitle"
+      :loading="store.turnSummaryLoading"
+      :ai-generated="store.turnSummaryAiGenerated"
+      @close="store.closeTurnSummary()"
+    />
     <WarPanel
       :visible="store.showWarPanel"
       @close="store.showWarPanel = false"
@@ -600,6 +616,68 @@
               </div>
             </div>
 
+            <!-- 4.0 新增：AI战略推演详情（可选折叠） -->
+            <div v-if="edictResult.simulation_used && edictResult.simulation" class="edict-simulation-panel">
+              <div class="sim-label" @click="showSimDetail = !showSimDetail">
+                {{ showSimDetail ? '▾' : '▸' }} AI 战略推演详情
+                <span class="sim-confidence">
+                  置信度{{ ((edictResult.simulation.ai_confidence || 0) * 100).toFixed(0) }}%
+                  <span v-if="edictResult.simulation.overall_risk_level" class="sim-risk sim-risk-{{ edictResult.simulation.overall_risk_level }}">
+                    | 风险: {{ { low:'低', medium:'中', high:'高', critical:'危急' }[edictResult.simulation.overall_risk_level] || edictResult.simulation.overall_risk_level }}
+                  </span>
+                </span>
+              </div>
+              <div v-if="showSimDetail" class="sim-detail">
+                <div v-if="edictResult.simulation.situation_analysis" class="sim-section">
+                  <div class="sim-section-title">态势分析</div>
+                  <div class="sim-text">{{ edictResult.simulation.situation_analysis }}</div>
+                </div>
+                <div v-if="edictResult.simulation.primary_plan_steps?.length" class="sim-section">
+                  <div class="sim-section-title">主方案步骤</div>
+                  <div v-for="(step, i) in edictResult.simulation.primary_plan_steps" :key="'step-'+i" class="sim-step">
+                    <span class="sim-step-num">{{ i + 1 }}.</span>
+                    {{ step.description }}
+                    <span v-if="step.expected_effect" class="sim-step-effect">→ {{ step.expected_effect }}</span>
+                  </div>
+                </div>
+                <div v-if="edictResult.simulation.risk_matrix?.length" class="sim-section">
+                  <div class="sim-section-title">风险评估</div>
+                  <div v-for="(r, i) in edictResult.simulation.risk_matrix" :key="'risk-'+i" class="sim-risk-item">
+                    <span class="sim-risk-type">{{ { military:'军事', economic:'经济', diplomatic:'外交', stability:'民心' }[r.type] || r.type }}</span>
+                    <span class="sim-risk-prob">概率{{ (r.probability * 100).toFixed(0) }}%</span>
+                    <span class="sim-risk-impact" :class="'sim-impact-'+r.impact">影响: {{ { low:'低', medium:'中', high:'高', critical:'致命' }[r.impact] || r.impact }}</span>
+                    {{ r.description }}
+                  </div>
+                </div>
+                <div v-if="edictResult.simulation.geopolitical_impacts?.length" class="sim-section">
+                  <div class="sim-section-title">地缘影响</div>
+                  <div v-for="(g, i) in edictResult.simulation.geopolitical_impacts" :key="'geo-'+i" class="sim-geo-item">
+                    <strong>{{ g.faction }}</strong> ({{ { hostile:'敌视', neutral:'中立', friendly:'友善', opportunistic:'观望投机' }[g.reaction] || g.reaction }})：
+                    {{ g.description }}
+                  </div>
+                </div>
+                <div v-if="edictResult.simulation.resource_projection" class="sim-section">
+                  <div class="sim-section-title">资源投影</div>
+                  <div class="sim-resource-grid">
+                    <span>银两 {{ edictResult.simulation.resource_projection.treasury.before }} → {{ edictResult.simulation.resource_projection.treasury.after }}</span>
+                    <span>粮草 {{ edictResult.simulation.resource_projection.grain.before }} → {{ edictResult.simulation.resource_projection.grain.after }}</span>
+                    <span>兵力 {{ edictResult.simulation.resource_projection.troops.before }} → {{ edictResult.simulation.resource_projection.troops.after }}</span>
+                  </div>
+                </div>
+                <div v-if="edictResult.simulation.consequence_analysis" class="sim-section">
+                  <div class="sim-section-title">后果推演</div>
+                  <div class="sim-text">{{ edictResult.simulation.consequence_analysis }}</div>
+                </div>
+                <div v-if="edictResult.feedback_report" class="sim-section sim-feedback">
+                  <div class="sim-section-title">执行反馈</div>
+                  <div class="sim-text">{{ edictResult.feedback_report.report_text }}</div>
+                  <div v-if="edictResult.feedback_report.adjustment_suggestion" class="sim-suggestion">
+                    💡 {{ edictResult.feedback_report.adjustment_suggestion }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- 关闭按钮 → 推进回合 -->
             <button class="er-advance-main" @click="closeEdictScroll">
               臣等遵旨 · 推进次月
@@ -614,6 +692,18 @@
         </div>
       </div>
     </div>
+
+    <!-- 游戏事件通知叠加层 -->
+    <GameEventOverlay ref="eventOverlayRef" />
+
+    <!-- 全局加载覆盖层（回合推进/读档时显示） -->
+    <LoadingOverlay
+      :visible="showLoadingOverlay"
+      :title="loadingTitle"
+      :message="loadingMessage"
+      :progress="loadingProgress"
+      :show-progress="loadingShowProgress"
+    />
   </div>
 </template>
 
@@ -662,9 +752,21 @@ import DiplomacyDeepPanel from '@/components/DiplomacyDeepPanel.vue'
 import HistoryAnchorPanel from '@/components/HistoryAnchorPanel.vue'
 import AIControlPanel from '@/components/AIControlPanel.vue'
 import EndingPanel from '@/components/EndingPanel.vue'
+import TurnSummaryScroll from '@/components/TurnSummaryScroll.vue'
 import WarPanel from '@/components/WarPanel.vue'
 import PeaceNegotiation from '@/components/PeaceNegotiation.vue'
+import GameEventOverlay from '@/components/GameEventOverlay.vue'
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import AchievementPanel from '@/components/AchievementPanel.vue'
+import TechTreePanel from '@/components/TechTreePanel.vue'
+import type { GameEvent as GameEventType } from '@/components/GameEventOverlay.vue'
 import { audioManager } from '@/utils/audioManager'
+import { useGameAudioBridge } from '@/audio/gameAudioBridge'
+import {
+  sfxTerritoryGain, sfxTerritoryLose, sfxBattleVictory, sfxBattleDefeat,
+  sfxDiplomacyTreaty, sfxDiplomacyBreak, sfxTurnAdvance, sfxTurnSummary,
+  sfxRebellion, sfxDisaster, sfxWarDeclaration, sfxPeaceTreaty,
+} from '@/audio/gameSfx'
 
 const route = useRoute()
 const router = useRouter()
@@ -684,12 +786,60 @@ const showTalentMarket = ref(false)
 const showDiplomacyDeep = ref(false)
 const showHistory = ref(false)
 const showAIControl = ref(false)
+const showAchievement = ref(false)
+const showTechTree = ref(false)
+
+// ===== 游戏音频桥接（场景氛围 + 事件音效） =====
+const gameAudio = useGameAudioBridge({
+  showWarPanel: store.showWarPanel,
+  showDiplomacyPanel: showDiplomacyDeep,
+  showPolicyPanel: showPolicy,
+  showEnding: store.showEnding,
+  endingData: store.endingData,
+  isProcessing: store.isProcessing,
+  currentRound: store.currentRound,
+  isBgmMuted: computed(() => !audioManager.isBgmPlaying()),
+})
+
+// ===== 游戏手感增强（3.0 完善） =====
+const eventOverlayRef = ref<InstanceType<typeof GameEventOverlay> | null>(null)
+const showLoadingOverlay = ref(false)
+const loadingTitle = ref('')
+const loadingMessage = ref('')
+const loadingProgress = ref(0)
+const loadingShowProgress = ref(false)
+
+/** 推送游戏事件通知 */
+function pushGameEvent(evt: Omit<GameEventType, 'id'>) {
+  eventOverlayRef.value?.push(evt)
+}
+
+/** 显示加载覆盖层 */
+function showLoading(title: string, message = '', withProgress = false) {
+  loadingTitle.value = title
+  loadingMessage.value = message
+  loadingProgress.value = 0
+  loadingShowProgress.value = withProgress
+  showLoadingOverlay.value = true
+}
+
+/** 更新加载进度 */
+function updateLoadingProgress(pct: number, msg?: string) {
+  loadingProgress.value = Math.min(100, Math.max(0, pct))
+  if (msg) loadingMessage.value = msg
+}
+
+/** 隐藏加载覆盖层 */
+function hideLoading() {
+  showLoadingOverlay.value = false
+}
 const eventDetail = ref<GameEvent | null>(null)
 const gameError = ref('')
 const edictText = ref('')
 const edictResult = ref<any>(null)
 const isMajorEdict = ref(false)
 const showExecDetail = ref(false)
+const showSimDetail = ref(false)  // 4.0 新增：AI推演详情折叠
 const edictValidationHint = ref('')
 const edictNeedsClarify = ref(false)
 let edictValidateTimer: ReturnType<typeof setTimeout> | null = null
@@ -913,7 +1063,7 @@ function onEdictInput() {
     '讨伐', '尽起', '兴师', '誓师', '大都', '御驾', '亲征', '鼎定', '皇位']
   isMajorEdict.value = majors.some(k => t.includes(k))
 
-  // 防抖实时NL校验（输入停顿800ms后触发）
+  // 防抖实时校验（输入停顿800ms后触发）
   if (edictValidateTimer) clearTimeout(edictValidateTimer)
   edictValidationHint.value = ''
   edictNeedsClarify.value = false
@@ -921,6 +1071,38 @@ function onEdictInput() {
   if (t.trim().length >= 5) {
     edictValidateTimer = setTimeout(async () => {
       try {
+        // 4.0: 优先使用 AI 轻量预览（与执行端一致的意图分类）
+        try {
+          const { simulationPreview: simPreview } = await import('@/services/api')
+          const preview = await simPreview(t)
+          if (preview?.ai_preview) {
+            const p = preview.ai_preview
+            const feasibilityMap: Record<string, string> = {
+              'feasible': '可执行',
+              'constrained': '受限',
+              'infeasible': '不可行',
+            }
+            const feasLabel = feasibilityMap[p.feasibility] || p.feasibility
+            const conf = p.confidence ? ` | 置信度${(p.confidence * 100).toFixed(0)}%` : ''
+            const riskStr = p.risk_flags?.length ? ` | ⚠${p.risk_flags[0]}` : ''
+            const categoryMap: Record<string, string> = {
+              'military': '军事征伐', 'civil': '内政建设', 'diplomacy': '邦交纵横',
+              'personnel': '人事调度', 'national_policy': '国策大政',
+              'strategic_consult': '谋略问策', 'mixed': '综合施政',
+              'cancel': '撤回前旨',
+            }
+            const catName = categoryMap[p.intent_category] || p.intent_category
+            edictValidationHint.value = `[${preview.preview_type === 'ai' ? 'AI预览' : '本地'}] ${catName} | ${feasLabel}${conf}${riskStr}`
+            edictNeedsClarify.value = p.needs_clarification || false
+            if (p.resource_warning) {
+              edictValidationHint.value += `\n${p.resource_warning}`
+            }
+            return
+          }
+        } catch {
+          // AI预览不可用，降级到本地校验
+        }
+        // 降级：本地关键词校验
         const v = await nlValidateEdict(t)
         if (v.needs_clarification && v.error_prompt) {
           edictValidationHint.value = v.error_prompt.replace(/【.*?】/g, '').trim().slice(0, 200)
@@ -938,7 +1120,7 @@ function onEdictInput() {
           }
           const clsName = clsMap[v.classification.primary] || v.classification.primary
           const conf = v.classification.confidence ? ` (置信度${(v.classification.confidence * 100).toFixed(0)}%)` : ''
-          edictValidationHint.value = `${clsName}${conf}`
+          edictValidationHint.value = `[本地] ${clsName}${conf}`
           edictNeedsClarify.value = false
         }
       } catch {
@@ -1099,9 +1281,10 @@ function ctxAction(action: string) {
       // 派遣细作：打开谍报面板 + 加入圣旨指令
       store.selectTile(tileId)
       store.togglePanel('spy' as any)
+      const spyTargetFaction = store.tiles[tileId]?.faction_id || ''
       store.pendingEdictCommands.push({
         action: 'spy',
-        params: { tile_id: tileId },
+        params: { tile_id: tileId, target_faction: spyTargetFaction },
         label: `向${tileName}派遣细作`
       })
       break
@@ -1220,15 +1403,23 @@ const hexMapTiles = computed<HexTile[]>(() => {
   return tiles
 })
 
-/** 从 store.factions 构建势力→地名列表映射 */
+/** 从 store.tiles（实时游戏状态）构建势力→地名列表映射
+ * 
+ * 修复：原先读取 FactionState 的 tiles/conquered_tiles 动态字段，
+ * 但后端从未设置这些字段，导致地图始终显示静态烘焙的势力归属，
+ * 与左下角 store.playerTiles.length 统计不一致。
+ * 现在改用 store.tiles（WorldState.tiles 全量地块字典），
+ * 按 faction_id 分组收集 tile_name，确保地图与 UI 统计同源。
+ */
 function buildFactionTileMap(): Record<string, string[]> {
   const result: Record<string, string[]> = {}
-  for (const [fid, faction] of Object.entries(store.factions)) {
-    const f = faction as any
-    const owned = f.tiles || f.conquered_tiles || []
-    if (owned.length) result[fid] = owned.map((t: any) => 
-      (typeof t === 'string' ? t : t.tile_id || t).toLowerCase().replace(/\s/g, '')
-    )
+  for (const tile of Object.values(store.tiles)) {
+    const fid = tile.faction_id
+    if (!fid) continue
+    const name = (tile.tile_name || '').toLowerCase().replace(/\s/g, '')
+    if (!name) continue
+    if (!result[fid]) result[fid] = []
+    if (!result[fid].includes(name)) result[fid].push(name)
   }
   return result
 }
@@ -1264,6 +1455,8 @@ async function loadStaticMap() {
   if (Object.keys(staticMapTiles.value).length > 0) return  // 已加载
   isMapLoading.value = true
 
+  let tilesLoaded = false
+
   // 1) 静态地图 (优先加载含海域的完整版)
   //    三级回退: map_full → 本地map_full → 本地map_final
   //    修复: API 竞速3秒超时，避免后端离线时地图卡死120秒
@@ -1275,7 +1468,8 @@ async function loadStaticMap() {
     ])
     if (rFull?.ok !== false && rFull?.data?.data?.tiles) {
       ingestMapTiles(rFull.data.data)
-      console.log('[GamePage] 完整地图加载完成 (API):', Object.keys(staticMapTiles.value).length, '个格子')
+      tilesLoaded = true
+      if (import.meta.env.DEV) console.log('[GamePage] 完整地图加载完成 (API):', Object.keys(staticMapTiles.value).length, '个格子')
     } else {
       throw new Error('无完整地图API')
     }
@@ -1283,17 +1477,22 @@ async function loadStaticMap() {
     try {
       // 回退: 本地 map_full.json
       ingestMapTiles(await fetchLocalJson('/data/map/map_full.json'))
-      console.log('[GamePage] 完整地图加载完成 (本地):', Object.keys(staticMapTiles.value).length, '个格子')
+      tilesLoaded = true
+      if (import.meta.env.DEV) console.log('[GamePage] 完整地图加载完成 (本地):', Object.keys(staticMapTiles.value).length, '个格子')
     } catch {
       // 再回退: map_final.json（仅陆地）
       try {
         ingestMapTiles(await fetchLocalJson('/data/map/map_final.json'))
-        console.log('[GamePage] 静态地图加载完成 (本地 map_final):', Object.keys(staticMapTiles.value).length, '个格子')
+        tilesLoaded = true
+        if (import.meta.env.DEV) console.log('[GamePage] 静态地图加载完成 (本地 map_final):', Object.keys(staticMapTiles.value).length, '个格子')
       } catch (e) {
         console.warn('[GamePage] 静态地图加载全部失败:', e)
       }
     }
   }
+
+  // ✓ 地块数据就绪 → 立即显示地图，边界线/图层配置后台异步加载
+  if (tilesLoaded) isMapLoading.value = false
 
   // 2) 边界线 + 行省轮廓 (API → 本地 JSON，3秒超时竞速)
   try {
@@ -1306,14 +1505,14 @@ async function loadStaticMap() {
     // 行省聚合轮廓 (用于最小缩放视图)
     const rawOutlines = r?.data?.data?.outlines || null
     if (rawOutlines) staticOutlines.value = convertOutlines(rawOutlines)
-    if (staticBoundaries.value) console.log('[GamePage] 边界线加载完成 (API)')
+    if (staticBoundaries.value && import.meta.env.DEV) console.log('[GamePage] 边界线加载完成 (API)')
   } catch {
     try {
       const d = await fetchLocalJson('/data/map/boundaries.json')
       staticBoundaries.value = d?.boundaries || null
       const rawOutlines = d?.outlines || null
       if (rawOutlines) staticOutlines.value = convertOutlines(rawOutlines)
-      if (staticBoundaries.value) console.log('[GamePage] 边界线加载完成 (本地)')
+      if (staticBoundaries.value && import.meta.env.DEV) console.log('[GamePage] 边界线加载完成 (本地)')
     } catch {
       console.warn('[GamePage] 边界线加载失败 (地图将无边界线)')
     }
@@ -1330,7 +1529,7 @@ async function loadStaticMap() {
         path: pts.map(p => [p.x, p.y]),
       })
     }
-    console.log('[GamePage] 行省轮廓加载完成:', result.length, '个省')
+    if (import.meta.env.DEV) console.log('[GamePage] 行省轮廓加载完成:', result.length, '个省')
     return result
   }
 
@@ -1340,7 +1539,7 @@ async function loadStaticMap() {
       loadLayerConfig(),
       new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
     ])
-    console.log('[GamePage] 图层配置加载完成')
+    if (import.meta.env.DEV) console.log('[GamePage] 图层配置加载完成')
   } catch {
     console.warn('[GamePage] 图层配置加载失败 (使用本地默认值)')
   }
@@ -1468,6 +1667,8 @@ const rightToolbarItems = [
   { id: 'history', icon: '📜', label: '青史' },
   { id: 'audio', icon: '🔊', label: '音效' },
   { id: 'replay', icon: '⏪', label: '回放' },
+  { id: 'achievement', icon: '🏆', label: '功勋' },
+  { id: 'techTree', icon: '🌳', label: '国策' },
 ] as const
 
 /** 当前弹出面板所在侧 */
@@ -1487,6 +1688,8 @@ function isToolActive(id: string): boolean {
   if (id === 'settings') return showSettings.value
   if (id === 'replay') return showReplay.value
   if (id === 'security') return showSecurity.value
+  if (id === 'achievement') return showAchievement.value
+  if (id === 'techTree') return showTechTree.value
   return store.activePanel === id
 }
 
@@ -1495,6 +1698,7 @@ function closeAllPanels() {
   store.activePanel = ''
   showPolicy.value = false
   showAdvisor.value = false
+  showAdvisorPopup.value = false
   showGenerals.value = false
   showTalentMarket.value = false
   showBatchBuild.value = false
@@ -1505,6 +1709,16 @@ function closeAllPanels() {
   showSettings.value = false
   showSecurity.value = false
   showReplay.value = false
+  showAchievement.value = false
+  showTechTree.value = false
+  // 关闭 store 管理的面板（行军/战争/和平谈判）
+  store.showMarchPanel = false
+  store.showWarPanel = false
+  store.showPeacePanel = false
+  // 关闭事件详情 / 圣旨结果 / 圣旨抽屉
+  eventDetail.value = null
+  edictResult.value = null
+  edictDrawerOpen.value = false
   panelSide.value = ''
 }
 
@@ -1543,6 +1757,8 @@ async function onToolClick(tool: { id: string }) {
   if (tool.id === 'ai-control') { showAIControl.value = true; return }
   if (tool.id === 'replay') { showReplay.value = true; return }
   if (tool.id === 'security') { showSecurity.value = true; return }
+  if (tool.id === 'achievement') { showAchievement.value = true; return }
+  if (tool.id === 'techTree') { showTechTree.value = true; return }
   store.activePanel = tool.id as any
 }
 
@@ -1564,6 +1780,9 @@ async function onRightToolClick(tool: { id: string }) {
 async function executeEdict() {
   if (!edictText.value.trim() || store.isProcessing) return
 
+  // P0修复: 设置 isProcessing 防止并发执行
+  store.isProcessing = true
+
   // 如果有待办指令（右键菜单、面板操作等），自动合并到圣旨文本
   let fullText = edictText.value
   if (store.pendingEdictCommands.length > 0) {
@@ -1577,12 +1796,13 @@ async function executeEdict() {
   const factionId = store.playerFaction?.faction_id || ''
 
   try {
-    // 使用统一NL管道
+    // 使用统一NL管道（4.0 启用AI战略推演）
     const result = await nlProcessEdict({
       edict_text: text,
       faction_id: factionId,
       direct_execute: true,
       use_ai: true,
+      use_simulation: true,
     })
 
     // 处理撤回指令
@@ -1624,7 +1844,7 @@ async function executeEdict() {
     edictValidationHint.value = ''
     edictNeedsClarify.value = false
 
-    // 构建展示结果
+    // 构建展示结果（4.0 增加推演和反馈数据）
     edictResult.value = {
       ai_analysis: {
         edict_language: result.edict_language || result.ai_analysis?.edict_language || `奉天承运皇帝，诏曰：${text.slice(0, 60)}。钦此。`,
@@ -1641,6 +1861,9 @@ async function executeEdict() {
       execution: result.execution || { total_executed: 0, total_failed: 0, executed: [], failed: [] },
       classification: result.classification,
       decomposed_steps: result.decomposed_steps,
+      simulation_used: result.simulation_used || false,
+      simulation: result.simulation || null,
+      feedback_report: result.feedback_report || null,
     }
     showExecDetail.value = false
 
@@ -1655,6 +1878,9 @@ async function executeEdict() {
     edictResult.value = buildErrorEdictResult('网络或后端异常')
     edictText.value = ''
     edictValidationHint.value = ''
+  } finally {
+    // P0修复: 确保无论成功/失败都释放 isProcessing
+    store.isProcessing = false
   }
 }
 
@@ -1737,6 +1963,9 @@ function buildErrorEdictResult(reason: string): any {
 
 /** 关闭圣旨卷轴并推进回合 */
 async function closeEdictScroll() {
+  // P0修复: 防止与 handleAdvanceTurn 并发
+  if (store.isProcessing) return
+
   edictResult.value = null
   isMajorEdict.value = false
   try {
@@ -1744,7 +1973,7 @@ async function closeEdictScroll() {
   } catch (e: any) {
     console.warn('[GamePage] 回合推进失败:', e?.message || e)
     // V4.3: 推进失败时尝试刷新世界状态保持 UI 同步
-    try { await store.refreshWorldState() } catch {}
+    try { await store.refreshWorldState() } catch { console.warn('[GamePage] 刷新世界状态失败') }
   }
 }
 
@@ -1769,12 +1998,133 @@ function quickFillEdict(suggestion: string) {
 // ---- 回合推进 ----
 async function handleAdvanceTurn() {
   if (store.isProcessing) return
+
+  // 回合推进音效
+  sfxTurnAdvance()
+
+  // 显示加载覆盖层
+  showLoading('天下推演', '诸谋臣正在研判时局，天道正在运转...', true)
+  updateLoadingProgress(10, 'A1 谋策阁 研判局势...')
+
   try {
+    // 模拟加载阶段（实际的 AI 推演在服务端）
+    const progressStages = [
+      { pct: 20, msg: 'A2 群雄殿 各方势力决策...' },
+      { pct: 40, msg: 'A3 律法堂 朝政运转...' },
+      { pct: 55, msg: 'A5 司天台 天象异变...' },
+      { pct: 70, msg: 'A6 外交署 纵横捭阖...' },
+      { pct: 85, msg: '军机结算 粮草周转...' },
+    ]
+
+    let stageIdx = 0
+    const progressTimer = setInterval(() => {
+      if (stageIdx < progressStages.length) {
+        const s = progressStages[stageIdx]
+        updateLoadingProgress(s.pct, s.msg)
+        stageIdx++
+      }
+    }, 600)
+
     await store.advanceTurn()
+    clearInterval(progressTimer)
+
+    updateLoadingProgress(95, '誊写邸报...')
+
+    // 检测并推送关键事件通知
+    detectAndPushEvents()
+
+    updateLoadingProgress(100, '完成')
   } catch (e: any) {
     console.warn('回合推进失败:', e?.message || e)
-    // V4.3: 推进失败时尝试刷新世界状态保持 UI 同步
-    try { await store.refreshWorldState() } catch {}
+    try { await store.refreshWorldState() } catch { console.warn('[GamePage] 刷新世界状态失败') }
+  } finally {
+    // 短暂延迟后隐藏加载层，让玩家看到"完成"状态
+    setTimeout(() => hideLoading(), 500)
+  }
+}
+
+/** 检测回合结果并推送事件通知 */
+function detectAndPushEvents() {
+  // 领土变化
+  if (store.tileChangesThisRound && store.tileChangesThisRound.length > 0) {
+    const gains = store.tileChangesThisRound.filter((c: any) => c.new_owner === store.playerFactionId)
+    const losses = store.tileChangesThisRound.filter((c: any) => c.old_owner === store.playerFactionId && c.new_owner !== store.playerFactionId)
+
+    if (gains.length > 0) {
+      pushGameEvent({
+        type: 'territory_gain',
+        title: `新得${gains.length}处领地`,
+        detail: gains.slice(0, 3).map((g: any) => g.tile_name || g.tile_id).join('、') + (gains.length > 3 ? ` 等${gains.length}处` : ''),
+        duration: 6000,
+      })
+      sfxTerritoryGain()
+    }
+    if (losses.length > 0) {
+      pushGameEvent({
+        type: 'territory_lose',
+        title: `失去${losses.length}处领地`,
+        detail: losses.slice(0, 3).map((l: any) => l.tile_name || l.tile_id).join('、') + (losses.length > 3 ? ` 等${losses.length}处` : ''),
+        duration: 6000,
+      })
+      sfxTerritoryLose()
+    }
+  }
+
+  // 新事件
+  const newEvts = store.events.slice(0, 3) // 最近3个事件
+  for (const evt of newEvts) {
+    if ((evt as any).event_type === 'battle') {
+      const isWin = (evt as any).result === 'victory' || (evt as any).outcome === 'win'
+      pushGameEvent({
+        type: isWin ? 'battle_win' : 'battle_lose',
+        title: isWin ? '大捷！' + ((evt as any).title || '') : '兵败' + ((evt as any).title || ''),
+        detail: (evt as any).narrative || (evt as any).description || '',
+        duration: 7000,
+      })
+      if (isWin) sfxBattleVictory()
+      else sfxBattleDefeat()
+    } else if ((evt as any).event_type === 'disaster') {
+      pushGameEvent({
+        type: 'disaster',
+        title: (evt as any).title || '天降灾祸',
+        detail: (evt as any).narrative || (evt as any).description || '',
+        duration: 6000,
+      })
+      sfxDisaster()
+    } else if ((evt as any).event_type === 'diplomacy') {
+      pushGameEvent({
+        type: 'diplomacy',
+        title: (evt as any).title || '外交变故',
+        detail: (evt as any).narrative || (evt as any).description || '',
+        duration: 5000,
+      })
+      sfxDiplomacyTreaty()
+    }
+  }
+
+  // 叛军检测
+  if (store.rebelArmies && store.rebelArmies.length > 0) {
+    pushGameEvent({
+      type: 'rebellion',
+      title: '境内出现叛军',
+      detail: `共${store.rebelArmies.length}支叛军需要清剿`,
+      duration: 6000,
+    })
+    sfxRebellion()
+  }
+
+  // 灾害检测
+  if (store.activeDisasters && store.activeDisasters.length > 0) {
+    const latest = store.activeDisasters[store.activeDisasters.length - 1]
+    if (latest) {
+      pushGameEvent({
+        type: 'disaster',
+        title: (latest as any).name || '灾害发生',
+        detail: (latest as any).description || `影响${(latest as any).affected_tiles || '?'}个地块`,
+        duration: 6000,
+      })
+      sfxDisaster()
+    }
   }
 }
 
@@ -1813,7 +2163,7 @@ function normalizeFactionId(raw: string): string {
 // ---- 初始加载 ----
 async function doInit(rawFactionId: string) {
   const factionId = normalizeFactionId(rawFactionId)
-  console.log('[GamePage] doInit factionId:', rawFactionId, '→', factionId)
+  if (import.meta.env.DEV) console.log('[GamePage] doInit factionId:', rawFactionId, '→', factionId)
   
   gameError.value = ''
 
@@ -1823,18 +2173,18 @@ async function doInit(rawFactionId: string) {
   // V4.3: 若已开局且势力一致则跳过重复初始化；势力变更则重置后重新开局
   if (store.isGameStarted) {
     if (store.playerFactionId === factionId) {
-      console.log('[GamePage] 已初始化，跳过')
+      if (import.meta.env.DEV) console.log('[GamePage] 已初始化，跳过')
       return
     }
     // 切换势力 → 重置旧状态
-    console.log('[GamePage] 切换势力，重置状态:', store.playerFactionId, '→', factionId)
+    if (import.meta.env.DEV) console.log('[GamePage] 切换势力，重置状态:', store.playerFactionId, '→', factionId)
     await store.resetGame()
   }
 
   // 先执行本地 fallback，确保数据立即可用
   try {
     await initLocalFallback(factionId)
-    console.log('[GamePage] 本地地图数据初始化完成，地块数:', Object.keys(store.tiles).length)
+    if (import.meta.env.DEV) console.log('[GamePage] 本地地图数据初始化完成，地块数:', Object.keys(store.tiles).length)
   } catch (e) {
     console.warn('[GamePage] 本地 fallback 失败:', e)
   }
@@ -1855,7 +2205,7 @@ async function doInit(rawFactionId: string) {
       setTimeout(() => reject(new Error('后端响应超时')), 6000)
     )
     await Promise.race([store.startGame(factionId, 'player_turn'), timeoutPromise])
-    console.log('[GamePage] 后端开局同步完成，地块数:', Object.keys(store.tiles).length)
+    if (import.meta.env.DEV) console.log('[GamePage] 后端开局同步完成，地块数:', Object.keys(store.tiles).length)
   } catch (err: any) {
     console.warn('[GamePage] 后端开局未完成，使用本地数据继续:', err?.message || String(err))
   }
@@ -1909,12 +2259,13 @@ onUnmounted(() => {
   window.removeEventListener('add-edict-decision', onAddEdictDecision)
   // 离开游玩界面时，停止游戏对局音频
   audioManager.stopAll()
+  gameAudio.destroy()
 })
 
 // ---- 本地 fallback ----
 async function initLocalFallback(factionId: string) {
   let config: any = null
-  try { config = await loadFactionsConfig() } catch {}
+  try { config = await loadFactionsConfig() } catch { console.warn('[GamePage] 加载势力配置失败，使用默认配置') }
 
   const DEFAULT_FACTIONS: Record<string, any> = {
     faction_yuan: { id: 'faction_yuan', name: '元顺帝', title: '大元皇帝', color: '#8B0000', capital_tile: 'tile_dadu', initial_treasury: 20000, initial_grain: 8000, initial_arms: 300, initial_horses: 200, initial_troops: 6000, initial_reputation: 60, tiles: ['tile_dadu','tile_shangdu','tile_taiyuan','tile_datong','tile_jinan','tile_zhending','tile_baoding','tile_hejian','tile_daming','tile_pingyang','tile_yanan','tile_xian','tile_ganzhou','tile_suzhou_gs','tile_ningxia','tile_liaoyang','tile_shenyang','tile_helin','tile_karakorum'], personality_tags: ['蒙古铁骑','正统名分'], buffs: [{name:'北地铁骑',effect:'骑兵战力+35%',type:'military'}], debuffs: [{name:'勋贵侵蚀',effect:'每月国库流失2%',type:'economy'}] },
@@ -2068,15 +2419,16 @@ function severityName(s: string): string {
 
 /* ---- 顶层状态栏 ---- */
 .top-bar {
-  height: 64px;
+  height: var(--topbar-h);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  padding: 0 12px;
   background: linear-gradient(180deg, #1e1912 0%, #181410 100%);
   border-bottom: 1px solid #2a2418;
   flex-shrink: 0;
   z-index: 100;
+  min-height: 36px;
 }
 
 .top-left {
@@ -2150,9 +2502,11 @@ function severityName(s: string): string {
 .top-right {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 420px;
+  gap: 6px;
+  flex-shrink: 1;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  overflow: hidden;
 }
 
 .resource-group {
@@ -2507,7 +2861,8 @@ function severityName(s: string): string {
 
 /* ---- 左侧工具栏 ---- */
 .left-toolbar {
-  width: 52px;
+  width: var(--toolbar-w);
+  min-width: 28px;
   background: linear-gradient(270deg, #1a1610 0%, #141008 100%);
   border-right: 1px solid #2a2418;
   display: flex;
@@ -2535,7 +2890,8 @@ function severityName(s: string): string {
 
 /* ---- 右侧工具栏 ---- */
 .right-toolbar {
-  width: 52px;
+  width: var(--toolbar-w);
+  min-width: 28px;
   background: linear-gradient(90deg, #1a1610 0%, #141008 100%);
   border-left: 1px solid #2a2418;
   display: flex;
@@ -2596,13 +2952,10 @@ function severityName(s: string): string {
   transform: translateX(-50%);
   width: min(85vw, 720px);
   max-height: 52vh;
-  background: linear-gradient(180deg, rgba(18, 13, 8, 0.98) 0%, rgba(20, 14, 6, 0.98) 100%);
-  border: 1px solid rgba(184, 150, 62, 0.3);
   border-bottom: none;
   border-radius: 8px 8px 0 0;
   z-index: 110;
   overflow: hidden;
-  box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(184, 150, 62, 0.08);
 }
 
 .edict-drawer-body {
@@ -2888,7 +3241,8 @@ function severityName(s: string): string {
 
 /* ---- 底层 ---- */
 .bottom-bar {
-  height: 120px;
+  height: var(--bottombar-h);
+  min-height: 56px;
   display: flex;
   align-items: stretch;
   background: linear-gradient(180deg, #1a1610 0%, #120d08 100%);
@@ -2898,14 +3252,16 @@ function severityName(s: string): string {
   position: relative;
 }
 
-/* 左：君主面板 — 放大版 */
+/* 左：君主面板 — 可伸缩 */
 .ruler-panel {
   width: 290px;
-  padding: 10px 14px;
+  min-width: 160px;
+  padding: 8px 12px;
   display: flex;
   align-items: center;
   border-right: 1px solid #2a2418;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  overflow: hidden;
 }
 
 .ruler-portrait {
@@ -3038,7 +3394,8 @@ function severityName(s: string): string {
 .edict-seal:hover { filter: drop-shadow(0 0 8px rgba(200,168,74,0.45)); }
 
 .edict-input {
-  width: 1000px;
+  flex: 1;
+  min-width: 0;
   background: rgba(0,0,0,0.3);
   border: 1px solid rgba(184,150,62,0.2);
   color: #B89B68;
@@ -3652,6 +4009,93 @@ function severityName(s: string): string {
   padding: 1px 5px; border-radius: 2px; white-space: nowrap;
 }
 
+/* ============================================================
+   4.0 AI战略推演面板
+   ============================================================ */
+.edict-simulation-panel {
+  margin: 12px 0;
+  border: 1px solid rgba(120,150,140,0.25);
+  border-radius: 3px;
+  background: rgba(30,45,40,0.3);
+  overflow: hidden;
+}
+.sim-label {
+  font-size: 11px; color: rgba(130,180,160,0.7); cursor: pointer;
+  letter-spacing: 2px; padding: 6px 10px;
+  display: flex; align-items: center; justify-content: space-between;
+  background: rgba(40,60,50,0.25);
+}
+.sim-label:hover { color: rgba(160,210,180,0.9); }
+.sim-confidence { 
+  font-size: 10px; color: rgba(140,180,160,0.65);
+  font-style: italic;
+}
+.sim-risk { margin-left: 6px; }
+.sim-risk-low { color: rgba(120,180,120,0.8); }
+.sim-risk-medium { color: rgba(200,180,100,0.8); }
+.sim-risk-high { color: rgba(200,130,80,0.8); }
+.sim-risk-critical { color: rgba(200,80,60,0.9); }
+
+.sim-detail {
+  padding: 10px 14px;
+  font-size: 11px; color: rgba(200,190,170,0.75);
+  line-height: 1.6;
+  max-height: 320px; overflow-y: auto;
+}
+.sim-section {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(120,150,140,0.1);
+}
+.sim-section:last-child { border-bottom: none; margin-bottom: 0; }
+.sim-section-title {
+  font-size: 10px; font-weight: bold; color: rgba(150,180,160,0.7);
+  letter-spacing: 2px; margin-bottom: 4px;
+  text-transform: uppercase;
+}
+.sim-text { color: rgba(180,170,150,0.7); }
+.sim-step {
+  padding: 2px 0; margin-bottom: 2px;
+}
+.sim-step-num {
+  display: inline-block; width: 18px; color: rgba(160,180,140,0.6);
+}
+.sim-step-effect {
+  display: block; margin-left: 18px; font-size: 10px;
+  color: rgba(140,160,130,0.55); font-style: italic;
+}
+.sim-risk-item {
+  padding: 2px 0; font-size: 10px;
+}
+.sim-risk-type {
+  display: inline-block; padding: 0 4px; margin-right: 4px;
+  background: rgba(184,150,62,0.12); color: rgba(180,160,110,0.7);
+  border-radius: 2px; font-weight: bold;
+}
+.sim-risk-prob {
+  margin: 0 4px; color: rgba(160,140,100,0.6); font-size: 9px;
+}
+.sim-risk-impact { margin: 0 4px; font-size: 9px; }
+.sim-impact-low { color: rgba(120,180,120,0.8); }
+.sim-impact-medium { color: rgba(200,180,100,0.8); }
+.sim-impact-high { color: rgba(200,130,80,0.8); }
+.sim-impact-critical { color: rgba(200,80,60,0.9); font-weight: bold; }
+
+.sim-geo-item {
+  padding: 1px 0; font-size: 10px;
+}
+.sim-resource-grid {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  font-size: 10px; color: rgba(160,150,130,0.65);
+}
+.sim-feedback {
+  background: rgba(40,50,40,0.2); border-radius: 2px; padding: 6px 8px;
+}
+.sim-suggestion {
+  margin-top: 4px; font-size: 10px; color: rgba(200,180,130,0.7);
+  font-style: italic;
+}
+
 /* 主关闭按钮 → 推进回合 */
 .er-advance-main {
   width: 100%; padding: 14px; margin-top: 8px;
@@ -3890,8 +4334,35 @@ function severityName(s: string): string {
 @keyframes toast-out { from { opacity: 1; } to { opacity: 0; transform: translateX(-50%) translateY(-8px); } }
 .top-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* ===== 响应式：圣旨台 + 弹窗在小屏下适配 ===== */
+/* ===== 响应式：全局布局 + 圣旨台 + 弹窗适配 ===== */
+@media (max-width: 1280px) {
+  .top-left { min-width: 140px; }
+  .dynasty-banner { gap: 6px; }
+  .banner-emblem { width: 32px; height: 32px; }
+  .resource-item { min-width: 40px; }
+  .res-value { font-size: 11px; }
+  .res-label { font-size: 8px; }
+}
+
+@media (max-width: 1024px) {
+  .banner-emblem { width: 28px; height: 28px; }
+  .resource-group { gap: 4px; }
+  .resource-item { min-width: 36px; }
+  .func-btns { gap: 2px; }
+}
+
 @media (max-width: 768px) {
+  .top-left { flex: 0 0 auto; min-width: 100px; }
+  .banner-emblem { width: 24px; height: 24px; }
+  .banner-name { font-size: var(--fs-sm); }
+  .date-display { font-size: var(--fs-sm); }
+  .resource-item { min-width: 32px; }
+  .resource-divider { height: 24px; }
+  .func-btns button { width: 26px; height: 26px; }
+  .ruler-panel { width: auto; min-width: 120px; padding: 6px 8px; }
+  .portrait-frame { width: 48px; height: 48px; }
+  .ruler-portrait { gap: 8px; }
+  .ruler-detail { font-size: 11px; }
   .edict-drawer-handle {
     bottom: 100px;
     padding: 4px 16px;
@@ -3908,18 +4379,24 @@ function severityName(s: string): string {
     padding: 10px 14px;
     max-height: 45vh;
   }
-  .edict-result-overlay {
-    padding-bottom: 8vh;
-  }
-  .edict-scroll-wrapper {
-    max-width: 95vw;
-  }
-  .edict-result-dialog {
-    max-height: 42vh;
-  }
+  .edict-result-overlay { padding-bottom: 8vh; }
+  .edict-scroll-wrapper { max-width: 95vw; }
+  .edict-result-dialog { max-height: 42vh; }
 }
 
 @media (max-width: 480px) {
+  .top-left { min-width: 80px; }
+  .banner-emblem { width: 20px; height: 20px; }
+  .banner-name { display: none; }
+  .resource-group { gap: 2px; }
+  .resource-item { min-width: 28px; }
+  .res-icon { font-size: 10px; }
+  .res-value { font-size: 10px; }
+  .res-label { display: none; }
+  .func-btns button { width: 22px; height: 22px; }
+  .ruler-panel { min-width: 80px; padding: 4px 6px; }
+  .portrait-frame { width: 36px; height: 36px; }
+  .ruler-detail { font-size: 10px; }
   .edict-drawer-handle {
     bottom: 90px;
     padding: 3px 12px;

@@ -12,6 +12,10 @@
 // ---- 六边形尺寸 ----
 export const BASE_HEX_SIZE = 72
 
+/** 预计算常量，避免重复 Math.sqrt(3) 和 Math.PI */
+const SQRT3 = Math.sqrt(3)
+const DEG60_RAD = Math.PI / 3  // 60° in radians
+
 /** 当前运行时六边形大小 */
 export let HEX_SIZE = BASE_HEX_SIZE
 
@@ -20,16 +24,16 @@ export let HEX_RATIO = 1.0
 
 /** Flat-Top 六边形尺寸 (实时) */
 export function getHexWidth(): number { return HEX_SIZE * 2 }
-export function getHexHeight(): number { return HEX_SIZE * Math.sqrt(3) }
+export function getHexHeight(): number { return HEX_SIZE * SQRT3 }
 export let HEX_WIDTH = HEX_SIZE * 2
-export let HEX_HEIGHT = HEX_SIZE * Math.sqrt(3)
+export let HEX_HEIGHT = HEX_SIZE * SQRT3
 
 /** 重设 HEX_SIZE */
 export function setHexSize(newSize: number): void {
   HEX_SIZE = newSize
   HEX_RATIO = newSize / BASE_HEX_SIZE
   HEX_WIDTH = newSize * 2
-  HEX_HEIGHT = newSize * Math.sqrt(3)
+  HEX_HEIGHT = newSize * SQRT3
 }
 
 export function resetHexSize(): void { setHexSize(BASE_HEX_SIZE) }
@@ -136,27 +140,27 @@ export function axialToOffset(q: number, r: number): OffsetCoord {
 /** Axial → 像素坐标（保留用于兼容） */
 export function axialToPixel(q: number, r: number, size: number = HEX_SIZE): { x: number; y: number } {
   const x = size * (3 / 2 * q)
-  const y = size * (Math.sqrt(3) / 2 * q + Math.sqrt(3) * r)
+  const y = size * (SQRT3 / 2 * q + SQRT3 * r)
   return { x, y }
 }
 
 /** Offset(col,row) → 标准正向平铺像素坐标（无倾斜，Flat-Top 奇行右移半格） */
 export function offsetToPixel(col: number, row: number, size: number = HEX_SIZE): { x: number; y: number } {
   const x = size * (1.5 * col + (row & 1) * 0.75)
-  const y = size * Math.sqrt(3) * row
+  const y = size * SQRT3 * row
   return { x, y }
 }
 
 /** 像素 → Axial */
 export function pixelToAxial(px: number, py: number, size: number = HEX_SIZE): HexCoord {
   const q = (2 / 3 * px) / size
-  const r = (-1 / 3 * px + Math.sqrt(3) / 3 * py) / size
+  const r = (-1 / 3 * px + SQRT3 / 3 * py) / size
   return hexRound({ q, r })
 }
 
 /** 像素 → Offset（近邻搜索，匹配 offsetToPixel 逆向） */
 export function pixelToOffset(px: number, py: number, size: number = HEX_SIZE): OffsetCoord {
-  const rowApprox = Math.max(0, Math.round(py / (size * Math.sqrt(3))))
+  const rowApprox = Math.max(0, Math.round(py / (size * SQRT3)))
   let bestCol = 0, bestRow = 0, bestDist = Infinity
   for (let dr = -2; dr <= 2; dr++) {
     const r = rowApprox + dr
@@ -192,14 +196,17 @@ export function hexRound(h: HexCoord): HexCoord {
   return { q, r }
 }
 
-/** Flat-Top 六边形6个顶点 */
+/** Flat-Top 六边形6个顶点（使用预计算角度，避免重复 trig） */
+const HEX_ANGLES = [0, 1, 2, 3, 4, 5].map(i => DEG60_RAD * i)
+const HEX_COS = HEX_ANGLES.map(Math.cos)
+const HEX_SIN = HEX_ANGLES.map(Math.sin)
+
 export function hexCornersFlat(cx: number, cy: number, size: number = HEX_SIZE): { x: number; y: number }[] {
   const corners: { x: number; y: number }[] = []
   for (let i = 0; i < 6; i++) {
-    const angle = (Math.PI / 180) * (60 * i)
     corners.push({
-      x: cx + size * Math.cos(angle),
-      y: cy + size * Math.sin(angle),
+      x: cx + size * HEX_COS[i],
+      y: cy + size * HEX_SIN[i],
     })
   }
   return corners
@@ -321,7 +328,7 @@ export function calculateTerritoryBounds(
   }
 
   const pixelW = maxX - minX + hexSize * 2
-  const pixelH = maxY - minY + hexSize * Math.sqrt(3)
+  const pixelH = maxY - minY + hexSize * SQRT3
 
   return { minCol, maxCol, minRow, maxRow, pixelW, pixelH }
 }
@@ -332,6 +339,6 @@ export function getTerritoryOrigin(bounds: TerritoryBounds, hexSize: number = HE
   const center = axialToPixel(axial.q, axial.r, hexSize)
   return {
     x: center.x - hexSize * 0.75,
-    y: center.y - hexSize * Math.sqrt(3) / 2,
+    y: center.y - hexSize * SQRT3 / 2,
   }
 }

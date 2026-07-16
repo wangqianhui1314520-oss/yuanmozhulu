@@ -463,6 +463,8 @@ async function handleImportFile(e: Event) {
   justify-content: space-between;
   max-width: 900px;
   margin: 0 auto 20px;
+  position: relative;
+  z-index: 1;
 }
 .save-header h2 { font-size: 22px; font-weight: normal; letter-spacing: 6px; }
 .header-actions { display: flex; gap: 10px; }
@@ -483,7 +485,7 @@ async function handleImportFile(e: Event) {
   transform: translateY(-1px);
 }
 .icon-btn .icon { font-size: 14px; }
-.save-content { max-width: 900px; margin: 0 auto; }
+.save-content { max-width: 900px; margin: 0 auto; position: relative; z-index: 1; }
 
 .save-hint {
   text-align: center; color: var(--text-dim); font-size: 13px;

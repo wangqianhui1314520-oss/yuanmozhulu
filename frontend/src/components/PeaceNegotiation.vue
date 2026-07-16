@@ -1,6 +1,6 @@
 <template>
   <div v-if="visible" class="peace-overlay" @click.self="$emit('close')">
-    <div class="peace-panel glass-card">
+    <div class="peace-panel glass-card artifact-panel artifact-secret">
       <div class="panel-header">
         <h2>议和谈判</h2>
         <span class="war-title">{{ warName }}</span>
@@ -180,7 +180,7 @@ watch(isAttackerOffer, async () => {
     availableTerms.value = data?.available_terms?.[
       isAttackerOffer.value ? 'for_attacker' : 'for_defender'
     ] || []
-  } catch {}
+  } catch { console.warn('[PeaceNegotiation] 获取可谈判条款失败') }
 })
 
 function toggleTerm(term: any) {
@@ -247,10 +247,9 @@ async function submitProposal() {
   background: rgba(0, 0, 0, 0.6);
 }
 .peace-panel {
-  width: 480px; max-height: 85vh; overflow-y: auto;
-  background: linear-gradient(135deg, #1a1a2e, #16213e, #1a1a2e);
-  border: 1px solid rgba(255, 200, 60, 0.3);
-  border-radius: 12px; padding: 20px; color: #e0d5c1;
+  width: 480px; max-width: 95vw; max-height: 85vh; overflow-y: auto;
+  padding: 20px; color: #e0d5c1;
+  box-shadow: inset 3px 0 0 var(--wuxing-water);
 }
 .panel-header {
   display: flex; align-items: center; gap: 10px;

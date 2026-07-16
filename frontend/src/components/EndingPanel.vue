@@ -256,7 +256,7 @@ const showAllUnlocks = ref(false)
 <template>
   <Transition name="ending-fade">
     <div v-if="store.showEnding" class="ending-overlay" :class="tierClass">
-      <div class="ending-container">
+      <div class="ending-container artifact-edict">
         
         <!-- ===== 标题区 ===== -->
         <div class="ending-header" v-show="currentStage !== 'loading'">

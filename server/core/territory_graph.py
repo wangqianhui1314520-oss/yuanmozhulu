@@ -74,17 +74,13 @@ class TerritoryGraph:
         return self._loaded
 
     def load_from_world(self, world) -> None:
-        """从WorldState构建领地邻接图"""
-        try:
-            from server.map.admin_hierarchy import get_territory_graph as get_admin_graph
-            admin_data = get_admin_graph()
-        except Exception as e:
-            logger.warning(f"行政区划图加载失败，使用空邻接图: {e}")
-            admin_data = {}
+        """从WorldState构建领地邻接图 (V4.2: 使用类级统一方向常量)
+        
+        自行通过六边形邻接计算构建图，不依赖 admin_hierarchy.get_territory_graph()
+        （轻量 dict 格式），确保与 CK3 风格的全功能图一致。
+        """
 
-        # 六边形6方向
-        HEX_DIRS = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
-
+        # V4.2: 使用类级统一方向常量 self._HEX_DIRS
         self._adjacency.clear()
         self._barriers.clear()
         self._terrain_modifiers.clear()
@@ -119,7 +115,7 @@ class TerritoryGraph:
             if not coords:
                 continue
             neighbors = []
-            for dq, dr in HEX_DIRS:
+            for dq, dr in self._HEX_DIRS:
                 n_coords = (coords[0] + dq, coords[1] + dr)
                 n_tid = self._coord_to_tile.get(n_coords)
                 if n_tid and n_tid in world.tiles:
@@ -261,11 +257,19 @@ class TerritoryGraph:
 
         return []
 
+    # V4.2: 统一的六边形邻居方向常量（与 hex_grid.py 保持一致）
+    _HEX_DIRS: tuple = ((1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1))
+
+    @staticmethod
+    def _hex_dist(a: Tuple[int, int], b: Tuple[int, int]) -> int:
+        """六边形距离 (Axial 坐标)"""
+        return max(abs(a[0] - b[0]), abs(a[1] - b[1]), abs((a[0] + a[1]) - (b[0] + b[1])))
+
     def _hex_astar_fallback(
         self, start_id: str, end_id: str, season: str,
         has_navy: bool, blocked: Optional[Set[str]]
     ) -> List[str]:
-        """六边形A*寻路回退"""
+        """六边形A*寻路回退 (V4.2: 使用统一定义的距离函数和方向常量)"""
         import heapq
 
         start_coord = self._extract_coords(start_id)
@@ -273,11 +277,7 @@ class TerritoryGraph:
         if not start_coord or not end_coord:
             return []
 
-        def hex_dist(a, b):
-            return max(abs(a[0] - b[0]), abs(a[1] - b[1]), abs((a[0] + a[1]) - (b[0] + b[1])))
-
-        HEX_DIRS = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
-        queue = [(hex_dist(start_coord, end_coord), 0, start_coord, [start_id])]
+        queue = [(self._hex_dist(start_coord, end_coord), 0, start_coord, [start_id])]
         visited = set()
 
         while queue:
@@ -288,7 +288,7 @@ class TerritoryGraph:
                 continue
             visited.add(coord)
 
-            for dq, dr in HEX_DIRS:
+            for dq, dr in self._HEX_DIRS:
                 n_coord = (coord[0] + dq, coord[1] + dr)
                 n_tid = self._coord_to_tile.get(n_coord)
                 if not n_tid:
@@ -304,14 +304,13 @@ class TerritoryGraph:
                 if tile_type == "sea" and not has_navy:
                     continue
                 if tile_type == "river":
-                    # 冬季可通行河流，其他季节需要水军
                     if season != "冬" and not has_navy:
                         continue
 
                 terrain_mod = self._terrain_modifiers.get(n_tid, {})
                 step_cost = terrain_mod.get(season, 1.0)
                 new_g = g + step_cost
-                f = new_g + hex_dist(n_coord, end_coord)
+                f = new_g + self._hex_dist(n_coord, end_coord)
                 heapq.heappush(queue, (f, new_g, n_coord, path + [n_tid]))
 
         return []

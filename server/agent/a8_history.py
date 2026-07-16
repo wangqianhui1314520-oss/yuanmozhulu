@@ -275,6 +275,108 @@ class A8HistoryAgent(BaseAgent):
             "living_factions": len(living_factions),
         }
 
+    async def run_faction_chronicles_batch(
+    self, world_state: dict, clients: dict, skip_faction_id: str = ""
+    ) -> list[dict]:
+        """
+        v4.3 新增：为所有存活势力批量生成专史记录（每回合）
+        
+        与 run_round_chronicle（全局编年）互补：
+        - 全局编年：以史官视角记录天下大事
+        - 势力专史：以各势力视角记录本回合发展
+        
+        Args:
+            world_state: 全局世界状态
+            clients: LLM客户端
+            skip_faction_id: 跳过的势力ID（通常为玩家势力）
+        
+        Returns:
+            [{"faction_id": ..., "faction_name": ..., "chronicle": ..., "round": ...}, ...]
+        """
+        import asyncio
+        
+        client: TencentHunyuanClient = clients.get("enemy")  # 使用快速模型
+        if not client:
+            client = clients.get("law", clients.get("advisor"))
+        if not client:
+            return []
+        
+        factions = world_state.get("factions", {})
+        living = {
+            fid: f for fid, f in factions.items()
+            if f.get("alive", True) and fid != skip_faction_id
+        }
+        
+        if not living:
+            return []
+        
+        round_num = world_state.get("current_round", 0)
+        year = world_state.get("current_year", 1351)
+        season = world_state.get("current_season", "春")
+        
+        async def _one_faction(fid: str, fdata: dict) -> dict:
+            name = fdata.get("name", fid)
+            troops = fdata.get("troops", 0)
+            grain = fdata.get("grain", 0)
+            treasury = fdata.get("treasury", 0)
+            tile_count = fdata.get("tile_count", 0)
+            reputation = fdata.get("reputation", 0)
+            
+            prompt = (
+                f"势力：{name}\n"
+                f"年份：{year}年 {season}（第{round_num}回合）\n"
+                f"领地：{tile_count}块 | 兵力：{troops} | 粮草：{grain}石 | "
+                f"国库：{treasury}两 | 声望：{reputation}\n\n"
+                f"请以该势力史官视角，撰写本回合的势力发展纪要，约80-120字。"
+                f"需包含：本回合主要动向、势力消长、面临的挑战。"
+            )
+            
+            try:
+                response = await client.chat_fast(
+                    prompt=prompt,
+                    system_prompt=(
+                        f"你是{name}势力的史官，负责记录本势力发展历程。"
+                        f"仿《三国志》笔法，客观记录，文笔简练。"
+                    ),
+                    temperature=0.55,
+                )
+                chronicle = response[:300] if response else f"{year}年{season}，{name}势力无大事。"
+            except Exception as e:
+                logger.debug(f"A8 势力专史 [{name}] LLM调用失败: {e}")
+                chronicle = f"{year}年{season}，{name}势力稳步发展。"
+            
+            return {
+                "faction_id": fid,
+                "faction_name": name,
+                "round": round_num,
+                "year": year,
+                "season": season,
+                "chronicle": chronicle,
+            }
+        
+        tasks = [_one_faction(fid, fdata) for fid, fdata in living.items()]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        cleaned = []
+        for i, r in enumerate(results):
+            if isinstance(r, Exception):
+                fid = list(living.keys())[i]
+                name = living[fid].get("name", fid)
+                logger.warning(f"A8 势力专史 [{name}] 异常: {r}")
+                cleaned.append({
+                    "faction_id": fid,
+                    "faction_name": name,
+                    "round": round_num,
+                    "year": year,
+                    "season": season,
+                    "chronicle": f"{year}年{season}，{name}势力照常运转。",
+                })
+            else:
+                cleaned.append(r)
+        
+        logger.info(f"A8 势力专史: 为 {len(cleaned)} 个势力生成了本回合纪事")
+        return cleaned
+
     async def write_biography(
         self, faction_id: str, ruler_name: str, world_state: dict, clients: dict
     ) -> dict:
