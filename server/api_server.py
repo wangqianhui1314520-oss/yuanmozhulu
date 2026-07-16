@@ -1,5 +1,5 @@
 """
-元末逐鹿 3.0 - API 服务器
+元末逐鹿 4.0 - API 服务器
 FastAPI 应用主入口 · 统一 code/msg/data 响应格式 · 后端唯一数据源
 """
 from __future__ import annotations
@@ -7,6 +7,14 @@ import asyncio
 import importlib
 import json
 import os
+import re
+
+from server import SAVE_VERSION, __version__ as SERVER_VERSION
+from server.api_models import (
+    DiplomacyActionRequest, WarDeclareRequest, DecreeRequest,
+    UnlockPolicyRequest, MarchResolveRequest, EdictProcessRequest,
+    EdictExecuteRequest, TradeRouteRequest,
+)
 import sys
 import logging
 from logging.handlers import RotatingFileHandler
@@ -51,6 +59,16 @@ os.makedirs(Path(__file__).parent.parent / "logs", exist_ok=True)
 
 # 响应构建器
 from server.core.response import ApiResponse
+from server.session_manager import get_session_manager, init_session_manager, get_current_session_id
+
+# H-2: Pydantic 请求验证模型（扩展集，基础模型见 api_models 导入）
+from server.schemas import (
+    OpenTradeRequest, SignPeaceRequest, DemandTributeRequest,
+    OfferVassalRequest, DeclareWarRequest, ProposePeaceRequest,
+    IssueDecreeRequest, RecruitOfficialsRequest, SuppressRebelRequest,
+    BatchRecruitRequest, ConstructBuildingRequest, MoveCapitalRequest,
+    FactionAIDecisionRequest, NLCommandRequest, GameInitRequest,
+)
 
 # ============================================================
 # 安全体系 (IOA Security Suite)
@@ -65,11 +83,13 @@ from server.security.api_routes import router as security_router
 # 全局状态
 # ============================================================
 
-# LLM 客户端（延迟初始化）
-_llm_clients: dict = {}
-_llm_available: bool = False
+# 游戏世界状态（多玩家会话隔离）
+# _sess().world_state / _sess().round_engine / _sess().pending_commands / _sess().round_snapshots
+# _sess().llm_clients / _sess().llm_available / _sess().api_key 已迁移至 SessionManager，通过 _sess() 访问
 
-# 游戏世界状态（唯一数据源）
+# LLM 全局默认模板（服务器启动时初始化，新会话从此复制）
+_default_llm_clients: dict = {}
+_default_llm_available: bool = False
 from server.models.world_state import WorldState, TileType
 from server.core.game_initializer import get_initializer
 from server.core.round_engine import RoundEngine
@@ -81,11 +101,7 @@ from server.core.ending_system import (
     export_ending_configs, ENDING_CONFIGS,
 )
 
-_world_state: WorldState | None = None
-_round_engine: RoundEngine | None = None
-_pending_commands: list[dict] = []  # 待执行指令队列
-_round_snapshots: list[dict] = []   # 回放快照列表
-_state_lock = asyncio.Lock()  # 全局状态并发锁
+# 以上游戏状态变量已迁移至 SessionManager（多玩家隔离），通过 _sess() 访问
 
 # 配置缓存
 _factions_config: dict = {}
@@ -94,6 +110,16 @@ _game_const: dict = {}
 # P3: 关键模块启动验证标志 — 导入失败时阻止依赖模块的 API
 _critical_modules_ok: bool = True
 _critical_module_errors: list[str] = []
+# 启动状态汇总（统一的健康报告，供 health 端点 + 控制台输出使用）
+_startup_status: dict = {
+    "critical_modules": None,   # "ok" / "degraded"
+    "critical_errors": [],
+    "llm_available": False,
+    "llm_models": {},
+    "factions_loaded": 0,
+    "configs_loaded": False,
+    "timestamp": None,
+}
 
 SERVER_DIR = Path(__file__).parent
 PROJECT_DIR = SERVER_DIR.parent
@@ -127,6 +153,21 @@ def _safe_get_int(data: dict, key: str, default: int = 0) -> int:
         return int(val)
     except (ValueError, TypeError):
         return default
+
+
+# ---- 会话隔离辅助函数 ----
+
+def _sess():
+    """获取当前请求会话的游戏状态（必须存在）"""
+    return get_session_manager().require_current()
+
+
+def _sess_opt():
+    """获取当前请求会话的游戏状态（可选，不存在返回 None）"""
+    sid = get_current_session_id()
+    if sid is None:
+        return None
+    return get_session_manager().get(sid)
 
 
 def load_configs():
@@ -190,19 +231,43 @@ def _parse_strategy_result(text: str) -> tuple[list[str], list[str], list[str]]:
     return threats, opportunities, recommendations
 
 
+def _get_cors_origins() -> list[str]:
+    """获取 CORS 允许的来源列表。
+    
+    从环境变量 YUANMO_CORS_ORIGINS 读取（逗号分隔），
+    未设置则仅允许本地开发地址。
+    
+    生产部署时设置: export YUANMO_CORS_ORIGINS="https://你的域名.com"
+    """
+    env_origins = os.environ.get("YUANMO_CORS_ORIGINS", "")
+    if env_origins:
+        origins = [o.strip() for o in env_origins.split(",") if o.strip()]
+        logger.info(f"CORS 来源（环境变量）: {origins}")
+        return origins
+    # 默认：仅本地开发
+    defaults = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+    logger.debug(f"CORS 来源（默认本地开发）: {defaults}")
+    return defaults
+
+
 # ============================================================
 # FastAPI 应用
 # ============================================================
 
 app = FastAPI(
-    title="元末逐鹿 3.0 API",
-    description="回合制国风策略推演 · CloudAgent 多智能体全涌现式",
-    version="3.0.0",
+    title="元末逐鹿 4.0 API",
+    description="回合制国风策略推演 · 十大AI智能体全涌现式",
+    version="4.0.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -213,6 +278,36 @@ _ioa_engine = setup_security(app)
 
 # 注册安全API路由
 app.include_router(security_router)
+
+# ============================================================
+# 会话隔离中间件（多玩家数据隔离）
+# 从 X-Player-ID 请求头提取玩家标识，设置当前会话上下文
+# ============================================================
+@app.middleware("http")
+async def session_middleware(request: Request, call_next):
+    player_id = request.headers.get("X-Player-ID", "")
+    if player_id:
+        _sm = get_session_manager()
+        await _sm.get_or_create(player_id)
+        from server.session_manager import set_current_session_id
+        set_current_session_id(player_id)
+        # 更新会话活动时间（TTL 计时器）
+        await _sm.touch_session(player_id)
+        # 提取 API Key（从请求头注入，比 POST body 更安全）
+        api_key = request.headers.get("X-API-Key", "")
+        if api_key and api_key.strip():
+            session = _sm.get(player_id)
+            if session and session.api_key != api_key:
+                await _sm.set_player_api_key(player_id, api_key)
+    else:
+        from server.session_manager import set_current_session_id
+        set_current_session_id(None)
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        from server.session_manager import set_current_session_id
+        set_current_session_id(None)
 
 # ============================================================
 # 全局异常处理
@@ -252,8 +347,9 @@ def _validate_critical_imports():
 
     P3修复：导入失败时设置全局标志 _critical_modules_ok = False，
     阻止依赖模块的 API 端点，防止运行时崩溃。
+    P4增强：纳入 LLM 模块验证 + 产出统一的 _startup_status。
     """
-    global _critical_modules_ok, _critical_module_errors
+    global _critical_modules_ok, _critical_module_errors, _startup_status
     _critical_modules_ok = True
     _critical_module_errors = []
 
@@ -264,6 +360,9 @@ def _validate_critical_imports():
         ("war_orchestrator", "server.agent.war_orchestrator"),
         ("advanced_features", "server.core.advanced_features"),
         ("diplomacy_deep", "server.core.diplomacy_deep"),
+        # P4: LLM 模块也纳入关键验证
+        ("hunyuan_client", "server.infra.llm_client.hunyuan_client"),
+        ("llm_config", "server.infra.llm_client.config"),
     ]
     failed = []
     for short_name, full_path in critical_modules:
@@ -279,6 +378,13 @@ def _validate_critical_imports():
         logger.critical(f"以下关键模块无法加载，相关API端点将不可用: {failed}")
     else:
         logger.info(f"关键模块导入验证通过 ({len(critical_modules)}个模块)")
+
+    # 填充启动状态
+    _startup_status["critical_modules"] = "ok" if _critical_modules_ok else "degraded"
+    _startup_status["critical_errors"] = _critical_module_errors.copy()
+    _startup_status["factions_loaded"] = len(_factions_config.get("factions", {}))
+    _startup_status["configs_loaded"] = True
+    _startup_status["timestamp"] = datetime.now().isoformat()
 
     # -- 第二阶段：验证关键类存在于正确模块中 --
     # 注意：MarchEngine/SpyEngine/DiplomacyEngine/CourtEngine 都在 settle_engine 中，
@@ -310,35 +416,421 @@ def _validate_critical_imports():
 # ============================================================
 
 async def init_llm_clients():
-    global _llm_clients, _llm_available
+    """服务器启动时初始化全局 LLM 默认客户端（新会话从此复制）"""
+    global _default_llm_clients, _default_llm_available
     try:
-        from server.infra.llm_client.hunyuan_client import get_global_clients
-        _llm_clients = await get_global_clients()
+        from server.infra.llm_client.hunyuan_client import get_global_clients, reset_global_clients
+        reset_global_clients()  # 热更新后强制从文件重建客户端
+        _default_llm_clients = await get_global_clients()
         from server.infra.llm_client.config import LLMRuntimeConfig
         runtime = LLMRuntimeConfig.from_env()
-        _llm_available = bool(runtime.advisor.api_key)
-        logger.info(f"LLM客户端初始化完成, ai_available={_llm_available}")
+        _default_llm_available = bool(runtime.advisor.api_key)
+        logger.info(f"LLM客户端初始化完成, ai_available={_default_llm_available}")
     except Exception as e:
         logger.warning(f"LLM客户端初始化失败: {e}，AI功能将不可用")
-        _llm_available = False
-        _llm_clients = {}
+        _default_llm_available = False
+        _default_llm_clients = {}
+
+
+async def _rebuild_clients_with_key(api_key: str):
+    """使用玩家提供的 API Key 重建 LLM 客户端"""
+    # session-scoped, _sess().api_key
+    if not api_key:
+        return False
+    try:
+        from server.infra.llm_client.hunyuan_client import TencentHunyuanClient
+        from server.infra.llm_client.config import LLMRuntimeConfig, LLMConfig
+
+        runtime = LLMRuntimeConfig.from_env()
+        # 用玩家 Key 覆盖所有模型组的 api_key
+        runtime.advisor.api_key = api_key
+        runtime.law.api_key = api_key
+        runtime.enemy.api_key = api_key
+        runtime.edict.api_key = api_key
+
+        _sess().llm_clients = {
+            "advisor": TencentHunyuanClient(runtime.advisor),
+            "law": TencentHunyuanClient(runtime.law),
+            "enemy": TencentHunyuanClient(runtime.enemy),
+        }
+        _sess().llm_available = True
+        _sess().api_key = api_key
+        logger.info(f"LLM客户端已使用玩家 API Key 重建 (key={api_key[:8]}...)")
+        return True
+    except Exception as e:
+        logger.error(f"使用玩家 API Key 重建 LLM 客户端失败: {e}")
+        return False
+
+
+# ============================================================
+# 3.0: 活跃战争存档辅助函数
+# ============================================================
+
+def _get_active_wars_data() -> list:
+    """从 RoundEngine 的 WarOrchestrator 中序列化活跃战争"""
+    try:
+        if _sess().round_engine:
+            _sess().round_engine._ensure_engines()
+            orchestrator = getattr(_sess().round_engine, "_war_orchestrator", None)
+            if orchestrator and hasattr(orchestrator, "serialize_active_wars"):
+                return orchestrator.serialize_active_wars()
+    except Exception as e:
+        logger.warning(f"[存档] 序列化活跃战争失败: {e}")
+    return []
+
+
+def _export_npc_runtime_state() -> dict:
+    """v3.5: 导出 NPC 运行时状态供存档使用（线程安全）"""
+    try:
+        from server.agent.npc_registry import get_npc_registry
+        return get_npc_registry().export_runtime_state()
+    except Exception as e:
+        logger.warning(f"[存档] 导出 NPC 运行时状态失败: {e}")
+        return {}
+
+
+def _restore_active_wars(data: list):
+    """从存档恢复活跃战争到 RoundEngine 的 WarOrchestrator"""
+    if not data:
+        return
+    try:
+        if _sess().round_engine:
+            _sess().round_engine._ensure_engines()
+            orchestrator = getattr(_sess().round_engine, "_war_orchestrator", None)
+            if orchestrator and hasattr(orchestrator, "deserialize_active_wars"):
+                orchestrator.deserialize_active_wars(data)
+                return
+    except Exception as e:
+        logger.warning(f"[读档] 恢复活跃战争失败: {e}")
+
+
+# ============================================================
+# 玩家 API Key 管理（公网部署用）
+# ============================================================
+
+@app.post("/api/config/player-api-key")
+async def set_player_api_key(request: dict):
+    """设置玩家自定义 API Key（公网部署时每个玩家用自己的 Key）"""
+    # session-scoped
+    api_key = (request or {}).get("api_key", "")
+    if not api_key or not api_key.strip():
+        return ApiResponse.bad_request("API Key 不能为空")
+
+    success = await _rebuild_clients_with_key(api_key.strip())
+    if success:
+        if _sess().round_engine:
+            _sess().round_engine.set_llm_clients(_sess().llm_clients, available=_sess().llm_available)
+        return ApiResponse.success({"configured": True}, "API Key 已配置，AI 功能就绪")
+    else:
+        return ApiResponse.server_error("API Key 配置失败，请检查 Key 是否正确")
+
+
+@app.get("/api/config/api-key-status")
+async def get_api_key_status():
+    """查询 API Key 配置状态"""
+    return ApiResponse.success({
+        "configured": bool(_sess().api_key) or _sess().llm_available,
+        "from_player": bool(_sess().api_key),
+        "ai_available": _sess().llm_available,
+    })
+
+
+@app.get("/api/cost/report")
+async def get_cost_report():
+    """获取 LLM 成本报告"""
+    try:
+        from server.infra.llm_client.cost_tracker import get_cost_tracker
+        tracker = get_cost_tracker()
+        return ApiResponse.success({
+            "report": tracker.report(),
+            "detail": tracker.to_dict(),
+        })
+    except Exception as e:
+        return ApiResponse.server_error(f"获取成本报告失败: {e}")
+
+
+@app.post("/api/cost/reset")
+async def reset_cost_tracker():
+    """重置 LLM 成本追踪器（保存当前统计后重置）"""
+    try:
+        from server.infra.llm_client.cost_tracker import reset_cost_tracker
+        reset_cost_tracker()
+        return ApiResponse.success({"message": "成本追踪器已重置"})
+    except Exception as e:
+        return ApiResponse.server_error(f"重置失败: {e}")
+
+
+# ============================================================
+# 博弈增强 API (基于 autonomous-agent-gaming skill)
+# ============================================================
+
+@app.get("/api/benchmark/rankings")
+async def get_benchmark_rankings():
+    """获取 AI 势力 Elo 评分排名与表现统计"""
+    try:
+        from server.agent.agent_benchmark import get_tournament, get_performance_tracker
+        tournament = get_tournament()
+        tracker = get_performance_tracker()
+        return ApiResponse.success({
+            "elo_rankings": tournament.get_elo_rankings(),
+            "performance_summary": tracker.get_summary(),
+        })
+    except Exception as e:
+        return ApiResponse.server_error(f"获取排名失败: {e}")
+
+
+@app.get("/api/benchmark/imbalance")
+async def get_imbalance_warnings():
+    """获取势力不平衡检测警告"""
+    try:
+        from server.agent.agent_benchmark import get_performance_tracker
+        tracker = get_performance_tracker()
+        return ApiResponse.success({
+            "warnings": tracker.detect_imbalance(),
+            "summary": tracker.get_summary(),
+        })
+    except Exception as e:
+        return ApiResponse.server_error(f"检测失败: {e}")
+
+
+@app.get("/api/phase")
+async def get_game_phase():
+    """获取当前游戏阶段信息"""
+    try:
+        from server.agent.game_phase_detector import get_phase_detector
+        detector = get_phase_detector()
+        return ApiResponse.success({
+            "phase_summary": detector.get_phase_summary(),
+        })
+    except Exception as e:
+        return ApiResponse.server_error(f"获取阶段失败: {e}")
+
+
+@app.get("/api/mcts/stats")
+async def get_mcts_stats():
+    """获取 MCTS 搜索器统计"""
+    try:
+        from server.agent.strategic_mcts import get_strategic_mcts
+        mcts = get_strategic_mcts("balanced")
+        return ApiResponse.success({
+            "transposition_table_hit_rate": round(mcts._tt.hit_rate, 3),
+            "killer_heuristic_entries": sum(len(v) for v in mcts._killers._killers.values()),
+        })
+    except Exception as e:
+        return ApiResponse.server_error(f"获取MCTS统计失败: {e}")
+
+
+@app.post("/api/benchmark/reset")
+async def reset_benchmark_tracking():
+    """重置所有基准测试数据"""
+    try:
+        from server.agent.agent_benchmark import reset_benchmark
+        from server.agent.game_phase_detector import reset_phase_detector
+        from server.agent.strategic_mcts import reset_strategic_mcts
+        reset_benchmark()
+        reset_phase_detector()
+        reset_strategic_mcts()
+        return ApiResponse.success({"message": "所有基准测试数据已重置"})
+    except Exception as e:
+        return ApiResponse.server_error(f"重置失败: {e}")
+
+
+# ============================================================
+# 全局变量 & 后台任务
+# ============================================================
+_cleanup_task: "asyncio.Task | None" = None
+
+
+async def _session_cleanup_loop():
+    """后台任务：定期清理过期会话，防止内存泄漏
+    
+    从环境变量读取 YUANMO_SESSION_TTL（秒），默认 1800s=30min。
+    每 YUANMO_CLEANUP_INTERVAL 秒（默认300s=5min）检查一次。
+    清理前自动持久化 NPC 记忆/关系数据。
+    """
+    import os
+    interval = int(os.environ.get("YUANMO_CLEANUP_INTERVAL", "300"))
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            sm = get_session_manager()
+            removed = await sm.cleanup_expired()
+            if removed:
+                stats = sm.get_stats()
+                logger.info(
+                    f"会话清理: 移除{removed}个, "
+                    f"剩余: 活跃{stats['active_sessions']}/总计{stats['total_sessions']}"
+                )
+        except asyncio.CancelledError:
+            logger.info("会话清理任务收到取消信号，正在退出...")
+            break
+        except Exception as e:
+            logger.error(f"会话清理异常（将重试）: {e}", exc_info=True)
 
 
 @app.on_event("startup")
 async def startup_event():
-    """服务启动：初始化LLM + 关键模块导入验证"""
+    """服务启动：初始化LLM + 关键模块导入验证 + 打印健康面板"""
+    global _startup_status, _default_llm_clients, _default_llm_available
+
     # P0修复: 提前验证关键模块导入，避免运行时 ImportError
     _validate_critical_imports()
+
+    # 初始化 LLM 客户端（全局默认值）
     await init_llm_clients()
+
+    # 同步默认值到 SessionManager（新会话自动继承）
+    get_session_manager().set_llm_defaults(_default_llm_clients, _default_llm_available)
+
+    # 更新 LLM 状态到启动报告
+    _startup_status["llm_available"] = _default_llm_available
+    _startup_status["llm_models"] = {}
+    for key in ("advisor", "law", "enemy"):
+        client = _default_llm_clients.get(key)
+        if client:
+            _startup_status["llm_models"][key] = {
+                "model": getattr(client, "model_name", "?"),
+                "available": True,
+            }
+        else:
+            _startup_status["llm_models"][key] = {"model": None, "available": False}
+
+    # ---- 控制台健康面板 ----
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    RED = "\033[91m"
+    CYAN = "\033[96m"
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+
+    def _icon(ok: bool) -> str:
+        return f"{GREEN}✓{RESET}" if ok else f"{RED}✗{RESET}"
+
+    print(f"\n{CYAN}{'='*60}{RESET}")
+    print(f"  {BOLD}元末逐鹿 3.0 · 启动健康报告{RESET}")
+    print(f"{CYAN}{'='*60}{RESET}")
+
+    cm = _startup_status["critical_modules"] == "ok"
+    print(f"  关键模块: {_icon(cm)} {'全部通过' if cm else '有模块加载失败'}")
+    if not cm:
+        for err in _startup_status["critical_errors"]:
+            print(f"    {RED}→ {err}{RESET}")
+
+    print(f"  势力配置: {_icon(True)} {_startup_status['factions_loaded']} 个势力已加载")
+    llm_ok = _startup_status.get("llm_available", False)
+    print(f"  LLM 模型: {_icon(llm_ok)} {'AI 就绪' if llm_ok else 'AI 不可用'}")
+    if _startup_status["llm_models"]:
+        for k, v in _startup_status["llm_models"].items():
+            status = "已连接" if v["available"] else "未初始化"
+            color = GREEN if v["available"] else YELLOW
+            print(f"    {color}{k}: {v['model'] or '—'} ({status}){RESET}")
+
+    all_ok = cm and _startup_status.get("llm_available", False)
+    summary_color = GREEN if all_ok else YELLOW
+    print(f"\n  {summary_color}启动状态: {'● 全部正常' if all_ok else '● 部分服务降级'}{RESET}")
+    print(f"  后端端口: {BOLD}:8800{RESET}")
+    print(f"  API 文档: {BOLD}/docs{RESET}")
+    print(f"  健康检查: {BOLD}/api/health{RESET}")
+    print(f"  会话 TTL: {BOLD}{os.environ.get('YUANMO_SESSION_TTL', '1800')}s{RESET}")
+    print(f"{CYAN}{'='*60}{RESET}\n")
+
+    # 启动后台会话清理任务（生产部署：自动回收过期会话内存）
+    global _cleanup_task
+    _cleanup_task = asyncio.create_task(_session_cleanup_loop())
+    logger.info(f"会话TTL清理任务已启动 (TTL={os.environ.get('YUANMO_SESSION_TTL', '1800')}s)")
+
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    """优雅关闭：持久化会话、清理 LLM 客户端、释放锁"""
+    logger.info("正在执行优雅关闭...")
+
+    # 1. 持久化对话管理器会话
+    try:
+        from server.agent.conversation_manager import get_conversation_manager
+        mgr = get_conversation_manager()
+        if mgr:
+            mgr.persist_all()
+            logger.info("对话管理器会话已持久化")
+    except Exception as e:
+        logger.warning(f"持久化对话会话失败: {e}")
+
+    # 2. 持久化所有玩家会话的 NPC 关系网络（多玩家隔离）
+    try:
+        sm = get_session_manager()
+        for sid in list(sm._sessions.keys()):
+            session = sm.get(sid)
+            if session and session.npc_relation_manager:
+                try:
+                    session.npc_relation_manager.persist_all()
+                    logger.info(f"[{sid}] NPC 关系网络已持久化")
+                except Exception as e:
+                    logger.warning(f"[{sid}] 持久化 NPC 关系网络失败: {e}")
+    except Exception as e:
+        logger.warning(f"持久化 NPC 关系网络失败: {e}")
+
+    # 3. 持久化所有玩家会话的 NPC 记忆（多玩家隔离）
+    try:
+        sm2 = get_session_manager()
+        for sid in list(sm2._sessions.keys()):
+            session = sm2.get(sid)
+            if session and session.npc_memory_manager:
+                try:
+                    session.npc_memory_manager.save_all()
+                    logger.info(f"[{sid}] NPC 记忆已持久化")
+                except Exception as e:
+                    logger.warning(f"[{sid}] 持久化 NPC 记忆失败: {e}")
+    except Exception as e:
+        logger.warning(f"持久化 NPC 记忆失败: {e}")
+
+    # 3.5. 持久化 NPC 注册状态（v3.5 修复：按玩家隔离，不再覆盖模板文件）
+    try:
+        from server.agent.npc_registry import get_npc_registry
+        nr = get_npc_registry()
+        if nr:
+            sm3 = get_session_manager()
+            for sid in list(sm3._sessions.keys()):
+                session = sm3.get(sid)
+                if session and session.world_state:
+                    try:
+                        nr._persist_npc_data(player_id=sid)
+                        logger.info(f"[{sid}] NPC 运行时状态已持久化")
+                    except Exception as e:
+                        logger.warning(f"[{sid}] 持久化 NPC 运行时状态失败: {e}")
+            logger.info("NPC 注册状态持久化完成（多玩家隔离）")
+    except Exception as e:
+        logger.warning(f"持久化 NPC 注册状态失败: {e}")
+
+    # 4. 关闭 LLM 客户端
     try:
         from server.infra.llm_client.hunyuan_client import close_global_clients
         await close_global_clients()
+        logger.info("LLM 客户端已关闭")
     except Exception as e:
         logger.warning(f"关闭LLM全局客户端时出错: {e}")
+
+    # 5. 释放全局状态锁（让等待中的协程优雅退出）
+    try:
+        if _sess().state_lock and _sess().state_lock.locked():
+            _sess().state_lock.release()
+    except Exception as e:
+        logger.warning(f"释放全局状态锁失败: {e}")
+
+    # 6. 取消后台会话清理任务
+    try:
+        global _cleanup_task
+        if _cleanup_task and not _cleanup_task.done():
+            _cleanup_task.cancel()
+            try:
+                await _cleanup_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("会话TTL清理任务已停止")
+    except Exception as e:
+        logger.warning(f"停止清理任务失败: {e}")
+
+    logger.info("优雅关闭完成")
 
 
 # ============================================================
@@ -347,36 +839,76 @@ async def shutdown_event():
 
 @app.get("/api/health")
 async def health_check():
+    """健康检查端点（无需 X-Player-ID，会话可选）"""
+    ss = _sess_opt()  # 可能为 None（无 X-Player-ID 时）
+
+    # LLM 可用性：优先会话，其次全局默认
+    sm = get_session_manager()
+    llm_available = ss.llm_available if ss else sm._default_llm_available
+    llm_clients = ss.llm_clients if ss else sm._default_llm_clients
+
     # 获取Token消耗统计
     token_stats = {}
-    if _llm_available and _llm_clients:
-        from server.infra.llm_client import get_global_token_usage
-        g = get_global_token_usage()
-        token_stats = {
-            "total_tokens_consumed": g.total_tokens,
-            "prompt_tokens": g.prompt_tokens,
-            "completion_tokens": g.completion_tokens,
-            "per_client": {},
-        }
+    if llm_available and llm_clients:
+        try:
+            from server.infra.llm_client import get_global_token_usage
+            g = get_global_token_usage()
+            token_stats = {
+                "total_tokens_consumed": g.total_tokens,
+                "prompt_tokens": g.prompt_tokens,
+                "completion_tokens": g.completion_tokens,
+                "per_client": {},
+            }
+            for key in ("advisor", "law", "enemy"):
+                c = llm_clients.get(key)
+                if c and hasattr(c, "get_token_stats"):
+                    token_stats["per_client"][key] = c.get_token_stats()
+        except Exception as e:
+            logger.debug(f"Token统计获取失败: {e}")
+
+    # 获取LLM成本追踪
+    cost_stats = {}
+    try:
+        from server.infra.llm_client.cost_tracker import get_cost_tracker
+        cost_stats = get_cost_tracker().to_dict()
+    except ImportError:
+        logger.debug("cost_tracker 模块未安装或不可用")
+    except Exception as e:
+        logger.warning(f"获取成本追踪数据失败: {e}")
+
+    # 启动验证状态
+    startup_ok = _startup_status.get("critical_modules") == "ok"
+    all_healthy = startup_ok and llm_available
+
+    # 游戏状态（仅会话存在时可用）
+    game_active = ss.world_state is not None if ss else False
+    current_round = ss.world_state.current_round if (ss and ss.world_state) else 0
+
+    # LLM 模型信息
+    llm_models = None
+    if llm_available and llm_clients:
+        llm_models = {}
         for key in ("advisor", "law", "enemy"):
-            c = _llm_clients.get(key)
-            if c and hasattr(c, "get_token_stats"):
-                token_stats["per_client"][key] = c.get_token_stats()
+            c = llm_clients.get(key)
+            llm_models[key] = getattr(c, "model_name", None) if c else None
 
     return ApiResponse.success({
-        "status": "ok",
-        "version": "3.0.0",
+        "status": "healthy" if all_healthy else "degraded",
+        "version": "4.0.0",
         "title": "元末逐鹿",
-        "ai_available": _llm_available,
+        "ai_available": llm_available,
         "factions_loaded": len(_factions_config.get("factions", {})),
-        "game_active": _world_state is not None,
-        "current_round": _world_state.current_round if _world_state else 0,
+        "game_active": game_active,
+        "current_round": current_round,
         "token_stats": token_stats,
-        "llm_models": {
-            "advisor": (_llm_clients.get("advisor") or {}).model_name if hasattr(_llm_clients.get("advisor"), "model_name") else None,
-            "law": (_llm_clients.get("law") or {}).model_name if hasattr(_llm_clients.get("law"), "model_name") else None,
-            "enemy": (_llm_clients.get("enemy") or {}).model_name if hasattr(_llm_clients.get("enemy"), "model_name") else None,
-        } if _llm_available else None,
+        "cost_stats": cost_stats,
+        "llm_models": llm_models,
+        # 启动验证报告
+        "startup_status": {
+            "critical_modules": _startup_status.get("critical_modules", "unknown"),
+            "critical_errors": _startup_status.get("critical_errors", []),
+            "timestamp": _startup_status.get("timestamp"),
+        },
     })
 
 
@@ -427,28 +959,33 @@ async def connectivity_test():
         results["modules"]["core_enums"] = f"error: {e}"
         results["diagnosis"]["errors"].append(f"核心枚举 PolicyType 等导入失败（请清除__pycache__）: {e}")
 
-    # 3. 世界状态检查
-    if _world_state:
-        player = _world_state.get_player_faction()
+    # 3. 世界状态检查（会话可选）
+    ss_conn = _sess_opt()
+    if ss_conn and ss_conn.world_state:
+        ws = ss_conn.world_state
+        player = ws.get_player_faction() if ws else None
         results["world_state"] = {
             "status": "active",
-            "round": _world_state.current_round,
-            "year": getattr(_world_state, 'current_year', '?'),
-            "factions": len(_world_state.factions),
-            "tiles": len(getattr(_world_state, 'tiles', {})),
+            "round": ws.current_round,
+            "year": getattr(ws, 'current_year', '?'),
+            "factions": len(ws.factions),
+            "tiles": len(getattr(ws, 'tiles', {})),
             "player_alive": player.is_alive if player else False,
         }
     else:
         results["world_state"]["status"] = "no_game"
 
     # 4. LLM 可用性
+    sm_conn = get_session_manager()
+    llm_ok = ss_conn.llm_available if ss_conn else sm_conn._default_llm_available
+    llm_cls = ss_conn.llm_clients if ss_conn else sm_conn._default_llm_clients
     results["llm"] = {
-        "available": _llm_available,
+        "available": llm_ok,
         "models": {},
     }
-    if _llm_available and _llm_clients:
+    if llm_ok and llm_cls:
         for key in ("advisor", "law", "enemy"):
-            client = _llm_clients.get(key)
+            client = llm_cls.get(key)
             results["llm"]["models"][key] = {
                 "available": client is not None,
                 "model_name": getattr(client, 'model_name', 'unknown') if client else None,
@@ -506,18 +1043,21 @@ async def get_runtime_config():
                 "model_name": rt.advisor.model_name,
                 "temperature": rt.advisor.temperature,
                 "max_tokens": rt.advisor.max_tokens,
+                "has_api_key": bool(rt.advisor.api_key),
             },
             "law": {
                 "api_base": rt.law.api_base,
                 "model_name": rt.law.model_name,
                 "temperature": rt.law.temperature,
                 "max_tokens": rt.law.max_tokens,
+                "has_api_key": bool(rt.law.api_key),
             },
             "enemy": {
                 "api_base": rt.enemy.api_base,
                 "model_name": rt.enemy.model_name,
                 "temperature": rt.enemy.temperature,
                 "max_tokens": rt.enemy.max_tokens,
+                "has_api_key": bool(rt.enemy.api_key),
             },
             "max_concurrent": rt.max_concurrent,
             "fallback_enabled": rt.fallback_enabled,
@@ -530,7 +1070,7 @@ async def get_runtime_config():
 
 @app.post("/api/config/runtime")
 async def update_runtime_config(request: dict):
-    """热更新配置，无需重启服务"""
+    """热更新配置，无需重启服务（支持自定义 API Key）"""
     try:
         config_path = CONFIG_DIR / "llm_runtime.json"
         existing = {}
@@ -538,9 +1078,41 @@ async def update_runtime_config(request: dict):
             with open(config_path, "r", encoding="utf-8") as f:
                 existing = json.load(f)
 
-        for model_key in ["advisor", "law", "enemy"]:
-            if model_key in request:
-                existing[model_key] = {**existing.get(model_key, {}), **request[model_key]}
+        # 前端key → 配置文件key 映射（前端用单数，配置文件用复数）
+        key_map = {"advisor": "advisors", "law": "laws", "enemy": "enemies"}
+        # 字段名映射（前端用 snake_case，配置文件用简写）
+        field_map = {
+            "api_base": "api_base",
+            "model_name": "model",
+            "temperature": "temperature",
+            "max_tokens": "max_tokens",
+            "api_key": "api_key",
+        }
+
+        for frontend_key, json_key in key_map.items():
+            if frontend_key in request:
+                group_data = request[frontend_key]
+                if not isinstance(group_data, dict):
+                    continue
+                mapped = {}
+                for f_field, j_field in field_map.items():
+                    if f_field in group_data and group_data[f_field] is not None:
+                        mapped[j_field] = group_data[f_field]
+                # 合并到现有配置
+                existing[json_key] = {**existing.get(json_key, {}), **mapped}
+
+            # 输入验证：对已映射的配置做安全检查
+        for json_key, group in existing.items():
+            if isinstance(group, dict):
+                api_base = group.get("api_base", "")
+                if api_base and not re.match(r'^https?://[^\s]+$', api_base):
+                    return ApiResponse.bad_request(f"无效的 API 地址: {api_base}")
+                temperature = group.get("temperature")
+                if temperature is not None:
+                    group["temperature"] = max(0.0, min(2.0, float(temperature)))
+                max_tokens = group.get("max_tokens")
+                if max_tokens is not None:
+                    group["max_tokens"] = max(1, min(100000, int(max_tokens)))
 
         if "max_concurrent" in request:
             existing["max_concurrent"] = request["max_concurrent"]
@@ -551,9 +1123,10 @@ async def update_runtime_config(request: dict):
             json.dump(existing, f, ensure_ascii=False, indent=2)
 
         await init_llm_clients()
+        get_session_manager().set_llm_defaults(_default_llm_clients, _default_llm_available)
         # 热更新后同步 LLM 可用性到 RoundEngine，避免 AI 空转
-        if _round_engine:
-            _round_engine.set_llm_clients(_llm_clients, available=_llm_available)
+        if _sess().round_engine:
+            _sess().round_engine.set_llm_clients(_sess().llm_clients, available=_sess().llm_available)
         return ApiResponse.success(existing, "配置已热更新")
     except Exception as e:
         logger.error(f"配置更新失败: {e}")
@@ -571,15 +1144,20 @@ async def test_llm_connection(request: Request):
 
     try:
         body = await request.json()
+        if not isinstance(body, dict):
+            body = {}
     except Exception:
         body = {}
     models_to_test = body.get("models", ["advisor", "law", "enemy"])
     if not isinstance(models_to_test, list):
         models_to_test = ["advisor", "law", "enemy"]
+    # 用户可选的逐模型 API Key 覆盖（测试用，不持久化）
+    provided_api_keys: dict = body.get("api_keys", {}) or {}
 
     results = {}
     all_passed = True
     any_configured = False
+
 
     try:
         runtime = LLMRuntimeConfig.from_env()
@@ -603,8 +1181,9 @@ async def test_llm_connection(request: Request):
             continue
 
         model_name = getattr(model_cfg, "model_name", "--")
-        api_key = getattr(model_cfg, "api_key", "")
         api_base = getattr(model_cfg, "api_base", "")
+        # 优先使用用户刚填写的 API Key，否则用存储配置中的 Key
+        api_key = provided_api_keys.get(model_key) or getattr(model_cfg, "api_key", "")
 
         if not api_key:
             results[model_key] = {
@@ -617,9 +1196,29 @@ async def test_llm_connection(request: Request):
             continue
 
         any_configured = True
-        client = _llm_clients.get(model_key) if _llm_clients else None
+
+        # 如果用户提供了与存储不同的 Key，创建临时客户端进行测试
+        client = None
+        use_temp_client = bool(provided_api_keys.get(model_key))
+        if use_temp_client:
+            from server.infra.llm_client.config import LLMConfig
+            from server.infra.llm_client.hunyuan_client import TencentHunyuanClient
+            temp_config = LLMConfig(
+                provider=getattr(model_cfg, "provider", "hunyuan"),
+                api_base=getattr(model_cfg, "api_base", ""),
+                api_key=api_key,
+                model_name=model_name,
+                temperature=getattr(model_cfg, "temperature", 0.7),
+                max_tokens=getattr(model_cfg, "max_tokens", 4096),
+            )
+            try:
+                client = TencentHunyuanClient(temp_config)
+            except Exception as e:
+                logger.warning(f"创建临时 LLM 客户端失败: {e}")
+        else:
+            client = _sess().llm_clients.get(model_key) if _sess().llm_clients else None
+
         if not client:
-            # 客户端尚未初始化，尝试临时构造一个推理请求
             results[model_key] = {
                 "status": "warning",
                 "model_name": model_name,
@@ -721,27 +1320,38 @@ async def test_llm_connection(request: Request):
 from server.services.tts_service import (
     generate_faction_voice,
     generate_all_faction_voices,
+    generate_npc_voice,
     list_available_voices,
+    search_elevenlabs_voices,
     get_voice_config,
     get_voice_text,
     FACTION_VOICE_CONFIG,
+    ELEVENLABS_VOICE_CONFIG,
+    set_elevenlabs_key,
+    get_elevenlabs_key,
 )
 
 
 @app.post("/api/audio/generate-voice")
 async def api_generate_faction_voice(request: Request):
-    """为指定势力生成 AI 配音 MP3"""
+    """为指定势力生成 AI 配音 MP3（支持 edge-tts / elevenlabs）"""
     try:
         body = await request.json()
     except Exception:
         body = {}
     faction_id = body.get("faction_id", "")
     force = body.get("force", False)
+    provider = body.get("provider", "edge")  # "edge" | "elevenlabs"
 
     if not faction_id:
         return ApiResponse.bad_request("缺少 faction_id 参数")
 
-    result = await generate_faction_voice(faction_id, force=force)
+    # 从请求头注入 ElevenLabs API Key（若前端传了）
+    eleven_key = request.headers.get("X-ElevenLabs-Key", "")
+    if eleven_key:
+        set_elevenlabs_key(eleven_key)
+
+    result = await generate_faction_voice(faction_id, force=force, provider=provider)
     return ApiResponse.success(result)
 
 
@@ -753,8 +1363,14 @@ async def api_generate_all_voices(request: Request):
     except Exception:
         body = {}
     force = body.get("force", False)
+    provider = body.get("provider", "edge")
 
-    results = await generate_all_faction_voices(force=force)
+    # 从请求头注入 ElevenLabs API Key
+    eleven_key = request.headers.get("X-ElevenLabs-Key", "")
+    if eleven_key:
+        set_elevenlabs_key(eleven_key)
+
+    results = await generate_all_faction_voices(force=force, provider=provider)
     generated = sum(1 for r in results if r.get("generated"))
     cached = sum(1 for r in results if r.get("cached"))
     errors = sum(1 for r in results if r.get("error"))
@@ -783,18 +1399,60 @@ async def api_voice_status():
 
 @app.get("/api/audio/voice-config")
 async def api_voice_config():
-    """查看势力音色配置和台词"""
+    """查看势力音色配置和台词（含 edge-tts 和 ElevenLabs 双倍信息）"""
     configs = {}
     for faction_id, cfg in FACTION_VOICE_CONFIG.items():
+        eleven_cfg = ELEVENLABS_VOICE_CONFIG.get(faction_id, {})
         configs[faction_id] = {
             "role": cfg["role"],
-            "voice": cfg["voice"],
+            "voice_edge": cfg["voice"],
             "rate": cfg["rate"],
             "pitch": cfg["pitch"],
             "desc": cfg.get("desc", ""),
             "text": get_voice_text(faction_id),
+            # ElevenLabs 扩展字段
+            "voice_elevenlabs": eleven_cfg.get("voice_id", ""),
+            "eleven_stability": eleven_cfg.get("stability", 0.5),
+            "eleven_similarity": eleven_cfg.get("similarity_boost", 0.75),
+            "eleven_style": eleven_cfg.get("style", 0.0),
         }
     return ApiResponse.success(configs)
+
+
+@app.post("/api/audio/generate-npc-voice")
+async def api_generate_npc_voice(request: Request):
+    """为 NPC/事件角色生成配音（ElevenLabs）"""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    
+    npc_name = body.get("npc_name", "")
+    text = body.get("text", "")
+    personality = body.get("personality", "neutral")
+    force = body.get("force", False)
+    
+    if not npc_name or not text:
+        return ApiResponse.bad_request("缺少 npc_name 或 text 参数")
+    
+    # 从请求头注入 ElevenLabs Key
+    eleven_key = request.headers.get("X-ElevenLabs-Key", "")
+    if eleven_key:
+        set_elevenlabs_key(eleven_key)
+    
+    result = await generate_npc_voice(npc_name, text, personality, force=force)
+    return ApiResponse.success(result)
+
+
+@app.get("/api/audio/elevenlabs-voices")
+async def api_search_voices(request: Request, query: str = "", gender: str = ""):
+    """搜索 ElevenLabs 音色库"""
+    eleven_key = request.headers.get("X-ElevenLabs-Key", "")
+    if eleven_key:
+        set_elevenlabs_key(eleven_key)
+    
+    voices = await search_elevenlabs_voices(query, gender)
+    return ApiResponse.success({"voices": voices, "count": len(voices)})
 
 
 @app.get("/api/config/default")
@@ -848,14 +1506,21 @@ async def init_game(request: dict):
         return ApiResponse.server_error(
             f"服务启动不完整，以下关键模块加载失败，请检查日志后重启: {'; '.join(_critical_module_errors)}"
         )
-    global _world_state, _round_engine, _pending_commands, _round_snapshots
+    # session-scoped
     
     faction_id = _safe_get_str(request, "faction_id")
     mode = _safe_get_str(request, "mode", "player_turn")
     custom_faction = request.get("custom_faction")
+    player_api_key = _safe_get_str(request, "api_key")  # 玩家自定义 API Key
 
     if not faction_id and not custom_faction:
         return ApiResponse.bad_request("请选择开局势力")
+
+    # 如果玩家提供了 API Key，重建 LLM 客户端
+    if player_api_key and not _sess().api_key:
+        ok = await _rebuild_clients_with_key(player_api_key)
+        if not ok:
+            logger.warning(f"开局时玩家 API Key 配置失败，尝试使用默认配置")
 
     # 自创势力：使用 custom_faction 中的 faction_id 作为 player_faction_id
     is_custom = bool(custom_faction)
@@ -892,25 +1557,32 @@ async def init_game(request: dict):
         mode_mgr.init_game(mode, faction_id)
         
         initializer = get_initializer()
-        _world_state = initializer.create_world(
+        _sess().world_state = initializer.create_world(
             player_faction_id=faction_id,
             game_mode=mode,
             custom_faction=custom_faction,
         )
-        _round_engine = RoundEngine(_world_state, _factions_config)
-        _round_engine.set_llm_clients(_llm_clients, available=_llm_available)
-        _pending_commands = []
-        _round_snapshots = []
+        _sess().round_engine = RoundEngine(_sess().world_state, _factions_config)
+        _sess().round_engine.set_llm_clients(_sess().llm_clients, available=_sess().llm_available)
+        _sess().pending_commands = []
+        _sess().round_snapshots = []
+
+        # 3.5: 重置 NPC 注册状态为模板（确保新开局 NPC 全部存活）
+        try:
+            from server.agent.npc_registry import get_npc_registry
+            get_npc_registry().reset_to_template()
+        except Exception as npc_err:
+            logger.warning(f"NPC 状态重置失败（非致命）: {npc_err}")
 
         # 3.2: 初始化领地邻接图（供寻路和攻击邻接查询使用）
         try:
             from server.core.territory_graph import init_territory_graph
-            init_territory_graph(_world_state)
+            init_territory_graph(_sess().world_state)
         except Exception as tg_err:
             logger.warning(f"[开局] 领地邻接图初始化失败（非致命）: {tg_err}")
 
-        player = _world_state.get_player_faction()
-        world_dict = _world_state.model_dump()
+        player = _sess().world_state.get_player_faction()
+        world_dict = _sess().world_state.model_dump()
         # 情报脱敏：开局时所有势力对玩家都是未知的
         world_dict = _mask_world_state_for_player(world_dict)
 
@@ -919,12 +1591,12 @@ async def init_game(request: dict):
 
         # 2026-07-15 修复: 充实 player_faction 数据，包含领地列表
         player_dict = player.model_dump() if player else None
-        if player_dict and _world_state:
+        if player_dict and _sess().world_state:
             # 优先从 factions.json 的 initial_territory 获取命名格式的领地ID
             # （避免回退到 map_final.json 时返回坐标格式的 ID）
             faction_cfg = _factions_config.get("factions", {}).get(player.faction_id, {})
             named_territory = faction_cfg.get("initial_territory", [])
-            player_tiles = _world_state.get_faction_tiles(player.faction_id)
+            player_tiles = _sess().world_state.get_faction_tiles(player.faction_id)
             player_dict["controlled_tiles"] = named_territory if named_territory else [t.tile_id for t in player_tiles]
             player_dict["controlled_tile_count"] = len(named_territory) if named_territory else len(player_tiles)
             # 补充兵力/粮草汇总
@@ -939,11 +1611,11 @@ async def init_game(request: dict):
         return ApiResponse.success({
             "world_state": world_dict,
             "player_faction": player_dict,
-            "player_faction_id": _world_state.player_faction_id,  # 核心规则：玩家操控势力ID
+            "player_faction_id": _sess().world_state.player_faction_id,  # 核心规则：玩家操控势力ID
             "factions": world_dict.get("factions", {}),
             "tiles": world_dict.get("tiles", {}),
             "relations": world_dict.get("relations", {}),
-            "events_log": _world_state.events_log,
+            "events_log": _sess().world_state.events_log,
             "mode_info": mode_info,  # 3.1
         }, f"开局成功 — {player.name if player else faction_id}（{mode_info['mode_label']}）")
     except Exception as e:
@@ -954,11 +1626,11 @@ async def init_game(request: dict):
 @app.post("/api/game/restart")
 async def restart_game():
     """重置本局（3.1: 同步重置所有管理器）"""
-    global _world_state, _round_engine, _pending_commands, _round_snapshots
-    _world_state = None
-    _round_engine = None
-    _pending_commands = []
-    _round_snapshots = []
+    # session-scoped
+    _sess().world_state = None
+    _sess().round_engine = None
+    _sess().pending_commands = []
+    _sess().round_snapshots = []
     
     # 重置所有管理器
     reset_round_lock()
@@ -969,7 +1641,14 @@ async def restart_game():
     # 重置智能体调度器
     orch = _get_orchestrator()
     orch.reset_for_new_game()
-    
+
+    # 3.5: 重置 NPC 注册状态为模板（清除上一局的运行时状态）
+    try:
+        from server.agent.npc_registry import get_npc_registry
+        get_npc_registry().reset_to_template()
+    except Exception as npc_err:
+        logger.warning(f"NPC 状态重置失败（非致命）: {npc_err}")
+
     return ApiResponse.success(None, "对局已重置")
 
 
@@ -981,7 +1660,7 @@ async def get_agent_stats():
         stats = orch.get_stats()
 
         # 补充全局Token统计
-        if _llm_available:
+        if _sess().llm_available:
             from server.infra.llm_client import get_global_token_usage
             g = get_global_token_usage()
             stats["global_token_consumption"] = {
@@ -992,7 +1671,7 @@ async def get_agent_stats():
             # 每客户端明细
             per_client = {}
             for key in ("advisor", "law", "enemy"):
-                c = _llm_clients.get(key)
+                c = _sess().llm_clients.get(key)
                 if c and hasattr(c, "get_token_stats"):
                     per_client[key] = c.get_token_stats()
             stats["per_client_tokens"] = per_client
@@ -1005,7 +1684,7 @@ async def get_agent_stats():
 @app.get("/api/game/status")
 async def get_game_status():
     """获取游戏运行状态 + 完整世界状态（3.1: 含模式信息）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.success({
             "running": True,
             "game_active": False,
@@ -1017,18 +1696,18 @@ async def get_game_status():
             "living_factions": 0,
         })
 
-    world_dict = _world_state.model_dump()
+    world_dict = _sess().world_state.model_dump()
     # 情报脱敏：对非己方势力隐藏敏感数据
     world_dict = _mask_world_state_for_player(world_dict)
     mode_info = get_mode_manager().get_mode_info()
     
     # 2026-07-15 修复: 添加顶层 player_faction 字段，方便前端直接使用
     player_faction_data = None
-    player_fid = _world_state.player_faction_id
-    if player_fid and player_fid in _world_state.factions:
-        pf = _world_state.factions[player_fid]
+    player_fid = _sess().world_state.player_faction_id
+    if player_fid and player_fid in _sess().world_state.factions:
+        pf = _sess().world_state.factions[player_fid]
         # Bug #21修复: 补充 controlled_tiles 领地列表（TileState 用 faction_id 字段）
-        player_tiles = [tid for tid, t in _world_state.tiles.items() if getattr(t, 'faction_id', None) == player_fid]
+        player_tiles = [tid for tid, t in _sess().world_state.tiles.items() if getattr(t, 'faction_id', None) == player_fid]
         player_faction_data = {
             "faction_id": pf.faction_id,
             "name": pf.name,
@@ -1053,16 +1732,17 @@ async def get_game_status():
             "controlled_tile_count": len(player_tiles),
             "color": pf.color,
             "ruler_name": pf.ruler_name,
+            "unlocked_policies": pf.unlocked_policies,    # 2026-07-15: 国策功能修复
         }
     
     # 2026-07-15 修复: 展开外交关系为前端友好格式
-    player_fid = _world_state.player_faction_id
+    player_fid = _sess().world_state.player_faction_id
     faction_names = {
-        fid: f.name for fid, f in _world_state.factions.items()
+        fid: f.name for fid, f in _sess().world_state.factions.items()
     }
     diplomatic_relations = []
     if player_fid:
-        for key, rel in _world_state.relations.items():
+        for key, rel in _sess().world_state.relations.items():
             a, b = key.split("|")
             if player_fid in (a, b):
                 other = b if a == player_fid else a
@@ -1077,19 +1757,25 @@ async def get_game_status():
     return ApiResponse.success({
         "running": True,
         "game_active": True,
-        "current_round": _world_state.current_round,
-        "current_year": _world_state.current_year,
-        "current_month": _world_state.current_month,
-        "current_season": _world_state.current_season,
+        "current_round": _sess().world_state.current_round,
+        "current_year": _sess().world_state.current_year,
+        "current_month": _sess().world_state.current_month,
+        "current_season": _sess().world_state.current_season,
         "phase": "player_turn" if mode_info.get("player_faction_id") else "ai_turn",
         "world_state": world_dict,
-        "player_faction_id": _world_state.player_faction_id,  # 核心规则
+        "player_faction_id": _sess().world_state.player_faction_id,  # 核心规则
         "player_faction": player_faction_data,  # 2026-07-15: 顶层玩家势力数据
         "diplomatic_relations": diplomatic_relations,  # 2026-07-15: 展开的外交关系
-        "pending_commands": len(_pending_commands),
-        "snapshots_count": len(_round_snapshots),
+        "pending_commands": len(_sess().pending_commands),
+        "snapshots_count": len(_sess().round_snapshots),
         "mode_info": mode_info,  # 3.1
     })
+
+
+@app.get("/api/game/state")
+async def get_game_state_alias():
+    """别名路由：/api/game/state → /api/game/status（向后兼容）"""
+    return await get_game_status()
 
 
 # ============================================================
@@ -1110,9 +1796,9 @@ async def submit_command(request: dict):
     
     所有指令不立即执行，统一在「回合推进」批量执行
     """
-    global _pending_commands
+    # session-scoped
 
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     # ---- 安全校验 (IOA/AgentGuard/DataValidator) ----
@@ -1177,7 +1863,7 @@ async def submit_command(request: dict):
         return ApiResponse.forbidden("观战模式下不可提交指令，请以玩家模式开局")
 
     # 核心规则：指令归属校验 —— 玩家只能向自身势力下发政令
-    player = _world_state.get_player_faction()
+    player = _sess().world_state.get_player_faction()
     if not player:
         return ApiResponse.forbidden("未找到玩家势力")
     
@@ -1214,7 +1900,7 @@ async def submit_command(request: dict):
 
     # 3.1: 操作锁预校验（提前告知玩家本回合是否已执行同类操作）
     op_lock = get_round_lock()
-    player = _world_state.get_player_faction()
+    player = _sess().world_state.get_player_faction()
     lock_warning = None
     if player:
         fid = player.faction_id
@@ -1247,15 +1933,15 @@ async def submit_command(request: dict):
                 if op_lock.check_tile_lock(tile_id, cat):
                     lock_warning = f"该地块的{lock_map.get(action, action)}操作本回合已执行，指令将在结算时被拒绝"
 
-    async with _state_lock:
+    async with _sess().state_lock:
         command = {
-            "id": f"cmd_{len(_pending_commands)}_{action}",
+            "id": f"cmd_{len(_sess().pending_commands)}_{action}",
             "action": action,
             "params": params,
-            "submitted_at": _world_state.current_round if _world_state else 0,
+            "submitted_at": _sess().world_state.current_round if _sess().world_state else 0,
         }
-        _pending_commands.append(command)
-        pending_count = len(_pending_commands)
+        _sess().pending_commands.append(command)
+        pending_count = len(_sess().pending_commands)
 
     response_data = {
         "command_id": command["id"],
@@ -1272,7 +1958,7 @@ async def get_pending_commands():
     """查看待执行指令队列"""
     # 2026-07-15 修复: 为每条指令补齐 command_id（提交时已有 id，但确保返回时有）
     result = []
-    for i, cmd in enumerate(_pending_commands):
+    for i, cmd in enumerate(_sess().pending_commands):
         entry = dict(cmd)
         if not entry.get("command_id"):
             entry["command_id"] = entry.get("id", f"cmd_{i}")
@@ -1294,24 +1980,24 @@ async def get_mode_info():
 @app.get("/api/game/operation-locks")
 async def get_operation_locks():
     """获取当前回合操作锁状态"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     
     op_lock = get_round_lock()
-    player = _world_state.get_player_faction()
+    player = _sess().world_state.get_player_faction()
     
     if not player:
         return ApiResponse.success({"locked_actions": [], "cooling_tiles": {}})
     
     locked_actions = op_lock.get_faction_locked_actions(player.faction_id)
     cooling_tiles = {}
-    for tile_id in _world_state.get_faction_tiles(player.faction_id):
+    for tile_id in _sess().world_state.get_faction_tiles(player.faction_id):
         cooling = op_lock.get_tile_cooling_actions(tile_id.tile_id)
         if cooling:
             cooling_tiles[tile_id.tile_id] = cooling
     
     return ApiResponse.success({
-        "round": _world_state.current_round,
+        "round": _sess().world_state.current_round,
         "faction_id": player.faction_id,
         "locked_actions": locked_actions,
         "cooling_tiles": cooling_tiles,
@@ -1329,9 +2015,9 @@ async def get_responsibility_stats():
 @app.post("/api/game/commands/clear")
 async def clear_commands():
     """清空指令队列"""
-    global _pending_commands
-    count = len(_pending_commands)
-    _pending_commands = []
+    # session-scoped
+    count = len(_sess().pending_commands)
+    _sess().pending_commands = []
     return ApiResponse.success(None, f"已清空 {count} 条待办指令")
 
 
@@ -1351,9 +2037,9 @@ async def advance_turn(request: dict = None):
                                           ↓
     ⑦ 回放快照 → ⑧ 自动存档(含结局判定)
     """
-    global _pending_commands, _round_snapshots
+    # session-scoped, _sess().round_snapshots
 
-    if not _world_state or not _round_engine:
+    if not _sess().world_state or not _sess().round_engine:
         return ApiResponse.forbidden("请先开局")
 
     # 3.1: 模式检查
@@ -1361,7 +2047,7 @@ async def advance_turn(request: dict = None):
     if not mode_mgr.can_player_advance_turn():
         return ApiResponse.forbidden("观战模式下不可推进回合")
 
-    async with _state_lock:
+    async with _sess().state_lock:
         # 检查是否已经 Game Over（含结局判定）
         ending = _check_ending()
         if ending and ending.get("is_game_over"):
@@ -1369,13 +2055,17 @@ async def advance_turn(request: dict = None):
                 "game_over": True,
                 "message": ending.get("description", "游戏已结束"),
                 "ending": ending,
-                "world_state": _world_state.model_dump(),
+                "world_state": _sess().world_state.model_dump(),
             })
+
+        # P0修复: 快照保存当前待执行指令，用于回合结束后精确清理
+        # 防止回合执行期间玩家提交的新指令被误清空（竞态条件）
+        _pending_commands_snapshot = list(_sess().pending_commands)
 
         # 收集玩家指令（如果有）
         player_edict = None
-        if _pending_commands:
-            player_edict = json.dumps(_pending_commands, ensure_ascii=False)
+        if _sess().pending_commands:
+            player_edict = json.dumps(_sess().pending_commands, ensure_ascii=False)
 
     try:
         # ---- 回合开始时清空圣旨上下文（保证跨回合不混淆） ----
@@ -1388,17 +2078,22 @@ async def advance_turn(request: dict = None):
             logger.warning(f"清理圣旨上下文失败（不影响回合流程）: {type(e).__name__}: {e}")
 
         # 执行完整8阶段回合（在锁外执行，避免长时间持锁）
-        round_summary = await _round_engine.execute_round(player_edict)
+        round_summary = await _sess().round_engine.execute_round(player_edict)
 
-        async with _state_lock:
-            # 3.2 修复: 回合成功后清空 pending_commands，防止跨回合重复执行
-            _pending_commands = []
+        async with _sess().state_lock:
+            # P0修复: 只清空本回合提交的指令，保留回合执行期间新提交的指令
+            # 防止竞态条件导致回合执行期间玩家提交的指令被误清空
+            if _pending_commands_snapshot:
+                snapshot_ids = {cmd.get("id", "") for cmd in _pending_commands_snapshot}
+                _sess().pending_commands = [cmd for cmd in _sess().pending_commands if cmd.get("id", "") not in snapshot_ids]
+            else:
+                _sess().pending_commands = []
             engine_snapshot = round_summary.pop("_snapshot", None)
             snapshot = engine_snapshot or {
-                "round": _world_state.current_round,
-                "year": _world_state.current_year,
-                "month": _world_state.current_month,
-                "season": _world_state.current_season,
+                "round": _sess().world_state.current_round,
+                "year": _sess().world_state.current_year,
+                "month": _sess().world_state.current_month,
+                "season": _sess().world_state.current_season,
                 "factions": {
                     fid: {
                         "name": f.name,
@@ -1406,21 +2101,21 @@ async def advance_turn(request: dict = None):
                         "grain": f.grain,
                         "total_troops": f.total_troops,
                         "total_population": f.total_population,
-                        "tile_count": len(_world_state.get_faction_tiles(fid)),
+                        "tile_count": len(_sess().world_state.get_faction_tiles(fid)),
                         "is_alive": f.is_alive,
                     }
-                    for fid, f in _world_state.factions.items()
+                    for fid, f in _sess().world_state.factions.items()
                 },
             }
-            _round_snapshots.append(snapshot)
+            _sess().round_snapshots.append(snapshot)
 
             # P2: 防止事件日志和快照无限增长 → OOM
             MAX_EVENTS_LOG = 2000
             MAX_SNAPSHOTS = 50
-            if len(_world_state.events_log) > MAX_EVENTS_LOG:
-                _world_state.events_log = _world_state.events_log[-MAX_EVENTS_LOG:]
-            if len(_round_snapshots) > MAX_SNAPSHOTS:
-                _round_snapshots = _round_snapshots[-MAX_SNAPSHOTS:]
+            if len(_sess().world_state.events_log) > MAX_EVENTS_LOG:
+                _sess().world_state.events_log = _sess().world_state.events_log[-MAX_EVENTS_LOG:]
+            if len(_sess().round_snapshots) > MAX_SNAPSHOTS:
+                _sess().round_snapshots = _sess().round_snapshots[-MAX_SNAPSHOTS:]
 
             # 检查结局条件（从引擎阶段⑧获取）
             ending = round_summary.get("phases", {}).get("auto_save", {}).get("ending")
@@ -1432,10 +2127,10 @@ async def advance_turn(request: dict = None):
             should_auto_save = auto_save.get("should_auto_save") and not auto_save.get("game_ending")
 
             # 返回完整世界状态（脱敏后）
-            world_dict = _world_state.model_dump()
+            world_dict = _sess().world_state.model_dump()
             world_dict = _mask_world_state_for_player(world_dict)
             # 2026-07-15 修复: 收集本回合新事件，按严重度排序（major > minor > routine）
-            all_round_events = [e for e in _world_state.events_log if e.get("round") == _world_state.current_round]
+            all_round_events = [e for e in _sess().world_state.events_log if e.get("round") == _sess().world_state.current_round]
             severity_order = {"major": 0, "minor": 1, "routine": 2}
             all_round_events.sort(key=lambda e: severity_order.get(e.get("severity", "routine"), 3))
             # 限制返回事件数（前端不需要全部488条），优先返回严重事件
@@ -1443,43 +2138,43 @@ async def advance_turn(request: dict = None):
 
             # 3.1: 获取操作锁状态和模式信息
             op_lock = get_round_lock()
-            player = _world_state.get_player_faction()
+            player = _sess().world_state.get_player_faction()
             locked_actions = []
             cooling_tiles = {}
             if player:
                 locked_actions = op_lock.get_faction_locked_actions(player.faction_id)
-                for tile in _world_state.get_faction_tiles(player.faction_id):
+                for tile in _sess().world_state.get_faction_tiles(player.faction_id):
                     cooling = op_lock.get_tile_cooling_actions(tile.tile_id)
                     if cooling:
                         cooling_tiles[tile.tile_id] = cooling
 
             mode_info = mode_mgr.get_mode_info()
 
-            # P3修复: 锁内预序列化存档数据，避免锁外 _auto_save_world() 读取 _world_state 时的竞态条件
+            # P3修复: 锁内预序列化存档数据，避免锁外 _auto_save_world() 读取 _sess().world_state 时的竞态条件
             auto_save_payload = None
             if should_auto_save:
                 try:
                     # 序列化军团和武将（存储在 __dict__ 中，Pydantic model_dump 不包含）
-                    all_generals = _world_state.__dict__.get("_generals", {})
+                    all_generals = _sess().world_state.__dict__.get("_generals", {})
                     generals_save: dict[str, list[dict]] = {}
                     for fid, gens in all_generals.items():
                         generals_save[fid] = [g.model_dump() if hasattr(g, 'model_dump') else g for g in gens]
-                    all_legions = _world_state.__dict__.get("_legions", {})
+                    all_legions = _sess().world_state.__dict__.get("_legions", {})
                     legions_save: dict[str, list[dict]] = {}
                     for fid, legs in all_legions.items():
                         legions_save[fid] = [l.model_dump() if hasattr(l, 'model_dump') else l for l in legs]
 
                     auto_save_payload = {
-                        "world_state": _world_state.model_dump(),
-                        "round": _world_state.current_round,
-                        "year": _world_state.current_year,
-                        "month": _world_state.current_month,
-                        "season": str(_world_state.current_season),
+                        "world_state": _sess().world_state.model_dump(),
+                        "round": _sess().world_state.current_round,
+                        "year": _sess().world_state.current_year,
+                        "month": _sess().world_state.current_month,
+                        "season": str(_sess().world_state.current_season),
                         "player_faction": player.faction_id if player else "",
                         "faction_name": _factions_config.get("factions", {}).get(
                             player.faction_id if player else "", {}
                         ).get("name", player.name if player else ""),
-                        "snapshots_count": len(_round_snapshots),
+                        "snapshots_count": len(_sess().round_snapshots),
                         "_generals": generals_save,
                         "_legions": legions_save,
                     }
@@ -1494,10 +2189,10 @@ async def advance_turn(request: dict = None):
                 logger.error(f"自动存档失败（不影响回合结算）: {type(e).__name__}: {e}")
 
         return ApiResponse.success({
-            "current_round": _world_state.current_round,
-            "current_year": _world_state.current_year,
-            "current_month": _world_state.current_month,
-            "current_season": _world_state.current_season,
+            "current_round": _sess().world_state.current_round,
+            "current_year": _sess().world_state.current_year,
+            "current_month": _sess().world_state.current_month,
+            "current_season": _sess().world_state.current_season,
             "phase": round_summary.get("current_phase", "settlement"),  # 2026-07-15: 修复 → 返回当前阶段名
             "round_summary": round_summary,
             "world_state": world_dict,
@@ -1506,15 +2201,18 @@ async def advance_turn(request: dict = None):
             "snapshot": snapshot,
             "ending": ending,
             # Bug #19修复: advance-turn 响应补全 player_faction_id
-            "player_faction_id": _world_state.player_faction_id,
+            "player_faction_id": _sess().world_state.player_faction_id,
             # 3.1 新增
             "mode_info": mode_info,
             "locked_actions": locked_actions,
             "cooling_tiles": cooling_tiles,
             "responsibility_stats": round_summary.get("responsibility_stats", {}),
             # 地盘变更（本回合新产生的）
-            "tile_changes": [c for c in _world_state.tile_changes if c.get("round") == _world_state.current_round],
-        }, f"第 {_world_state.current_round} 回合执行完毕")
+            "tile_changes": [c for c in _sess().world_state.tile_changes if c.get("round") == _sess().world_state.current_round],
+            # 3.3: 部分阶段失败提示（前端可据此提示玩家数据可能不完整）
+            "partial_failure": round_summary.get("partial_failure", False),
+            "failed_phases": round_summary.get("failed_phases", []),
+        }, f"第 {_sess().world_state.current_round} 回合执行完毕")
     except asyncio.TimeoutError:
         logger.error("回合执行超时（300秒），可能有死锁")
         return ApiResponse.server_error("回合执行超时，请稍后重试")
@@ -1522,6 +2220,191 @@ async def advance_turn(request: dict = None):
         logger.error(f"回合推进失败: {e}", exc_info=True)
         # 3.2 修复: 回合失败时保留 pending_commands（不清空），让玩家可以重试
         return ApiResponse.server_error(f"回合推进异常: {str(e)[:300]}")
+
+
+@app.post("/api/game/turn-narrative")
+async def turn_narrative(request: dict = None):
+    """
+    回合大事录叙事生成：以随机臣子身份，用文言文向君主汇报上回合天下大事。
+    
+    请求: { "round": N }
+    返回: { "narrative": "...", "minister_name": "...", "minister_title": "...", "ai_generated": bool }
+    
+    若 LLM 不可用/超时/失败，自动降级为模板拼接文本。
+    """
+    if not _sess().world_state or not _sess().round_engine:
+        return ApiResponse.forbidden("请先开局")
+
+    round_num = (request or {}).get("round", _sess().world_state.current_round)
+    if not isinstance(round_num, int) or round_num < 1:
+        round_num = _sess().world_state.current_round
+
+    # ---- 收集该回合事件 ----
+    round_events = [e for e in _sess().world_state.events_log if e.get("round") == round_num]
+    severity_order = {"critical": 0, "major": 1, "minor": 2, "routine": 3}
+    round_events.sort(key=lambda e: severity_order.get(e.get("severity", "routine"), 4))
+
+    # ---- 随机选取臣子 ----
+    player = _sess().world_state.get_player_faction()
+    minister_name = "中书省"
+    minister_title = ""
+    if player:
+        try:
+            import random as _random
+            _adviser_path = Path(__file__).parent / "config" / "adviser_names.json"
+            if _adviser_path.exists():
+                _adviser_map = json.loads(_adviser_path.read_text(encoding="utf-8")).get("advisers", {})
+            else:
+                _adviser_map = {}
+            faction_cfg = _factions_config.get("factions", {}).get(player.faction_id, {})
+            adviser_ids = faction_cfg.get("adviser_team", [])
+            if adviser_ids:
+                chosen_id = _random.choice(adviser_ids)
+                chosen = _adviser_map.get(chosen_id, {})
+                minister_name = chosen.get("name", chosen_id)
+                minister_title = chosen.get("title", "")
+        except Exception as e:
+            logger.warning(f"选取臣子身份失败，使用默认值: {e}")
+
+    # ---- 构建降级模板文本（始终可用） ----
+    fallback_narrative = _build_template_narrative(
+        round_num, _sess().world_state.current_year, _sess().world_state.current_month,
+        _sess().world_state.current_season, round_events, player
+    )
+
+    # ---- 尝试 LLM 生成文言叙事 ----
+    if not _sess().llm_available or not _sess().llm_clients:
+        return ApiResponse.success({
+            "narrative": fallback_narrative,
+            "minister_name": minister_name,
+            "minister_title": minister_title,
+            "ai_generated": False,
+        })
+
+    try:
+        client = _sess().llm_clients.get("advisor") or _sess().llm_clients.get("enemy")
+        if not client:
+            return ApiResponse.success({
+                "narrative": fallback_narrative,
+                "minister_name": minister_name,
+                "minister_title": minister_title,
+                "ai_generated": False,
+            })
+
+        # 构建事件摘要（最多20条，避免 token 溢出）
+        event_summaries = []
+        for evt in round_events[:20]:
+            sev_tag = {"critical": "【极】", "major": "【重】", "minor": "", "routine": ""}.get(
+                evt.get("severity", ""), ""
+            )
+            title = evt.get("title", "").replace("【", "「").replace("】", "」")
+            desc = evt.get("description", "") or evt.get("narrative", "")
+            line = f"{sev_tag}{title}"
+            if desc and desc != title:
+                line += f"：{desc}"
+            event_summaries.append(line)
+
+        events_text = "\n".join(f"- {s}" for s in event_summaries) if event_summaries else "本月天下无事，诸邦各安其位。"
+
+        faction_name = player.name if player else "朝廷"
+        season_str = _sess().world_state.current_season or "春"
+        year_str = f"{_sess().world_state.current_year}年{_sess().world_state.current_month}月"
+
+        system_prompt = (
+            f"你是{faction_name}的臣子{minister_name}，官居{minister_title}。"
+            f"你正在向君主禀报{year_str}天下大事。"
+            f"请用半文半白的明清风官场口吻撰写奏报，语气恭敬但不卑不亢，"
+            f"适当加入对局势的简要评点。"
+            f"不需称呼皇帝名号，直接以「启奏陛下」开头。"
+            f"正文控制在200字以内，言简意赅。"
+            f"不要使用markdown格式。"
+        )
+
+        user_prompt = (
+            f"以下是{year_str}（第{round_num}回合）发生的天下大事：\n\n"
+            f"{events_text}\n\n"
+            f"请以{minister_name}（{minister_title}）的口吻，"
+            f"向陛下禀报本月天下局势。"
+        )
+
+        narrative = await asyncio.wait_for(
+            client.chat_fast(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                temperature=0.7,
+            ),
+            timeout=25,
+        )
+
+        if narrative and len(narrative.strip()) >= 10:
+            return ApiResponse.success({
+                "narrative": narrative.strip(),
+                "minister_name": minister_name,
+                "minister_title": minister_title,
+                "ai_generated": True,
+            })
+
+    except asyncio.TimeoutError:
+        logger.warning(f"回合大事录 LLM 生成超时（25s），使用降级文本")
+    except Exception as e:
+        logger.warning(f"回合大事录 LLM 生成失败: {type(e).__name__}: {e}，使用降级文本")
+
+    return ApiResponse.success({
+        "narrative": fallback_narrative,
+        "minister_name": minister_name,
+        "minister_title": minister_title,
+        "ai_generated": False,
+    })
+
+
+def _build_template_narrative(
+    round_num: int, year: int, month: int, season: str,
+    events: list[dict], player
+) -> str:
+    """构建降级模板叙事（不需要 LLM）"""
+    season_name = {"春": "春", "夏": "夏", "秋": "秋", "冬": "冬"}.get(str(season), "春")
+    header = f"启奏陛下。{year}年{month}月（{season_name}季），天下大事录：\n"
+
+    if not events:
+        return header + "本月天下太平，诸事如常，各邦安守其土。臣谨奏。"
+
+    # 按类型分组
+    groups: dict[str, list[dict]] = {}
+    for evt in events:
+        etype = evt.get("event_type", "other")
+        groups.setdefault(etype, []).append(evt)
+
+    lines = [header]
+
+    type_names = {
+        "battle": "⚔️ 兵戈之事",
+        "diplomacy": "🤝 邦交纵横",
+        "court": "🏛 朝堂变动",
+        "royal": "👑 宗室大事",
+        "economy": "💰 民生经济",
+        "civil": "🏘 民政庶务",
+        "disaster": "🌪 天灾异象",
+        "spy": "🕵 谍影暗战",
+        "ending": "📜 天下变局",
+        "random": "📰 邸报杂录",
+    }
+
+    for etype, evts in groups.items():
+        cat_name = type_names.get(etype, f"📋 {etype}")
+        lines.append(f"\n{cat_name}：")
+        for evt in evts[:5]:  # 每类最多5条
+            title = evt.get("title", "").replace("【", "「").replace("】", "」")
+            desc = evt.get("description", "")
+            if desc and desc != title:
+                lines.append(f"  · {title}——{desc}")
+            else:
+                lines.append(f"  · {title}")
+
+    total = len(events)
+    major_count = sum(1 for e in events if e.get("severity") in ("critical", "major"))
+    lines.append(f"\n本月共录大事{total}桩，其中紧要{max(major_count, 1)}桩。臣谨奏。")
+
+    return "\n".join(lines)
 
 
 def _check_ending() -> dict | None:
@@ -1536,16 +2419,19 @@ def _check_ending() -> dict | None:
     return result
 
 
-# 存档目录（与 auto_save 及 save/load API 共用）
-SAVE_DIR = PROJECT_DIR / "data" / "archives"
-SAVE_DIR.mkdir(parents=True, exist_ok=True)
+# 存档目录（多玩家隔离：每个玩家独立存档目录）
+def _get_save_dir() -> Path:
+    """获取当前玩家的存档目录，确保目录存在"""
+    d = get_session_manager().get_save_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def _auto_save_world(payload: dict = None):
     """自动存档（不覆盖手动存档槽，保留最近 backup_keep_count 个）
 
     P2修复：使用原子写入（先写临时文件再改名），防止写盘中途崩溃导致存档损坏。
-    P3修复：接收调用方在锁内预序列化的 payload，避免锁外读取 _world_state 时的竞态条件。
+    P3修复：接收调用方在锁内预序列化的 payload，避免锁外读取 _sess().world_state 时的竞态条件。
     调用方应确保在锁外调用此函数，避免文件 I/O 阻塞状态锁。
     """
     temp_path = None
@@ -1558,7 +2444,7 @@ def _auto_save_world(payload: dict = None):
             faction_name = payload.get("faction_name", "")
             player_faction = payload.get("player_faction", "")
             snapshots_count = payload.get("snapshots_count", 0)
-            # 计算领土（从 world_dict 获取，不依赖 _world_state）
+            # 计算领土（从 world_dict 获取，不依赖 _sess().world_state）
             territory = 0
             try:
                 factions = world_dict.get("factions", {})
@@ -1568,17 +2454,17 @@ def _auto_save_world(payload: dict = None):
                 territory = 0
         else:
             # 兼容旧调用（无 payload 时回退到直接读取，有竞态风险但维持可用性）
-            if not _world_state:
+            if not _sess().world_state:
                 return
-            player = _world_state.get_player_faction()
+            player = _sess().world_state.get_player_faction()
             faction_name = ""
             if player:
                 faction_name = _factions_config.get("factions", {}).get(player.faction_id, {}).get("name", player.name)
             player_faction = player.faction_id if player else ""
-            current_round = _world_state.current_round
-            territory = len(_world_state.get_faction_tiles(player.faction_id)) if player else 0
-            world_dict = _world_state.model_dump()
-            snapshots_count = len(_round_snapshots)
+            current_round = _sess().world_state.current_round
+            territory = len(_sess().world_state.get_faction_tiles(player.faction_id)) if player else 0
+            world_dict = _sess().world_state.model_dump()
+            snapshots_count = len(_sess().round_snapshots)
 
         # 提取 _generals / _legions（从 payload 或回退读取）
         generals_save = {}
@@ -1586,12 +2472,12 @@ def _auto_save_world(payload: dict = None):
         if payload:
             generals_save = payload.get("_generals", {})
             legions_save = payload.get("_legions", {})
-        elif _world_state:
+        elif _sess().world_state:
             try:
-                all_generals = _world_state.__dict__.get("_generals", {})
+                all_generals = _sess().world_state.__dict__.get("_generals", {})
                 for fid, gens in all_generals.items():
                     generals_save[fid] = [g.model_dump() if hasattr(g, 'model_dump') else g for g in gens]
-                all_legions = _world_state.__dict__.get("_legions", {})
+                all_legions = _sess().world_state.__dict__.get("_legions", {})
                 for fid, legs in all_legions.items():
                     legions_save[fid] = [l.model_dump() if hasattr(l, 'model_dump') else l for l in legs]
             except Exception as e:
@@ -1600,9 +2486,9 @@ def _auto_save_world(payload: dict = None):
         save_data = {
             "slot": -1,
             "round": current_round,
-            "year": payload.get("year", _world_state.current_year) if payload else (_world_state.current_year if _world_state else 1),
-            "month": payload.get("month", _world_state.current_month) if payload else (_world_state.current_month if _world_state else 1),
-            "season": payload.get("season", str(_world_state.current_season)) if payload else (str(_world_state.current_season) if _world_state else "spring"),
+            "year": payload.get("year", _sess().world_state.current_year) if payload else (_sess().world_state.current_year if _sess().world_state else 1),
+            "month": payload.get("month", _sess().world_state.current_month) if payload else (_sess().world_state.current_month if _sess().world_state else 1),
+            "season": payload.get("season", str(_sess().world_state.current_season)) if payload else (str(_sess().world_state.current_season) if _sess().world_state else "spring"),
             "player_faction": player_faction,
             "faction_name": faction_name,
             "territory_count": territory,
@@ -1610,17 +2496,19 @@ def _auto_save_world(payload: dict = None):
             "saved_at": datetime.now().isoformat(),
             "world_state": world_dict,
             "snapshots_count": snapshots_count,
-            "version": "3.2",
+            "version": SAVE_VERSION,
             "_generals": generals_save,
             "_legions": legions_save,
-            "_round_snapshots": _round_snapshots,
-            "_pending_commands": _pending_commands,
+            "_sess().round_snapshots": _sess().round_snapshots,
+            "_sess().pending_commands": _sess().pending_commands,
+            "_active_wars": _get_active_wars_data(),  # SAVE_VERSION
+            "_npc_runtime_state": _export_npc_runtime_state(),  # v3.5: NPC 动态状态
         }
         filename = f"auto_round{current_round}.json"
 
         # P2: 原子写入 — 先写 .tmp 再 rename，防止崩溃产生损坏文件
-        temp_path = SAVE_DIR / (filename + ".tmp")
-        final_path = SAVE_DIR / filename
+        temp_path = _get_save_dir() / (filename + ".tmp")
+        final_path = _get_save_dir() / filename
         with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(save_data, f, ensure_ascii=False, indent=2)
         # Windows 上需要先删目标再 rename
@@ -1631,7 +2519,7 @@ def _auto_save_world(payload: dict = None):
 
         # 清理旧自动存档（保留最近 N 个）
         keep_count = _game_const.get("save", {}).get("backup_keep_count", 5)
-        auto_files = sorted(SAVE_DIR.glob("auto_*.json"), key=lambda x: x.stat().st_mtime, reverse=True)
+        auto_files = sorted(_get_save_dir().glob("auto_*.json"), key=lambda x: x.stat().st_mtime, reverse=True)
         for old in auto_files[keep_count:]:
             try:
                 old.unlink()
@@ -1673,16 +2561,16 @@ async def parse_edict(request: dict):
     # ---- 安全校验结束 ----
 
     # 核心规则：指令归属校验 —— 玩家只能向自身势力下发政令
-    if _world_state:
-        player = _world_state.get_player_faction()
+    if _sess().world_state:
+        player = _sess().world_state.get_player_faction()
         if player and faction_id and faction_id != player.faction_id:
             return ApiResponse.forbidden(
                 f"无权操控其他势力！你只能对己方势力「{player.name}」下达政令"
             )
 
-    if _llm_available:
+    if _sess().llm_available:
         try:
-            client = _llm_clients.get("advisor")
+            client = _sess().llm_clients.get("advisor")
             if not client:
                 return ApiResponse.server_error("AI顾问未配置")
             prompt = (
@@ -1729,7 +2617,8 @@ async def parse_edict(request: dict):
 # ============================================================
 
 @app.post("/api/edict/execute")
-async def execute_edict(request: dict):
+async def execute_edict(body: EdictExecuteRequest):
+    request = body.model_dump()
     """
     圣旨执行 - AI 推演核心接口
 
@@ -1749,9 +2638,9 @@ async def execute_edict(request: dict):
       "tile_changes": [...]     // 本回合地块变更
     }
     """
-    global _pending_commands
+    # session-scoped
 
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     edict_text = request.get("edict_text", "").strip() or request.get("text", "").strip()
@@ -1774,7 +2663,7 @@ async def execute_edict(request: dict):
     # ---- 安全校验结束 ----
 
     # 核心规则：指令归属校验
-    player = _world_state.get_player_faction()
+    player = _sess().world_state.get_player_faction()
     if not player:
         return ApiResponse.forbidden("未找到玩家势力")
 
@@ -1785,7 +2674,7 @@ async def execute_edict(request: dict):
         )
 
     # 构建世界状态字典
-    world_dict = _world_state.model_dump()
+    world_dict = _sess().world_state.model_dump()
 
     # AI 推演
     ai_analysis = {
@@ -1797,16 +2686,16 @@ async def execute_edict(request: dict):
         "ai_generated": False,
     }
 
-    if _llm_available:
+    if _sess().llm_available:
         try:
             from server.core.edict_engine import call_ai_edict
-            advisor_client = _llm_clients.get("advisor")
+            advisor_client = _sess().llm_clients.get("advisor")
             if not advisor_client:
                 return ApiResponse.server_error("AI顾问未配置")
             
             # 构建圣旨历史上下文（最近10条）
             edict_history = []
-            for d in _world_state.decrees[-10:]:
+            for d in _sess().world_state.decrees[-10:]:
                 edict_history.append({
                     "round": d.get("round", 0),
                     "text": d.get("text", ""),
@@ -1833,31 +2722,31 @@ async def execute_edict(request: dict):
         "total_failed": 0,
     }
 
-    if ai_analysis.get("commands") and _round_engine:
+    if ai_analysis.get("commands") and _sess().round_engine:
         from server.core.edict_engine import execute_edict_commands
         execution = execute_edict_commands(
             commands=ai_analysis["commands"],
-            world_state_obj=_world_state,
-            round_engine=_round_engine,
+            world_state_obj=_sess().world_state,
+            round_engine=_sess().round_engine,
         )
 
         # 写入圣旨到治理日志
-        _world_state.decrees.append({
-            "id": f"decree_{_world_state.current_round}_{len(_world_state.decrees)}",
-            "round": _world_state.current_round,
-            "year": _world_state.current_year,
-            "month": _world_state.current_month,
+        _sess().world_state.decrees.append({
+            "id": f"decree_{_sess().world_state.current_round}_{len(_sess().world_state.decrees)}",
+            "round": _sess().world_state.current_round,
+            "year": _sess().world_state.current_year,
+            "month": _sess().world_state.current_month,
             "faction_id": player.faction_id,
             "text": cleaned_text,
             "ai_narrative": ai_analysis.get("narrative", ""),
             "commands_count": len(ai_analysis.get("commands", [])),
             "executed_count": execution["total_executed"],
             "failed_count": execution["total_failed"],
-            "timestamp": _world_state.updated_at or "",
+            "timestamp": _sess().world_state.updated_at or "",
         })
 
-        _world_state.governance_logs.append({
-            "round": _world_state.current_round,
+        _sess().world_state.governance_logs.append({
+            "round": _sess().world_state.current_round,
             "title": "颁布圣旨",
             "description": cleaned_text,
             "narrative": ai_analysis.get("narrative", f"圣旨「{edict_text[:50]}」已颁行"),
@@ -1866,11 +2755,11 @@ async def execute_edict(request: dict):
         })
 
         # 记录事件
-        _world_state.events_log.append({
-            "event_id": f"edict_{_world_state.current_round}_{len(_world_state.events_log)}",
+        _sess().world_state.events_log.append({
+            "event_id": f"edict_{_sess().world_state.current_round}_{len(_sess().world_state.events_log)}",
             "event_type": "edict",
             "severity": "major",
-            "round": _world_state.current_round,
+            "round": _sess().world_state.current_round,
             "title": "圣旨颁行",
             "description": ai_analysis.get("narrative", edict_text[:100]),
             "faction_id": player.faction_id,
@@ -1882,7 +2771,7 @@ async def execute_edict(request: dict):
             "narrative": ai_analysis.get("narrative", ""),
         })
 
-        _world_state.mark_updated()
+        _sess().world_state.mark_updated()
 
         # ---- 3.1: 记录圣旨上下文（多轮对话连贯性） ----
         try:
@@ -1913,16 +2802,16 @@ async def execute_edict(request: dict):
         "summary": "",
     }
 
-    if _llm_available and execution["total_executed"] > 0:
+    if _sess().llm_available and execution["total_executed"] > 0:
         try:
             from server.core.global_deduction import run_global_deduction
-            advisor_client = _llm_clients.get("advisor")
+            advisor_client = _sess().llm_clients.get("advisor")
             if advisor_client:
                 global_deduction = await run_global_deduction(
                     edict_text=edict_text,
                     ai_analysis=ai_analysis,
                     execution=execution,
-                    world_state_obj=_world_state,
+                    world_state_obj=_sess().world_state,
                     llm_client=advisor_client,
                 )
                 logger.info(f"全局推演完成: {global_deduction.get('summary', '')}")
@@ -1931,10 +2820,10 @@ async def execute_edict(request: dict):
             global_deduction["summary"] = f"全局推演异常: {str(e)[:50]}"
 
     # 构建返回数据
-    updated_world = _world_state.model_dump()
+    updated_world = _sess().world_state.model_dump()
     tile_changes = [
-        c for c in _world_state.tile_changes
-        if c.get("round") == _world_state.current_round
+        c for c in _sess().world_state.tile_changes
+        if c.get("round") == _sess().world_state.current_round
     ]
 
     # 3.1: 获取操作锁状态
@@ -1942,7 +2831,7 @@ async def execute_edict(request: dict):
     locked_actions = op_lock.get_faction_locked_actions(player.faction_id) if player else []
     cooling_tiles = {}
     if player:
-        for t in _world_state.get_faction_tiles(player.faction_id):
+        for t in _sess().world_state.get_faction_tiles(player.faction_id):
             cooling = op_lock.get_tile_cooling_actions(t.tile_id)
             if cooling:
                 cooling_tiles[t.tile_id] = cooling
@@ -1972,7 +2861,8 @@ async def execute_edict(request: dict):
 # ============================================================
 
 @app.post("/api/edict/nl-process")
-async def nl_process_edict(request: dict):
+async def nl_process_edict(body: EdictProcessRequest):
+    request = body.model_dump()
     """
     统一圣旨自然语言处理管道（3.2 重构版）。
 
@@ -1993,7 +2883,7 @@ async def nl_process_edict(request: dict):
       "use_ai": true             // 是否使用AI解析
     }
     """
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     edict_text = (request.get("edict_text", "") or request.get("text", "")).strip()
@@ -2010,22 +2900,23 @@ async def nl_process_edict(request: dict):
     guard.record_action(faction_id, "nl_edict", {"edict_text": cleaned_text[:200]})
 
     # 归属校验
-    player = _world_state.get_player_faction()
+    player = _sess().world_state.get_player_faction()
     if not player:
         return ApiResponse.forbidden("未找到玩家势力")
     if faction_id and faction_id != player.faction_id:
         return ApiResponse.forbidden(f"无权操控其他势力")
 
     direct_execute = request.get("direct_execute", True)
-    use_ai = request.get("use_ai", _llm_available)
+    use_ai = request.get("use_ai", _sess().llm_available)
+    use_simulation = request.get("use_simulation", True)  # 4.0 新增：AI战略推演
 
     # 构建世界状态字典
-    world_dict = _world_state.model_dump()
+    world_dict = _sess().world_state.model_dump()
     world_dict["player_faction_id"] = player.faction_id
 
     # 获取 edict 历史
     edict_history = []
-    for d in _world_state.decrees[-10:]:
+    for d in _sess().world_state.decrees[-10:]:
         edict_history.append({
             "round": d.get("round", 0),
             "text": d.get("text", ""),
@@ -2034,57 +2925,66 @@ async def nl_process_edict(request: dict):
         })
 
     # 获取 LLM 客户端
-    llm_client = _llm_clients.get("advisor") if use_ai else None
+    llm_client = _sess().llm_clients.get("advisor") if use_ai else None
 
     from server.core.unified_edict_engine import (
         process_unified_edict, split_multi_edict, batch_process_edicts,
+        USE_AI_SIMULATION,
     )
+
+    # 4.0: 根据请求参数控制 AI 推演开关
+    import server.core.unified_edict_engine as _ue
+    _prev_simulation = _ue.USE_AI_SIMULATION
+    _ue.USE_AI_SIMULATION = use_simulation and use_ai and _sess().llm_available
 
     # 检测是否为批量/长篇
     sub_texts = split_multi_edict(cleaned_text)
 
-    if len(sub_texts) > 1 and direct_execute:
-        # 批量处理
-        result = await batch_process_edicts(
-            texts=sub_texts,
-            world_state=world_dict,
-            world_state_obj=_world_state if direct_execute else None,
-            round_engine=_round_engine if direct_execute else None,
-            llm_client=llm_client,
-            pending_commands=_pending_commands,
-            use_ai=use_ai,
-        )
-    else:
-        # 单条处理
-        result = await process_unified_edict(
-            edict_text=cleaned_text,
-            world_state=world_dict,
-            world_state_obj=_world_state if direct_execute else None,
-            round_engine=_round_engine if direct_execute else None,
-            llm_client=llm_client,
-            pending_commands=_pending_commands,
-            edict_history=edict_history,
-            use_ai=use_ai,
-        )
+    try:
+        if len(sub_texts) > 1 and direct_execute:
+            # 批量处理
+            result = await batch_process_edicts(
+                texts=sub_texts,
+                world_state=world_dict,
+                world_state_obj=_sess().world_state if direct_execute else None,
+                round_engine=_sess().round_engine if direct_execute else None,
+                llm_client=llm_client,
+                pending_commands=_sess().pending_commands,
+                use_ai=use_ai,
+            )
+        else:
+            # 单条处理
+            result = await process_unified_edict(
+                edict_text=cleaned_text,
+                world_state=world_dict,
+                world_state_obj=_sess().world_state if direct_execute else None,
+                round_engine=_sess().round_engine if direct_execute else None,
+                llm_client=llm_client,
+                pending_commands=_sess().pending_commands,
+                edict_history=edict_history,
+                use_ai=use_ai,
+            )
+    finally:
+        _ue.USE_AI_SIMULATION = _prev_simulation
 
     # 写入治理日志
     if result.get("commands") and direct_execute:
-        _world_state.decrees.append({
-            "id": f"decree_{_world_state.current_round}_{len(_world_state.decrees)}",
-            "round": _world_state.current_round,
-            "year": _world_state.current_year,
-            "month": _world_state.current_month,
+        _sess().world_state.decrees.append({
+            "id": f"decree_{_sess().world_state.current_round}_{len(_sess().world_state.decrees)}",
+            "round": _sess().world_state.current_round,
+            "year": _sess().world_state.current_year,
+            "month": _sess().world_state.current_month,
             "faction_id": player.faction_id,
             "text": cleaned_text,
             "ai_narrative": result.get("ai_analysis", {}).get("narrative", ""),
             "commands_count": len(result.get("commands", [])),
             "executed_count": result.get("execution", {}).get("total_executed", 0),
             "failed_count": result.get("execution", {}).get("total_failed", 0),
-            "timestamp": _world_state.updated_at or "",
+            "timestamp": _sess().world_state.updated_at or "",
         })
 
-        _world_state.governance_logs.append({
-            "round": _world_state.current_round,
+        _sess().world_state.governance_logs.append({
+            "round": _sess().world_state.current_round,
             "title": "颁布圣旨（NL）",
             "description": cleaned_text,
             "narrative": result.get("ai_analysis", {}).get("narrative", f"圣旨已颁行"),
@@ -2092,7 +2992,7 @@ async def nl_process_edict(request: dict):
             "commands_failed": result.get("execution", {}).get("total_failed", 0),
         })
 
-        _world_state.mark_updated()
+        _sess().world_state.mark_updated()
 
         # 记录圣旨上下文
         try:
@@ -2110,12 +3010,46 @@ async def nl_process_edict(request: dict):
         except Exception as e:
             logger.debug(f"V2记录圣旨上下文失败: {e}")
 
+        # 4.0 新增：执行反馈闭环
+        if result.get("simulation") and result.get("execution"):
+            try:
+                from server.core.edict_feedback import (
+                    generate_execution_report, write_feedback_to_context
+                )
+                report = generate_execution_report(
+                    edict_text=cleaned_text,
+                    plan_commands=result.get("commands", []),
+                    execution_result=result.get("execution", {}),
+                )
+                write_feedback_to_context(
+                    edict_text=cleaned_text,
+                    plan_commands=result.get("commands", []),
+                    execution_result=result.get("execution", {}),
+                    report=report,
+                )
+                # 将反馈报告附加到返回结果
+                result["feedback_report"] = {
+                    "deviation_level": report.deviation_level,
+                    "report_text": report.report_text,
+                    "adjustment_suggestion": report.adjustment_suggestion,
+                    "next_turn_hint": report.next_turn_hint,
+                }
+                logger.info(
+                    f"执行反馈闭环: 偏差等级={report.deviation_level}, "
+                    f"已行{report.total_executed}/{report.total_planned}"
+                )
+            except Exception as e:
+                logger.debug(f"执行反馈闭环跳过: {e}")
+
     # 未直接执行的指令入队
     if not direct_execute and result.get("commands"):
         for cmd in result["commands"]:
-            _pending_commands.append(cmd)
+            _sess().pending_commands.append(cmd)
 
-    return ApiResponse.success({
+    # 恢复 AI 推演开关
+    _ue.USE_AI_SIMULATION = _prev_simulation
+
+    response_data = {
         "edict_text": cleaned_text,
         "classification": result.get("classification", {}),
         "entities": result.get("entities", {}),
@@ -2132,8 +3066,13 @@ async def nl_process_edict(request: dict):
         "is_cancel": result.get("is_cancel", False),
         "needs_clarification": result.get("needs_clarification", False),
         "route_to_advisor": result.get("route_to_advisor", False),
-        "pending_count": len(_pending_commands),
-    }, result.get("ai_analysis", {}).get("narrative", "圣旨已颁行"))
+        "pending_count": len(_sess().pending_commands),
+        # 4.0 新增字段
+        "simulation": result.get("simulation"),
+        "feedback_report": result.get("feedback_report"),
+        "simulation_used": result.get("ai_analysis", {}).get("simulation_used", False),
+    }
+    return ApiResponse.success(response_data, result.get("ai_analysis", {}).get("narrative", "圣旨已颁行"))
 
 
 @app.post("/api/edict/nl-validate")
@@ -2143,15 +3082,15 @@ async def nl_validate_edict(request: dict):
 
     用于输入过程中的实时校验和提示。
     """
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     edict_text = (request.get("edict_text", "") or request.get("text", "")).strip()
     if not edict_text:
         return ApiResponse.bad_request("圣旨内容不能为空")
 
-    world_dict = _world_state.model_dump()
-    player = _world_state.get_player_faction()
+    world_dict = _sess().world_state.model_dump()
+    player = _sess().world_state.get_player_faction()
     if player:
         world_dict["player_faction_id"] = player.faction_id
 
@@ -2214,31 +3153,93 @@ async def nl_validate_edict(request: dict):
     })
 
 
+@app.post("/api/edict/simulation-preview")
+async def simulation_preview(request: dict):
+    """
+    AI 战略推演轻量预览（4.0 新增）。
+    
+    用于前端实时校验时，调用 AI 快速评估圣旨可行性。
+    比完整推演节省约 70% Token，延迟约 1-2 秒。
+    
+    请求格式: { "edict_text": "圣旨文本" }
+    """
+    if not _sess().world_state:
+        return ApiResponse.forbidden("请先开局")
+
+    edict_text = (request.get("edict_text", "") or request.get("text", "")).strip()
+    if not edict_text:
+        return ApiResponse.bad_request("圣旨内容不能为空")
+
+    world_dict = _sess().world_state.model_dump()
+    player = _sess().world_state.get_player_faction()
+    if player:
+        world_dict["player_faction_id"] = player.faction_id
+
+    llm_client = _sess().llm_clients.get("advisor")
+
+    if llm_client:
+        try:
+            from server.core.strategic_simulation import preview_simulation
+            preview = await preview_simulation(edict_text, world_dict, llm_client)
+            return ApiResponse.success({
+                "edict_text": edict_text,
+                "ai_preview": preview,
+                "preview_type": "ai",
+            })
+        except Exception as e:
+            logger.warning(f"AI预览失败，降级到本地分类: {e}")
+
+    # 降级：使用本地关键词分类器
+    from server.core.unified_edict_engine import (
+        classify_edict_intent, extract_edict_entities, EdictIntentCategory,
+        EdictSubIntent,
+    )
+    
+    entity = extract_edict_entities(edict_text, world_dict)
+    classification = classify_edict_intent(edict_text, entity)
+    
+    return ApiResponse.success({
+        "edict_text": edict_text,
+        "ai_preview": {
+            "intent_category": classification["primary"].value if hasattr(classification["primary"], 'value') else str(classification["primary"]),
+            "sub_intents": [si.value for si in classification.get("sub_intents", [])],
+            "confidence": classification.get("confidence", 0.5),
+            "feasibility": "constrained",
+            "feasibility_reason": "本地关键词评估",
+            "risk_flags": [],
+            "suggested_actions": [],
+            "resource_warning": "",
+            "needs_clarification": False,
+        },
+        "preview_type": "local",
+    })
+
+
 @app.post("/api/edict/nl-cancel")
 async def nl_cancel_commands(request: dict):
     """撤回/清空指定指令"""
-    global _pending_commands
+    # session-scoped
 
     cancel_all = request.get("cancel_all", False)
     cancel_ids = request.get("command_ids", [])
     cancel_text = request.get("cancel_text", "")
 
     if cancel_all:
-        count = len(_pending_commands)
-        _pending_commands = []
+        count = len(_sess().pending_commands)
+        _sess().pending_commands = []
         return ApiResponse.success(None, f"已撤回全部 {count} 条待办指令，钦此。")
 
     if cancel_text:
         # 模糊匹配撤回
         removed = []
         kept = []
-        for cmd in _pending_commands:
+        for cmd in _sess().pending_commands:
             label = cmd.get("label", "") + str(cmd.get("params", {}))
             if any(kw in label for kw in cancel_text.split()):
                 removed.append(cmd)
             else:
                 kept.append(cmd)
-        _pending_commands = kept
+        _sess().pending_commands = kept
         return ApiResponse.success({
             "removed_count": len(removed),
             "remaining_count": len(kept),
@@ -2247,12 +3248,12 @@ async def nl_cancel_commands(request: dict):
     if cancel_ids:
         removed = []
         kept = []
-        for i, cmd in enumerate(_pending_commands):
+        for i, cmd in enumerate(_sess().pending_commands):
             if str(i) in cancel_ids or cmd.get("id") in cancel_ids:
                 removed.append(cmd)
             else:
                 kept.append(cmd)
-        _pending_commands = kept
+        _sess().pending_commands = kept
         return ApiResponse.success({
             "removed_count": len(removed),
             "remaining_count": len(kept),
@@ -2267,12 +3268,18 @@ async def get_edict_llm_config():
     try:
         from server.infra.llm_client.config import LLMRuntimeConfig
         rt = LLMRuntimeConfig.from_env()
+        edict_key = ""
+        if hasattr(rt, 'edict'):
+            edict_key = rt.edict.api_key
+        elif hasattr(rt, 'advisor'):
+            edict_key = rt.advisor.api_key
         edict_cfg = {
             "api_base": rt.edict.api_base if hasattr(rt, 'edict') else rt.advisor.api_base,
             "model_name": rt.edict.model_name if hasattr(rt, 'edict') else rt.advisor.model_name,
             "temperature": rt.edict.temperature if hasattr(rt, 'edict') else rt.advisor.temperature,
             "max_tokens": rt.edict.max_tokens if hasattr(rt, 'edict') else rt.advisor.max_tokens,
-            "available": _llm_available,
+            "has_api_key": bool(edict_key),
+            "available": _sess().llm_available,
         }
         return ApiResponse.success(edict_cfg)
     except Exception as e:
@@ -2289,27 +3296,41 @@ async def update_edict_llm_config(request: dict):
             with open(config_path, "r", encoding="utf-8") as f:
                 existing = json.load(f)
 
+        api_base = request.get("api_base", existing.get("edict", {}).get("api_base", ""))
+        # 输入验证：API 地址必须是合法 URL
+        if api_base and not re.match(r'^https?://[^\s]+$', api_base):
+            return ApiResponse.bad_request(f"无效的 API 地址: {api_base}")
+        temperature = request.get("temperature", existing.get("edict", {}).get("temperature", 0.4))
+        temperature = max(0.0, min(2.0, float(temperature)))
+        max_tokens = request.get("max_tokens", existing.get("edict", {}).get("max_tokens", 4096))
+        max_tokens = max(1, min(100000, int(max_tokens)))
         existing["edict"] = {
-            "api_base": request.get("api_base", existing.get("edict", {}).get("api_base", "")),
-            "model_name": request.get("model_name", existing.get("edict", {}).get("model_name", "")),
-            "temperature": request.get("temperature", existing.get("edict", {}).get("temperature", 0.4)),
-            "max_tokens": request.get("max_tokens", existing.get("edict", {}).get("max_tokens", 4096)),
+            "api_base": api_base,
+            "model": request.get("model_name", existing.get("edict", {}).get("model", "")),
+            "temperature": temperature,
+            "max_tokens": max_tokens,
         }
+        # 支持热更新 API Key
+        if "api_key" in request and request["api_key"]:
+            existing["edict"]["api_key"] = request["api_key"]
 
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(existing, f, ensure_ascii=False, indent=2)
 
-        # 热重载
+        # 热重载：清除缓存 + 重新加载运行时配置并重建 LLM 客户端
         from server.infra.llm_client.config import LLMRuntimeConfig
-        LLMRuntimeConfig.reload()
 
-        global _llm_clients, _llm_available
+        # session-scoped
         try:
-            from server.infra.llm_client.hunyuan_client import get_global_clients
-            _llm_clients = await get_global_clients()
+            from server.infra.llm_client.hunyuan_client import get_global_clients, reset_global_clients
+            reset_global_clients()
+            _sess().llm_clients = await get_global_clients()
             runtime = LLMRuntimeConfig.from_env()
-            _llm_available = bool(runtime.advisor.api_key or runtime.edict.api_key
+            _sess().llm_available = bool(runtime.advisor.api_key or runtime.edict.api_key
                                   if hasattr(runtime, 'edict') else runtime.advisor.api_key)
+            # 同步到 RoundEngine
+            if _sess().round_engine:
+                _sess().round_engine.set_llm_clients(_sess().llm_clients, available=_sess().llm_available)
         except Exception as e:
             logger.warning(f"LLM客户端热更新失败: {e}")
 
@@ -2324,8 +3345,9 @@ async def update_edict_llm_config(request: dict):
 
 @app.post("/api/faction/ai-decision")
 async def faction_ai_decision(request: dict):
-    """NPC势力AI决策（路由到A2群雄殿）"""
+    """NPC势力AI决策（路由到A1谋策，chat_mode=ruler）"""
     faction_id = request.get("faction_id", "")
+    faction_id = _require_player_faction(faction_id)
 
     # ---- 安全校验: AOI决策参数 + NPC行为风控 ----
     guard = get_agent_guard()
@@ -2339,15 +3361,15 @@ async def faction_ai_decision(request: dict):
     detector.record_behavior(faction_id, "ai_decision")
     # ---- 安全校验结束 ----
 
-    if _llm_available:
+    if _sess().llm_available:
         try:
             orch = _get_orchestrator()
             result = await orch.agent_chat(
                 faction_id=faction_id,
                 user_message="请制定本回合战略决策。",
                 chat_mode="ruler",
-                world_state=request,
-                clients=_llm_clients,
+                world_state=_sess().world_state.model_dump() if _sess().world_state else {},
+                clients=_sess().llm_clients,
             )
 
             # ---- NPC决策结果安全校验 ----
@@ -2386,17 +3408,18 @@ async def faction_ai_decision(request: dict):
 @app.post("/api/court/monthly-settlement")
 async def court_monthly_settlement(request: dict):
     """朝堂派系月度结算（路由到A1廷议辩论）"""
-    if _llm_available:
+    faction_id = _require_player_faction(request.get("faction_id", ""))
+    if _sess().llm_available:
         try:
             orch = _get_orchestrator()
             result = await orch.a1_court_debate(
-                faction_id=request.get("faction_id", ""),
+                faction_id=faction_id,
                 topic="朝堂派系月度结算，汇报各派系动向。",
-                world_state=request,
-                clients=_llm_clients,
+                world_state=_sess().world_state.model_dump() if _sess().world_state else {},
+                clients=_sess().llm_clients,
             )
             return ApiResponse.success({
-                "faction_id": request.get("faction_id", ""),
+                "faction_id": faction_id,
                 "stability_change": 0,
                 "faction_changes": {},
                 "events": [{"narrative": result.get("debate_result", "")[:300]}],
@@ -2417,15 +3440,16 @@ async def court_monthly_settlement(request: dict):
 @app.post("/api/court/conflict")
 async def court_conflict(request: dict):
     """朝堂冲突事件（路由到A1廷议辩论）"""
-    if _llm_available:
+    faction_id = _require_player_faction(request.get("faction_id", ""))
+    if _sess().llm_available:
         try:
             orch = _get_orchestrator()
             event_type = request.get("event_type", "冲突")
             result = await orch.a1_court_debate(
-                faction_id=request.get("faction_id", ""),
+                faction_id=faction_id,
                 topic=f"朝堂发生{event_type}事件，请模拟廷议辩论。",
                 world_state=request,
-                clients=_llm_clients,
+                clients=_sess().llm_clients,
             )
             return ApiResponse.success({
                 "event_type": event_type,
@@ -2509,9 +3533,9 @@ async def resolve_battle(request: dict):
     
     narrative = ""
     ai_generated = False
-    if _llm_available:
+    if _sess().llm_available:
         try:
-            client = _llm_clients.get("enemy")
+            client = _sess().llm_clients.get("enemy")
             if client:
                 prompt = (
                     f"战斗结算：{request.get('attacker_faction','?')} 攻 {request.get('defender_faction','?')}\n"
@@ -2540,19 +3564,22 @@ async def resolve_battle(request: dict):
 
 
 @app.post("/api/diplomacy/action")
-async def diplomacy_action(request: dict):
+async def diplomacy_action(body: DiplomacyActionRequest):
+    request = body.model_dump()
     """外交行动（增强版：AI 判断 + 数值落地）
     
     对于结盟/停战/联姻/通商/附庸等需要对方同意的外交行动，
     通过 AI 判断目标势力的接受意愿，然后自动执行。
     宣战/纳贡/取消附庸/关闭贸易等单方面行动直接执行。
     """
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     faction_a, faction_b = _get_diplo_parties(request)
     if not faction_a or not faction_b:
         return ApiResponse.bad_request("请指定外交双方势力（faction_a/faction_id 和 faction_b/target_faction）")
+    # C-3: 归属校验 —— 只能以己方势力发起外交
+    faction_a = _require_player_faction(faction_a)
     action = request.get("action_type") or request.get("action", "外交")
 
     # 单方面行动：直接执行，无需 AI 判断
@@ -2561,15 +3588,15 @@ async def diplomacy_action(request: dict):
         return await _execute_diplomacy_action(faction_a, faction_b, action)
 
     # 需要对方同意的行动：通过 AI 判断
-    if _llm_available and _world_state:
+    if _sess().llm_available and _sess().world_state:
         try:
             orch = _get_orchestrator()
             # 构建详细的 AI 判定 prompt
-            target_faction = _world_state.get_faction(faction_b) if _world_state else None
-            source_faction = _world_state.get_faction(faction_a) if _world_state else None
+            target_faction = _sess().world_state.get_faction(faction_b) if _sess().world_state else None
+            source_faction = _sess().world_state.get_faction(faction_a) if _sess().world_state else None
 
-            key = _world_state.relation_key(faction_a, faction_b)
-            rel = _world_state.relations.get(key) if _world_state else None
+            key = _sess().world_state.relation_key(faction_a, faction_b)
+            rel = _sess().world_state.relations.get(key) if _sess().world_state else None
 
             action_labels = {
                 "alliance": "结盟", "truce": "停战", "trade": "通商",
@@ -2589,8 +3616,8 @@ async def diplomacy_action(request: dict):
             ai_result = await orch.a1_strategic_advice(
                 faction_id=faction_b,
                 question=ai_prompt,
-                world_state=_world_state.model_dump() if hasattr(_world_state, 'model_dump') else {},
-                clients=_llm_clients,
+                world_state=_sess().world_state.model_dump() if hasattr(_sess().world_state, 'model_dump') else {},
+                clients=_sess().llm_clients,
             )
             ai_response = ai_result.get("response", "") if ai_result else ""
 
@@ -2623,9 +3650,9 @@ async def diplomacy_action(request: dict):
         except Exception as e:
             logger.warning(f"AI外交判定失败: {e}，降级为数值判定")
             # 降级：数值规则判定
-            if _world_state:
-                key = _world_state.relation_key(faction_a, faction_b)
-                rel = _world_state.relations.get(key)
+            if _sess().world_state:
+                key = _sess().world_state.relation_key(faction_a, faction_b)
+                rel = _sess().world_state.relations.get(key)
                 attitude = rel.attitude if rel else 0
                 stance = rel.stance.value if rel else "neutral"
                 accepted = _rule_based_diplomacy_accept(action, attitude, stance)
@@ -2669,11 +3696,11 @@ def _rule_based_diplomacy_accept(action: str, attitude: int, stance: str) -> boo
 
 async def _execute_diplomacy_action(faction_a: str, faction_b: str, action: str) -> dict:
     """执行外交操作（数值落地）"""
-    if not _world_state:
+    if not _sess().world_state:
         return {"success": False, "message": "请先开局"}
 
     from server.core.settle_engine import DiplomacyEngine
-    engine = DiplomacyEngine(_world_state)
+    engine = DiplomacyEngine(_sess().world_state)
 
     action_map = {
         "war": ("change_stance", [faction_a, faction_b, "war", "主动宣战"]),
@@ -2697,14 +3724,14 @@ async def _execute_diplomacy_action(faction_a: str, faction_b: str, action: str)
 
     if method_name == "_tribute":
         # 纳贡：扣钱 + 好感
-        faction = _world_state.get_faction(faction_a)
+        faction = _sess().world_state.get_faction(faction_a)
         if not faction:
             return {"success": False, "message": "势力不存在"}
         if faction.treasury < 500:
             return {"success": False, "message": "银两不足（需要500）"}
         faction.treasury -= 500
-        key = _world_state.relation_key(faction_a, faction_b)
-        rel = _world_state.relations.get(key)
+        key = _sess().world_state.relation_key(faction_a, faction_b)
+        rel = _sess().world_state.relations.get(key)
         if rel:
             rel.attitude = min(100, rel.attitude + 10)
         return {"success": True, "message": f"向{faction_b}纳贡500银两，好感+10"}
@@ -2720,9 +3747,9 @@ async def _execute_diplomacy_action(faction_a: str, faction_b: str, action: str)
 @app.post("/api/disaster/forecast")
 async def disaster_forecast(request: dict):
     """灾害预判"""
-    if _llm_available:
+    if _sess().llm_available:
         try:
-            client = _llm_clients.get("enemy")
+            client = _sess().llm_clients.get("enemy")
             if not client:
                 return ApiResponse.server_error("AI决策引擎未配置")
             season = request.get("season", "春")
@@ -2754,10 +3781,10 @@ async def disaster_forecast(request: dict):
 @app.post("/api/strategy/analyze")
 async def strategy_analyze(request: dict):
     """AI战略推演分析"""
-    faction_id = request.get("faction_id", "")
-    if _llm_available:
+    faction_id = _require_player_faction(request.get("faction_id", ""))
+    if _sess().llm_available:
         try:
-            client = _llm_clients.get("law")
+            client = _sess().llm_clients.get("law")
             if not client:
                 return ApiResponse.server_error("AI战略分析未配置")
             world_json = json.dumps(request, ensure_ascii=False, indent=2)
@@ -2819,15 +3846,15 @@ def _mask_world_state_for_player(world_dict: dict) -> dict:
     P3修复：添加异常保护，脱敏失败时返回原始数据（降级但不中断流程）
     3.2修复：player_faction_id 为空时不脱敏（尚未选择势力），已选势力时对己方完全可见
     """
-    if not _world_state:
+    if not _sess().world_state:
         return world_dict
-    player_fid = _world_state.player_faction_id
+    player_fid = _sess().world_state.player_faction_id
     if not player_fid:
         # 尚未选择势力，不脱敏
         return world_dict
 
     try:
-        masked_factions = _world_state.mask_factions_for_player(player_fid)
+        masked_factions = _sess().world_state.mask_factions_for_player(player_fid)
         result = dict(world_dict)
         result["factions"] = masked_factions
         return result
@@ -2852,10 +3879,10 @@ def _get_orchestrator():
 @app.post("/api/agent/chat")
 async def agent_chat_endpoint(request: dict):
     """Agent自由对话 - 根据 chat_mode 路由到 A1/A3"""
-    if not _llm_available:
+    if not _sess().llm_available:
         return ApiResponse.error(503, "AI服务不可用，请配置API Key")
 
-    faction_id = request.get("faction_id", "")
+    faction_id = _require_player_faction(request.get("faction_id", ""))
     message = request.get("message", "")
     chat_mode = request.get("chat_mode", "ruler")
 
@@ -2866,7 +3893,7 @@ async def agent_chat_endpoint(request: dict):
             user_message=message,
             chat_mode=chat_mode,
             world_state=request.get("world_state"),
-            clients=_llm_clients,
+            clients=_sess().llm_clients,
         )
         return ApiResponse.success({
             "faction_id": faction_id,
@@ -2885,17 +3912,18 @@ async def strategic_advice(request: dict):
     通用模式（npc_id 为空）：首席谋臣使用专业战略模板分析天下大势
     NPC模式（npc_id 指定）：与具体历史文臣进行个性化对话
     """
-    if not _llm_available:
+    if not _sess().llm_available:
         return ApiResponse.error(503, "AI服务不可用")
 
     npc_id = request.get("npc_id", "")
+    faction_id = _require_player_faction(request.get("faction_id", ""))
     try:
         orch = _get_orchestrator()
         result = await orch.a1_strategic_advice(
-            faction_id=request.get("faction_id", ""),
+            faction_id=faction_id,
             question=request.get("question", "请分析当前天下大势"),
             world_state=request.get("world_state", {}),
-            clients=_llm_clients,
+            clients=_sess().llm_clients,
             npc_id=npc_id,
             conversation_history=request.get("conversation_history"),
         )
@@ -2937,25 +3965,34 @@ async def get_npc_detail(npc_id: str):
 @app.get("/api/agent/faction-advisers/{faction_id}")
 async def get_faction_advisers(faction_id: str):
     """获取指定势力的谋士团信息（含成员列表和势力描述）"""
-    from server.agent.a1_advisor import A1AdvisorAgent
-    adviser_info = A1AdvisorAgent.get_faction_adviser_info(faction_id)
-    advisers = A1AdvisorAgent.list_faction_advisers(faction_id)
-    return ApiResponse.success({
-        "faction_id": faction_id,
-        "faction_info": adviser_info,
-        "advisers": advisers,
-        "count": len(advisers),
-    })
+    try:
+        from server.agent.a1_advisor import A1AdvisorAgent
+        adviser_info = A1AdvisorAgent.get_faction_adviser_info(faction_id) or {}
+        advisers = A1AdvisorAgent.list_faction_advisers(faction_id) or []
+        return ApiResponse.success({
+            "faction_id": faction_id,
+            "faction_info": adviser_info,
+            "advisers": advisers,
+            "count": len(advisers),
+        })
+    except Exception as e:
+        logger.warning(f"获取势力谋士团失败 [{faction_id}]: {e}")
+        return ApiResponse.success({
+            "faction_id": faction_id,
+            "faction_info": {},
+            "advisers": [],
+            "count": 0,
+        })
 
 
 @app.post("/api/agent/npc-chat")
 async def npc_chat(request: dict):
     """与指定 NPC 文臣对话（每个 NPC 对接腾讯云混元 AI，通过 Orchestrator 统一调度）"""
-    if not _llm_available:
+    if not _sess().llm_available:
         return ApiResponse.error(503, "AI服务不可用")
 
     npc_id = request.get("npc_id", "")
-    faction_id = request.get("faction_id", "")
+    faction_id = _require_player_faction(request.get("faction_id", ""))
     message = request.get("message", "")
     conversation_history = request.get("conversation_history")
 
@@ -2971,7 +4008,7 @@ async def npc_chat(request: dict):
             faction_id=faction_id,
             question=message,
             world_state=request.get("world_state", {}),
-            clients=_llm_clients,
+            clients=_sess().llm_clients,
             npc_id=npc_id,
             conversation_history=conversation_history,
         )
@@ -2993,11 +4030,11 @@ async def npc_chat(request: dict):
 @app.post("/api/agent/court-debate")
 async def court_debate(request: dict):
     """多 NPC 廷议辩论 - 多名文臣同框各抒己见"""
-    if not _llm_available:
+    if not _sess().llm_available:
         return ApiResponse.error(503, "AI服务不可用")
 
     topic = request.get("topic", "")
-    faction_id = request.get("faction_id", "")
+    faction_id = _require_player_faction(request.get("faction_id", ""))
     npc_ids = request.get("npc_ids")
 
     if not topic:
@@ -3010,7 +4047,7 @@ async def court_debate(request: dict):
             topic=topic,
             faction_id=faction_id,
             world_state=request.get("world_state", {}),
-            clients=_llm_clients,
+            clients=_sess().llm_clients,
             npc_ids=npc_ids,
         )
         if "error" in result:
@@ -3106,19 +4143,20 @@ async def sync_conversations(request: dict):
 @app.post("/api/agent/law-chat")
 async def law_chat(request: dict):
     """A3 律法堂 - 律法审讯对话（手动前端调用）"""
-    if not _llm_available:
+    if not _sess().llm_available:
         return ApiResponse.error(503, "AI服务不可用")
 
     try:
         orch = _get_orchestrator()
         prisoner = request.get("prisoner_name", "囚犯")
         question = request.get("question", "")
+        faction_id = _require_player_faction(request.get("faction_id", ""))
         result = await orch.a3_interrogate(
-            faction_id=request.get("faction_id", ""),
+            faction_id=faction_id,
             prisoner_name=prisoner,
             question=question,
             world_state=request.get("world_state", {}),
-            clients=_llm_clients,
+            clients=_sess().llm_clients,
         )
         return ApiResponse.success({
             "prisoner": prisoner,
@@ -3132,7 +4170,7 @@ async def law_chat(request: dict):
 @app.post("/api/agent/event-generate")
 async def event_generate(request: dict):
     """A5 司天台 - 随机事件AI生成（手动前端调用）"""
-    if not _llm_available:
+    if not _sess().llm_available:
         return ApiResponse.error(503, "AI服务不可用")
 
     try:
@@ -3142,7 +4180,7 @@ async def event_generate(request: dict):
             season=request.get("season", "春"),
             disaster_index=request.get("disaster_index", 0),
             world_state=request.get("world_state", {}),
-            clients=_llm_clients,
+            clients=_sess().llm_clients,
         )
         return ApiResponse.success({
             "events_text": result.get("events_text", ""),
@@ -3157,18 +4195,19 @@ async def event_generate(request: dict):
 @app.post("/api/agent/tool-call")
 async def agent_tool_call_endpoint(request: dict):
     """Agent FunctionCall工具调用（真实执行）- 兼容保留"""
-    if not _llm_available:
+    if not _sess().llm_available:
         return ApiResponse.error(503, "AI服务不可用")
 
     try:
         from server.agent.tool_agent import CoreToolAgent
-        agent = CoreToolAgent(clients=_llm_clients, world=_world_state)
+        agent = CoreToolAgent(clients=_sess().llm_clients, world=_sess().world_state)
         world_json = json.dumps(request.get("world_state", {}), ensure_ascii=False, indent=2)
+        faction_id = _require_player_faction(request.get("faction_id", ""))
         result = await agent.execute_with_tools(
             prompt=request.get("prompt", ""),
-            faction_id=request.get("faction_id", ""),
+            faction_id=faction_id,
             world_json=world_json,
-            world_state=_world_state,
+            world_state=_sess().world_state,
             system_prompt="你是元末乱世中的一方霸主，可以调用各种政令工具。",
             available_tools=request.get("tools"),
         )
@@ -3194,7 +4233,7 @@ async def list_tools(category: str = ""):
 @app.post("/api/agent/auto-step")
 async def agent_auto_step(request: dict):
     """完整自动推演一回合（通过Orchestrator调度A2/A4/A5/A6/A7/A8）"""
-    if not _llm_available:
+    if not _sess().llm_available:
         return ApiResponse.error(503, "AI服务不可用")
 
     try:
@@ -3202,7 +4241,7 @@ async def agent_auto_step(request: dict):
         summary = await orch.run_full_auto_step(
             world_state=request.get("world_state", {}),
             faction_configs=_factions_config,
-            clients=_llm_clients,
+            clients=_sess().llm_clients,
         )
         return ApiResponse.success(summary)
     except Exception as e:
@@ -3218,14 +4257,14 @@ async def agent_status():
     stats = orch.get_stats()
 
     return ApiResponse.success({
-        "ai_available": _llm_available,
-        "architecture": "8-agent",
+        "ai_available": _sess().llm_available,
+        "architecture": "10-agent (A1~A10)",
         "models": {
-            "advisor": getattr(_llm_clients.get("advisor"), "model_name", None),
-            "law": getattr(_llm_clients.get("law"), "model_name", None),
-            "enemy": getattr(_llm_clients.get("enemy"), "model_name", None),
-        } if _llm_available else None,
-        "fallback_mode": getattr(_llm_clients.get("enemy"), "fallback_mode", False) if _llm_available else False,
+            "advisor": getattr(_sess().llm_clients.get("advisor"), "model_name", None),
+            "law": getattr(_sess().llm_clients.get("law"), "model_name", None),
+            "enemy": getattr(_sess().llm_clients.get("enemy"), "model_name", None),
+        } if _sess().llm_available else None,
+        "fallback_mode": getattr(_sess().llm_clients.get("enemy"), "fallback_mode", False) if _sess().llm_available else False,
         "agents": agent_list,
         "stats": stats,
         "tool_count": 34,
@@ -3273,28 +4312,28 @@ async def agent_dashboard():
     event_bus_summary = {
         "pending_events": len(event_bus._pending_events) if event_bus else 0,
         "archived_events": len(event_bus._event_archive) if event_bus else 0,
-        "recent_round": _world_state.current_round if _world_state else 0,
+        "recent_round": _sess().world_state.current_round if _sess().world_state else 0,
     }
 
     # 圣旨统计
     edict_stats = {
-        "total_decrees": len(_world_state.decrees) if _world_state else 0,
+        "total_decrees": len(_sess().world_state.decrees) if _sess().world_state else 0,
         "last_edicts": [{
             "round": d.get("round"),
             "text": d.get("text", "")[:80],
             "executed": d.get("executed_count", 0),
             "failed": d.get("failed_count", 0),
-        } for d in (_world_state.decrees[-5:] if _world_state else [])],
+        } for d in (_sess().world_state.decrees[-5:] if _sess().world_state else [])],
     }
 
     return ApiResponse.success({
-        "ai_available": _llm_available,
-        "architecture": "8-agent (A1~A8)",
+        "ai_available": _sess().llm_available,
+        "architecture": "10-agent (A1~A10)",
         "model_groups": {
             "advisor": {"function": "chat_role", "agents": "A1/A2/A3/A7"},
-            "law": {"function": "chat_strategy", "agents": "A6/A8"},
-            "enemy": {"function": "chat_fast", "agents": "A4/A5"},
-        } if _llm_available else None,
+            "law": {"function": "chat_strategy", "agents": "A6/A8/A10"},
+            "enemy": {"function": "chat_fast", "agents": "A4/A5/A9"},
+        } if _sess().llm_available else None,
         "global_stats": {
             "total_calls": stats.get("total_calls", 0),
             "avg_latency": stats.get("avg_latency", 0),
@@ -3314,6 +4353,35 @@ async def agent_dashboard():
 # ============================================================
 
 
+def _require_player_faction(faction_id: str, allow_none: bool = False) -> str:
+    """校验 faction_id 归属当前玩家，返回验证后的 faction_id。
+    
+    Args:
+        faction_id: 请求方传入的势力 ID
+        allow_none: 若 True 且 faction_id 为空，则返回玩家势力 ID
+    
+    Raises:
+        HTTPException(503): 游戏未初始化
+        HTTPException(403): 未找到玩家势力 或 faction_id 不匹配 或 观战模式
+        HTTPException(400): faction_id 为空且 allow_none=False
+    """
+    if not _sess().world_state:
+        raise HTTPException(503, "游戏未初始化")
+    player = _sess().world_state.get_player_faction()
+    if not player:
+        raise HTTPException(403, "未找到玩家势力")
+    if not faction_id:
+        if allow_none:
+            return player.faction_id
+        raise HTTPException(400, "缺少 faction_id")
+    if faction_id != player.faction_id:
+        raise HTTPException(
+            403,
+            f"无权操控其他势力！你只能对己方势力「{player.name}」操作"
+        )
+    return faction_id
+
+
 def _resolve_faction_name(faction_id: str) -> str:
     """将 faction_id 解析为中文势力名"""
     if not faction_id:
@@ -3328,7 +4396,7 @@ async def list_saves():
     try:
         saves = []
         auto_saves = []
-        for f in sorted(SAVE_DIR.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
+        for f in sorted(_get_save_dir().glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
             try:
                 with open(f, "r", encoding="utf-8") as fh:
                     meta = json.load(fh)
@@ -3369,7 +4437,7 @@ async def list_saves():
 @app.post("/api/game/save")  # 2026-07-15: 兼容别名，玩家直觉路径
 async def save_game(request: dict):
     """手动存档（P2修复：原子写入 + 路径穿越防御）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     slot = request.get("slot", 0)
@@ -3378,42 +4446,44 @@ async def save_game(request: dict):
 
     try:
         # P2: 锁内只读取数据，序列化在锁内完成（model_dump 在锁外可能并发修改）
-        async with _state_lock:
-            player = _world_state.get_player_faction()
+        async with _sess().state_lock:
+            player = _sess().world_state.get_player_faction()
             faction_name = ""
             territory = 0
             if player:
                 faction_name = _factions_config.get("factions", {}).get(player.faction_id, {}).get("name", player.name)
-                territory = len(_world_state.get_faction_tiles(player.faction_id))
+                territory = len(_sess().world_state.get_faction_tiles(player.faction_id))
             # 序列化军团和武将（存储在 __dict__ 中，Pydantic model_dump 不包含）
-            all_generals = _world_state.__dict__.get("_generals", {})
+            all_generals = _sess().world_state.__dict__.get("_generals", {})
             generals_save: dict[str, list[dict]] = {}
             for fid, gens in all_generals.items():
                 generals_save[fid] = [g.model_dump() if hasattr(g, 'model_dump') else g for g in gens]
-            all_legions = _world_state.__dict__.get("_legions", {})
+            all_legions = _sess().world_state.__dict__.get("_legions", {})
             legions_save: dict[str, list[dict]] = {}
             for fid, legs in all_legions.items():
                 legions_save[fid] = [l.model_dump() if hasattr(l, 'model_dump') else l for l in legs]
             save_data = {
                 "slot": slot,
-                "round": _world_state.current_round,
-                "year": _world_state.current_year,
-                "month": _world_state.current_month,
-                "season": str(_world_state.current_season),
+                "round": _sess().world_state.current_round,
+                "year": _sess().world_state.current_year,
+                "month": _sess().world_state.current_month,
+                "season": str(_sess().world_state.current_season),
                 "player_faction": player.faction_id if player else "",
                 "faction_name": faction_name,
                 "territory_count": territory,
                 "note": note,
                 "saved_at": datetime.now().isoformat(),
-                "world_state": _world_state.model_dump(),
-                "snapshots_count": len(_round_snapshots),
-                "version": "3.2",
+                "world_state": _sess().world_state.model_dump(),
+                "snapshots_count": len(_sess().round_snapshots),
+                "version": SAVE_VERSION,
                 "_generals": generals_save,
                 "_legions": legions_save,
-                "_round_snapshots": _round_snapshots,
-                "_pending_commands": _pending_commands,
+                "_sess().round_snapshots": _sess().round_snapshots,
+                "_sess().pending_commands": _sess().pending_commands,
+                "_active_wars": _get_active_wars_data(),  # SAVE_VERSION
+                "_npc_runtime_state": _export_npc_runtime_state(),  # v3.5: NPC 动态状态
             }
-            current_round = _world_state.current_round
+            current_round = _sess().world_state.current_round
             # P2: 防路径穿越 — 仅取文件名部分
             if name:
                 safe_name = Path(name).name
@@ -3426,9 +4496,9 @@ async def save_game(request: dict):
                 filename = f"save_slot{slot}_round{current_round}.json"
 
         # P2: 文件 I/O 在锁外，使用原子写入
-        SAVE_DIR.mkdir(parents=True, exist_ok=True)
-        temp_path = SAVE_DIR / (filename + ".tmp")
-        final_path = SAVE_DIR / filename
+        _get_save_dir().mkdir(parents=True, exist_ok=True)
+        temp_path = _get_save_dir() / (filename + ".tmp")
+        final_path = _get_save_dir() / filename
         with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(save_data, f, ensure_ascii=False, indent=2)
         if final_path.exists():
@@ -3464,7 +4534,7 @@ async def save_game(request: dict):
 @app.post("/api/save/load")
 async def load_game(request: dict):
     """读档 - 覆盖当前世界状态（P2修复：路径穿越防御 + 原子状态恢复）"""
-    global _world_state, _round_engine, _pending_commands, _round_snapshots
+    # session-scoped
 
     slot = request.get("slot", 0)
     filename = request.get("filename", "")
@@ -3479,18 +4549,18 @@ async def load_game(request: dict):
         safe_name = Path(filename).name
         if not safe_name:
             return ApiResponse.bad_request("无效的存档文件名")
-        save_path = SAVE_DIR / safe_name
+        save_path = _get_save_dir() / safe_name
     else:
-        matches = list(SAVE_DIR.glob(f"save_slot{slot}_*.json"))
+        matches = list(_get_save_dir().glob(f"save_slot{slot}_*.json"))
         if not matches:
             return ApiResponse.error(404, f"未找到存档槽 {slot}")
         save_path = sorted(matches, key=lambda x: x.stat().st_mtime, reverse=True)[0]
 
-    # P2: 额外安全校验 — 确保最终路径在 SAVE_DIR 内
+    # P2: 额外安全校验 — 确保最终路径在存档目录内
     try:
         save_path = save_path.resolve()
-        SAVE_DIR_resolved = SAVE_DIR.resolve()
-        if not str(save_path).startswith(str(SAVE_DIR_resolved)):
+        save_dir_resolved = _get_save_dir().resolve()
+        if not str(save_path).startswith(str(save_dir_resolved)):
             logger.warning(f"读档路径穿越尝试: {filename} → {save_path}")
             return ApiResponse.forbidden("不允许访问该路径")
     except Exception:
@@ -3511,18 +4581,19 @@ async def load_game(request: dict):
 
         # 版本校验
         save_version = save_data.get("version", "unknown")
-        if save_version != "3.2":
-            logger.warning(f"存档版本不兼容: 存档版本 {save_version}, 当前版本 3.2")
+        compatible_versions = ("3.2", SAVE_VERSION)
+        if save_version not in compatible_versions:
+            logger.warning(f"存档版本不兼容: 存档版本 {save_version}, 当前版本 {SAVE_VERSION}")
 
         world_dict = save_data.get("world_state", {})
         if not world_dict:
             return ApiResponse.server_error("存档数据为空，无法加载")
 
         # P2: 备份旧状态
-        old_state = _world_state
-        old_engine = _round_engine
-        old_commands = list(_pending_commands)
-        old_snapshots = list(_round_snapshots)
+        old_state = _sess().world_state
+        old_engine = _sess().round_engine
+        old_commands = list(_sess().pending_commands)
+        old_snapshots = list(_sess().round_snapshots)
         # P3: 深拷贝旧状态的内部字典，防止后续覆盖 __dict__ 时污染回滚数据
         old_generals = None
         old_legions = None
@@ -3535,24 +4606,29 @@ async def load_game(request: dict):
                 old_legions = {}
 
         # 读档状态覆盖（加锁）
-        async with _state_lock:
+        async with _sess().state_lock:
             try:
-                _world_state = WorldState(**world_dict)
+                _sess().world_state = WorldState(**world_dict)
             except Exception as e:
                 logger.error(f"WorldState 重建失败: {e}")
                 raise ValueError(f"存档数据损坏（WorldState重建失败）: {e}")
 
-            _round_engine = RoundEngine(_world_state, _factions_config)
-            _round_engine.set_llm_clients(_llm_clients, available=_llm_available)
-            _pending_commands = save_data.get("_pending_commands", [])  # 3.3: 恢复待执行指令
-            _round_snapshots = save_data.get("_round_snapshots", [])     # 3.3: 恢复回放快照
+            _sess().round_engine = RoundEngine(_sess().world_state, _factions_config)
+            _sess().round_engine.set_llm_clients(_sess().llm_clients, available=_sess().llm_available)
+            _sess().pending_commands = save_data.get("_sess().pending_commands", [])  # 3.3: 恢复待执行指令
+            _sess().round_snapshots = save_data.get("_sess().round_snapshots", [])     # 3.3: 恢复回放快照
+
+            # 3.0: 恢复活跃战争
+            active_wars_data = save_data.get("_active_wars", [])
+            if active_wars_data:
+                _restore_active_wars(active_wars_data)
 
             # 恢复军团和武将数据
             from server.models.generals import General, Legion
             generals_raw = save_data.get("_generals", {})
             legions_raw = save_data.get("_legions", {})
-            _world_state.__dict__["_generals"] = {}
-            _world_state.__dict__["_legions"] = {}
+            _sess().world_state.__dict__["_generals"] = {}
+            _sess().world_state.__dict__["_legions"] = {}
 
             # P2: 逐个恢复武将/军团，单个损坏不影响整体
             failed_generals = 0
@@ -3564,7 +4640,7 @@ async def load_game(request: dict):
                     except Exception as e:
                         failed_generals += 1
                         logger.warning(f"读档跳过损坏武将 {g.get('name', '?')}: {e}")
-                _world_state.__dict__["_generals"][fid] = restored
+                _sess().world_state.__dict__["_generals"][fid] = restored
 
             failed_legions = 0
             for fid, leg_list in legions_raw.items():
@@ -3575,10 +4651,10 @@ async def load_game(request: dict):
                     except Exception as e:
                         failed_legions += 1
                         logger.warning(f"读档跳过损坏军团 {l.get('name', '?')}: {e}")
-                _world_state.__dict__["_legions"][fid] = restored
+                _sess().world_state.__dict__["_legions"][fid] = restored
 
-            total_gens = sum(len(v) for v in _world_state.__dict__['_generals'].values())
-            total_legs = sum(len(v) for v in _world_state.__dict__['_legions'].values())
+            total_gens = sum(len(v) for v in _sess().world_state.__dict__['_generals'].values())
+            total_legs = sum(len(v) for v in _sess().world_state.__dict__['_legions'].values())
             if failed_generals or failed_legions:
                 logger.warning(
                     f"读档完成（部分数据跳过）: 武将 {total_gens} 人 (跳过 {failed_generals}), "
@@ -3587,44 +4663,55 @@ async def load_game(request: dict):
             else:
                 logger.info(f"读档恢复武将: {total_gens} 人, 军团: {total_legs} 支")
 
-            player_faction_id = _world_state.player_faction_id
-            game_mode = _world_state.game_mode if hasattr(_world_state, 'game_mode') else "player_turn"
+            player_faction_id = _sess().world_state.player_faction_id
+            game_mode = _sess().world_state.game_mode if hasattr(_sess().world_state, 'game_mode') else "player_turn"
             reset_mode_manager()
             mode_mgr = get_mode_manager()
             mode_mgr.init_game(game_mode, player_faction_id)
+
+            # v3.5: 恢复 NPC 运行时状态（含生/死、忠诚度、叛变等）
+            npc_runtime = save_data.get("_npc_runtime_state")
+            if npc_runtime:
+                try:
+                    from server.agent.npc_registry import get_npc_registry
+                    get_npc_registry().import_runtime_state(npc_runtime)
+                    logger.info(f"读档恢复 NPC 状态: {len(npc_runtime)} 条")
+                except Exception as npc_err:
+                    logger.warning(f"读档恢复 NPC 状态失败（将使用模板默认值）: {npc_err}")
+
             logger.info(f"读档完成: 玩家势力={player_faction_id}, 模式={game_mode}")
 
             return ApiResponse.success({
-                "world_state": _world_state.model_dump(),
-                "round": _world_state.current_round,
+                "world_state": _sess().world_state.model_dump(),
+                "round": _sess().world_state.current_round,
                 "save_version": save_version,
-            }, f"读档成功 - 第{_world_state.current_round}回合")
+            }, f"读档成功 - 第{_sess().world_state.current_round}回合")
 
     except ValueError as e:
         logger.error(f"读档数据损坏: {e}")
         # P3: 回滚旧状态（含内部字典恢复）
         if old_state is not None:
-            _world_state = old_state
-            _round_engine = old_engine
-            _pending_commands = old_commands or []
-            _round_snapshots = old_snapshots or []
+            _sess().world_state = old_state
+            _sess().round_engine = old_engine
+            _sess().pending_commands = old_commands or []
+            _sess().round_snapshots = old_snapshots or []
             if old_generals is not None:
-                _world_state.__dict__["_generals"] = old_generals
+                _sess().world_state.__dict__["_generals"] = old_generals
             if old_legions is not None:
-                _world_state.__dict__["_legions"] = old_legions
+                _sess().world_state.__dict__["_legions"] = old_legions
         return ApiResponse.server_error(f"存档数据损坏: {e}")
     except Exception as e:
         logger.error(f"读档失败: {e}", exc_info=True)
         # P3: 回滚旧状态（含内部字典恢复）
         if old_state is not None:
-            _world_state = old_state
-            _round_engine = old_engine
-            _pending_commands = old_commands or []
-            _round_snapshots = old_snapshots or []
+            _sess().world_state = old_state
+            _sess().round_engine = old_engine
+            _sess().pending_commands = old_commands or []
+            _sess().round_snapshots = old_snapshots or []
             if old_generals is not None:
-                _world_state.__dict__["_generals"] = old_generals
+                _sess().world_state.__dict__["_generals"] = old_generals
             if old_legions is not None:
-                _world_state.__dict__["_legions"] = old_legions
+                _sess().world_state.__dict__["_legions"] = old_legions
         return ApiResponse.server_error(f"读档失败: {str(e)[:300]}")
 
 
@@ -3642,11 +4729,11 @@ async def delete_save(request: dict):
     safe_name = Path(filename).name
     if not safe_name:
         return ApiResponse.bad_request("无效的存档文件名")
-    save_path = SAVE_DIR / safe_name
+    save_path = _get_save_dir() / safe_name
 
     # P2: 路径安全校验
     try:
-        if save_path.resolve() != (SAVE_DIR / safe_name).resolve():
+        if save_path.resolve() != (_get_save_dir() / safe_name).resolve():
             return ApiResponse.forbidden("不允许访问该路径")
     except Exception:
         return ApiResponse.bad_request("无效的存档路径")
@@ -3668,7 +4755,7 @@ async def delete_save(request: dict):
 async def clear_all_saves():
     """清空所有存档文件（P2修复：不再静默吞错误）"""
     try:
-        files = list(SAVE_DIR.glob("*.json"))
+        files = list(_get_save_dir().glob("*.json"))
         deleted = 0
         failed = 0
         for f in files:
@@ -3703,10 +4790,10 @@ async def export_save(request: dict):
     safe_name = Path(filename).name
     if not safe_name:
         return ApiResponse.bad_request("无效的存档文件名")
-    save_path = SAVE_DIR / safe_name
+    save_path = _get_save_dir() / safe_name
     # 路径安全校验
     try:
-        if save_path.resolve() != (SAVE_DIR / safe_name).resolve():
+        if save_path.resolve() != (_get_save_dir() / safe_name).resolve():
             return ApiResponse.forbidden("不允许访问该路径")
     except Exception:
         return ApiResponse.bad_request("无效的存档路径")
@@ -3746,18 +4833,23 @@ async def import_save(request: dict):
 
     # 防止路径穿越
     safe_name = Path(filename).name
-    save_path = SAVE_DIR / safe_name
+    save_path = _get_save_dir() / safe_name
 
     # 如果已存在同名文件，追加序号
     counter = 1
     while save_path.exists():
         stem = Path(safe_name).stem
-        save_path = SAVE_DIR / f"{stem}_{counter}.json"
+        save_path = _get_save_dir() / f"{stem}_{counter}.json"
         counter += 1
 
     try:
-        with open(save_path, "w", encoding="utf-8") as f:
+        # 3.0: 原子写入（先写 .tmp 再 rename）
+        temp_path = _get_save_dir() / (str(save_path.name) + ".tmp")
+        with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(save_data, f, ensure_ascii=False, indent=2)
+        if save_path.exists():
+            save_path.unlink()
+        temp_path.rename(save_path)
         logger.info(f"存档导入成功: {save_path.name}")
         return ApiResponse.success({
             "filename": save_path.name,
@@ -3771,31 +4863,31 @@ async def import_save(request: dict):
 @app.post("/api/save/quick-save")
 async def quick_save(request: dict):
     """快速存档：自动查找空闲槽位保存（方便游戏内一键存档）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     note = request.get("note", "")
     try:
-        async with _state_lock:
-            player = _world_state.get_player_faction()
+        async with _sess().state_lock:
+            player = _sess().world_state.get_player_faction()
             faction_name = ""
             territory = 0
             if player:
                 faction_name = _factions_config.get("factions", {}).get(player.faction_id, {}).get("name", player.name)
-                territory = len(_world_state.get_faction_tiles(player.faction_id))
+                territory = len(_sess().world_state.get_faction_tiles(player.faction_id))
 
-            all_generals = _world_state.__dict__.get("_generals", {})
+            all_generals = _sess().world_state.__dict__.get("_generals", {})
             generals_save: dict[str, list[dict]] = {}
             for fid, gens in all_generals.items():
                 generals_save[fid] = [g.model_dump() if hasattr(g, 'model_dump') else g for g in gens]
-            all_legions = _world_state.__dict__.get("_legions", {})
+            all_legions = _sess().world_state.__dict__.get("_legions", {})
             legions_save: dict[str, list[dict]] = {}
             for fid, legs in all_legions.items():
                 legions_save[fid] = [l.model_dump() if hasattr(l, 'model_dump') else l for l in legs]
 
             # 查找空闲槽位（0-9 中第一个未使用的）
             existing_slots = set()
-            for f in SAVE_DIR.glob("save_slot*.json"):
+            for f in _get_save_dir().glob("save_slot*.json"):
                 try:
                     with open(f, "r", encoding="utf-8") as fh:
                         existing_slots.add(json.load(fh).get("slot", -1))
@@ -3805,39 +4897,41 @@ async def quick_save(request: dict):
             if auto_slot in existing_slots:
                 auto_slot = 0  # 全部占满则覆盖槽0
 
-            current_round = _world_state.current_round
+            current_round = _sess().world_state.current_round
             save_data = {
                 "slot": auto_slot,
                 "round": current_round,
-                "year": _world_state.current_year,
-                "month": _world_state.current_month,
-                "season": str(_world_state.current_season),
+                "year": _sess().world_state.current_year,
+                "month": _sess().world_state.current_month,
+                "season": str(_sess().world_state.current_season),
                 "player_faction": player.faction_id if player else "",
                 "faction_name": faction_name,
                 "territory_count": territory,
                 "note": note or f"快速存档 - 第{current_round}回合",
                 "saved_at": datetime.now().isoformat(),
-                "world_state": _world_state.model_dump(),
-                "snapshots_count": len(_round_snapshots),
-                "version": "3.2",
+                "world_state": _sess().world_state.model_dump(),
+                "snapshots_count": len(_sess().round_snapshots),
+                "version": SAVE_VERSION,
                 "_generals": generals_save,
                 "_legions": legions_save,
-                "_round_snapshots": _round_snapshots,
-                "_pending_commands": _pending_commands,
+                "_sess().round_snapshots": _sess().round_snapshots,
+                "_sess().pending_commands": _sess().pending_commands,
+                "_active_wars": _get_active_wars_data(),  # SAVE_VERSION
+                "_npc_runtime_state": _export_npc_runtime_state(),  # v3.5: NPC 动态状态
             }
 
             filename = f"save_slot{auto_slot}_round{current_round}.json"
             # 删除该槽位的旧文件
-            for old in SAVE_DIR.glob(f"save_slot{auto_slot}_*.json"):
+            for old in _get_save_dir().glob(f"save_slot{auto_slot}_*.json"):
                 try:
                     old.unlink()
                 except Exception as e:
                     logger.debug(f"删除旧存档失败 {old.name}: {e}")
 
         # P3: 原子写入 — 先写 .tmp 再 rename，防止崩溃损坏存档
-        SAVE_DIR.mkdir(parents=True, exist_ok=True)
-        temp_path = SAVE_DIR / (filename + ".tmp")
-        final_path = SAVE_DIR / filename
+        _get_save_dir().mkdir(parents=True, exist_ok=True)
+        temp_path = _get_save_dir() / (filename + ".tmp")
+        final_path = _get_save_dir() / filename
         with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(save_data, f, ensure_ascii=False, indent=2)
         if final_path.exists():
@@ -3849,10 +4943,22 @@ async def quick_save(request: dict):
             "filename": filename,
             "round": current_round,
         }, f"快速存档成功 - 槽{auto_slot + 1} 第{current_round}回合")
+    except json.JSONEncodeError as e:
+        logger.error(f"快速存档 JSON 序列化失败: {e}", exc_info=True)
+        if 'temp_path' in locals() and temp_path.exists():
+            try: temp_path.unlink()
+            except Exception: pass
+        return ApiResponse.server_error(f"存档序列化失败: {str(e)[:200]}")
+    except OSError as e:
+        logger.error(f"快速存档文件写入失败: {e}", exc_info=True)
+        if 'temp_path' in locals() and temp_path.exists():
+            try: temp_path.unlink()
+            except Exception: pass
+        return ApiResponse.server_error(f"存档写入失败（磁盘空间不足或权限问题）: {str(e)[:200]}")
     except Exception as e:
         logger.error(f"快速存档失败: {e}", exc_info=True)
         # P3: 清理残留临时文件
-        temp_path = SAVE_DIR / (filename + ".tmp") if 'filename' in dir() else None
+        temp_path = _get_save_dir() / (filename + ".tmp") if 'filename' in dir() else None
         if temp_path and temp_path.exists():
             try:
                 temp_path.unlink()
@@ -3865,15 +4971,15 @@ async def quick_save(request: dict):
 async def get_replay_snapshots():
     """获取回放快照列表"""
     return ApiResponse.success({
-        "snapshots": _round_snapshots,
-        "count": len(_round_snapshots),
+        "snapshots": _sess().round_snapshots,
+        "count": len(_sess().round_snapshots),
     })
 
 
 @app.get("/api/save/replay-snapshot/{round_num}")
 async def get_replay_snapshot(round_num: int):
     """获取指定回合的快照"""
-    for s in _round_snapshots:
+    for s in _sess().round_snapshots:
         if s["round"] == round_num:
             return ApiResponse.success(s)
     return ApiResponse.error(404, f"未找到第{round_num}回合快照")
@@ -3886,14 +4992,14 @@ async def get_replay_snapshot(round_num: int):
 @app.get("/api/map/tile/{tile_id}")
 async def get_tile_detail(tile_id: str):
     """获取地块详情"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
-    tile = _world_state.get_tile(tile_id)
+    tile = _sess().world_state.get_tile(tile_id)
     if not tile:
         return ApiResponse.error(404, f"地块 {tile_id} 不存在")
 
-    faction = _world_state.get_faction(tile.faction_id)
+    faction = _sess().world_state.get_faction(tile.faction_id)
     return ApiResponse.success({
         "tile": tile.model_dump(),
         "owner": faction.model_dump() if faction else None,
@@ -3904,13 +5010,13 @@ async def get_tile_detail(tile_id: str):
 @app.get("/api/map/tiles")
 async def get_all_tiles():
     """获取全量地图地块数据"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     return ApiResponse.success({
-        "tiles": {k: v.model_dump() for k, v in _world_state.tiles.items()},
-        "factions": {k: {"faction_id": v.faction_id, "name": v.name, "color": v.color} for k, v in _world_state.factions.items()},
-        "relations": {k: v.model_dump() for k, v in _world_state.relations.items()},
-        "count": len(_world_state.tiles),
+        "tiles": {k: v.model_dump() for k, v in _sess().world_state.tiles.items()},
+        "factions": {k: {"faction_id": v.faction_id, "name": v.name, "color": v.color} for k, v in _sess().world_state.factions.items()},
+        "relations": {k: v.model_dump() for k, v in _sess().world_state.relations.items()},
+        "count": len(_sess().world_state.tiles),
     })
 
 
@@ -4034,24 +5140,24 @@ async def get_layer_config():
 @app.post("/api/map/pathfind")
 async def pathfind_route(request: dict):
     """A*寻路（CK3风格）：基于领地邻接图计算两个地块之间的最优行军路径"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from_tile = request.get("from_tile", "")
     to_tile = request.get("to_tile", "")
     faction_id = request.get("faction_id", "")
     has_navy = request.get("has_navy", False)
 
-    from_t = _world_state.get_tile(from_tile)
-    to_t = _world_state.get_tile(to_tile)
+    from_t = _sess().world_state.get_tile(from_tile)
+    to_t = _sess().world_state.get_tile(to_tile)
     if not from_t or not to_t:
         return ApiResponse.error(404, "地块不存在")
 
     # 获取当前季节
-    season = _world_state.current_season.value if hasattr(_world_state.current_season, 'value') else str(_world_state.current_season)
+    season = _sess().world_state.current_season.value if hasattr(_sess().world_state.current_season, 'value') else str(_sess().world_state.current_season)
 
     # 收集阻塞领地（不可通行的敌对领地等）
     blocked = set()
-    for tid, t in _world_state.tiles.items():
+    for tid, t in _sess().world_state.tiles.items():
         # 敌对关隘不可通行
         if t.tile_type.value == "pass" and t.faction_id and t.faction_id != faction_id:
             blocked.add(tid)
@@ -4070,7 +5176,7 @@ async def pathfind_route(request: dict):
 
     if not path:
         # 回退：尝试旧版六边形A*（兼容可能仍使用hex_格式的旧数据）
-        fallback_path = _a_star_pathfind(from_t, to_t, _world_state, blocked, faction_id)
+        fallback_path = _a_star_pathfind(from_t, to_t, _sess().world_state, blocked, faction_id)
         if fallback_path:
             return ApiResponse.success({
                 "path": fallback_path,
@@ -4100,7 +5206,7 @@ async def pathfind_route(request: dict):
     # 路径地块详细信息
     path_details = []
     for pid in path:
-        t = _world_state.get_tile(pid)
+        t = _sess().world_state.get_tile(pid)
         if t:
             path_details.append({
                 "tile_id": pid,
@@ -4279,10 +5385,10 @@ async def map_render_status():
 @app.post("/api/spy/deploy")
 async def deploy_spy(request: dict):
     """派遣细作"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import SpyEngine
-    engine = SpyEngine(_world_state)
+    engine = SpyEngine(_sess().world_state)
     result = engine.deploy_spy(
         owner_faction=request.get("owner_faction", ""),
         target_faction=request.get("target_faction", ""),
@@ -4293,10 +5399,10 @@ async def deploy_spy(request: dict):
 @app.post("/api/spy/action")
 async def spy_action(request: dict):
     """执行谍报行动"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import SpyEngine
-    engine = SpyEngine(_world_state)
+    engine = SpyEngine(_sess().world_state)
     result = engine.spy_action(
         owner_faction=request.get("owner_faction", ""),
         target_faction=request.get("target_faction", ""),
@@ -4308,10 +5414,10 @@ async def spy_action(request: dict):
 @app.get("/api/spy/networks/{faction_id}")
 async def get_spy_networks(faction_id: str):
     """获取势力谍报网络"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     networks = [
-        v.model_dump() for k, v in _world_state.spy_networks.items()
+        v.model_dump() for k, v in _sess().world_state.spy_networks.items()
         if v.owner_faction == faction_id or v.target_faction == faction_id
     ]
     return ApiResponse.success({"faction_id": faction_id, "networks": networks, "count": len(networks)})
@@ -4332,11 +5438,13 @@ def _get_diplo_parties(request: dict) -> tuple[str, str]:
 @app.post("/api/diplomacy/change-stance")
 async def change_diplomatic_stance(request: dict):
     """改变外交姿态"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import DiplomacyEngine
-    engine = DiplomacyEngine(_world_state)
+    engine = DiplomacyEngine(_sess().world_state)
     faction_a, faction_b = _get_diplo_parties(request)
+    # C-3: 归属校验 —— 只能改变自身势力的外交姿态
+    faction_a = _require_player_faction(faction_a)
     result = engine.change_stance(
         faction_a=faction_a,
         faction_b=faction_b,
@@ -4347,13 +5455,16 @@ async def change_diplomatic_stance(request: dict):
 
 
 @app.post("/api/diplomacy/trade")
-async def open_trade_route(request: dict):
+async def open_trade_route(body: TradeRouteRequest):
+    request = body.model_dump()
     """开通贸易"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import DiplomacyEngine
-    engine = DiplomacyEngine(_world_state)
+    engine = DiplomacyEngine(_sess().world_state)
     faction_a, faction_b = _get_diplo_parties(request)
+    # C-3: 归属校验 —— 只能以己方势力开通贸易
+    faction_a = _require_player_faction(faction_a)
     result = engine.open_trade(
         faction_a=faction_a,
         faction_b=faction_b,
@@ -4364,10 +5475,10 @@ async def open_trade_route(request: dict):
 @app.post("/api/diplomacy/marriage")
 async def propose_marriage(request: dict):
     """联姻"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import DiplomacyEngine
-    engine = DiplomacyEngine(_world_state)
+    engine = DiplomacyEngine(_sess().world_state)
     faction_a, faction_b = _get_diplo_parties(request)
     result = engine.propose_marriage(
         from_faction=faction_a,
@@ -4379,14 +5490,14 @@ async def propose_marriage(request: dict):
 @app.get("/api/diplomacy/relations/{faction_id}")
 async def get_faction_relations(faction_id: str):
     """获取势力所有外交关系"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         relations = []
-        for key, rel in _world_state.relations.items():
+        for key, rel in _sess().world_state.relations.items():
             if rel.faction_a == faction_id or rel.faction_b == faction_id:
                 other = rel.faction_b if rel.faction_a == faction_id else rel.faction_a
-                other_f = _world_state.get_faction(other)
+                other_f = _sess().world_state.get_faction(other)
                 relations.append({
                     "key": key,
                     "other": other,
@@ -4407,10 +5518,10 @@ async def get_faction_relations(faction_id: str):
 @app.get("/api/diplomacy/summary/{faction_id}")
 async def get_diplomatic_summary(faction_id: str):
     """获取势力外交摘要（含联邦、附庸、同盟、通商等）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import DiplomacyEngine
-    engine = DiplomacyEngine(_world_state)
+    engine = DiplomacyEngine(_sess().world_state)
     summary = engine.get_diplomatic_summary(faction_id)
     return ApiResponse.success(summary)
 
@@ -4422,10 +5533,10 @@ async def get_diplomatic_summary(faction_id: str):
 @app.post("/api/diplomacy/coalition/create")
 async def create_coalition(request: dict):
     """创建联邦/联盟"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import DiplomacyEngine
-    engine = DiplomacyEngine(_world_state)
+    engine = DiplomacyEngine(_sess().world_state)
     result = engine.form_coalition(
         founder_faction=request.get("founder_faction", ""),
         name=request.get("name", "天下同盟"),
@@ -4437,10 +5548,10 @@ async def create_coalition(request: dict):
 @app.post("/api/diplomacy/coalition/join")
 async def join_coalition(request: dict):
     """加入联邦"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import DiplomacyEngine
-    engine = DiplomacyEngine(_world_state)
+    engine = DiplomacyEngine(_sess().world_state)
     result = engine.join_coalition(
         faction_id=request.get("faction_id", ""),
         coalition_id=request.get("coalition_id", ""),
@@ -4451,10 +5562,10 @@ async def join_coalition(request: dict):
 @app.post("/api/diplomacy/coalition/leave")
 async def leave_coalition(request: dict):
     """退出联邦"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import DiplomacyEngine
-    engine = DiplomacyEngine(_world_state)
+    engine = DiplomacyEngine(_sess().world_state)
     result = engine.leave_coalition(
         faction_id=request.get("faction_id", ""),
         coalition_id=request.get("coalition_id", ""),
@@ -4465,10 +5576,10 @@ async def leave_coalition(request: dict):
 @app.post("/api/diplomacy/coalition/dissolve")
 async def dissolve_coalition(request: dict):
     """解散联邦"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import DiplomacyEngine
-    engine = DiplomacyEngine(_world_state)
+    engine = DiplomacyEngine(_sess().world_state)
     result = engine.dissolve_coalition(
         faction_id=request.get("faction_id", ""),
         coalition_id=request.get("coalition_id", ""),
@@ -4479,13 +5590,13 @@ async def dissolve_coalition(request: dict):
 @app.get("/api/diplomacy/coalitions")
 async def list_coalitions():
     """列出所有联邦"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     coalitions = []
-    for cid, members in _world_state.coalitions.items():
+    for cid, members in _sess().world_state.coalitions.items():
         member_names = []
         for m in members:
-            f = _world_state.get_faction(m)
+            f = _sess().world_state.get_faction(m)
             member_names.append({"faction_id": m, "name": f.name if f else m, "color": f.color if f else "#666"})
         coalitions.append({
             "coalition_id": cid,
@@ -4498,10 +5609,10 @@ async def list_coalitions():
 @app.post("/api/diplomacy/trade/close")
 async def close_trade_route(request: dict):
     """关闭贸易路线"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import DiplomacyEngine
-    engine = DiplomacyEngine(_world_state)
+    engine = DiplomacyEngine(_sess().world_state)
     faction_a, faction_b = _get_diplo_parties(request)
     result = engine.close_trade(
         faction_a=faction_a,
@@ -4511,12 +5622,13 @@ async def close_trade_route(request: dict):
 
 
 @app.post("/api/diplomacy/tribute")
-async def demand_tribute(request: dict):
+async def demand_tribute(body: DemandTributeRequest):
+    request = body.model_dump()
     """宗主索要朝贡"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import DiplomacyEngine
-    engine = DiplomacyEngine(_world_state)
+    engine = DiplomacyEngine(_sess().world_state)
     faction_a, faction_b = _get_diplo_parties(request)
     result = engine.demand_tribute(
         suzerain=request.get("suzerain") or request.get("suzerain_faction") or faction_a,
@@ -4527,12 +5639,13 @@ async def demand_tribute(request: dict):
 
 
 @app.post("/api/diplomacy/vassal/offer")
-async def offer_vassal(request: dict):
+async def offer_vassal(body: OfferVassalRequest):
+    request = body.model_dump()
     """提议附庸"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import DiplomacyEngine
-    engine = DiplomacyEngine(_world_state)
+    engine = DiplomacyEngine(_sess().world_state)
     faction_a, faction_b = _get_diplo_parties(request)
     result = engine.offer_vassal(
         suzerain=request.get("suzerain") or request.get("suzerain_faction") or faction_a,
@@ -4544,10 +5657,10 @@ async def offer_vassal(request: dict):
 @app.post("/api/diplomacy/vassal/cancel")
 async def cancel_vassal(request: dict):
     """取消附庸关系"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import DiplomacyEngine
-    engine = DiplomacyEngine(_world_state)
+    engine = DiplomacyEngine(_sess().world_state)
     faction_a, faction_b = _get_diplo_parties(request)
     result = engine.cancel_vassal(
         suzerain=request.get("suzerain") or request.get("suzerain_faction") or faction_a,
@@ -4557,12 +5670,13 @@ async def cancel_vassal(request: dict):
 
 
 @app.post("/api/diplomacy/peace")
-async def sign_peace_treaty(request: dict):
+async def sign_peace_treaty(body: SignPeaceRequest):
+    request = body.model_dump()
     """签订停战条约"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import DiplomacyEngine
-    engine = DiplomacyEngine(_world_state)
+    engine = DiplomacyEngine(_sess().world_state)
     faction_a, faction_b = _get_diplo_parties(request)
     result = engine.sign_peace_treaty(
         faction_a=faction_a,
@@ -4579,10 +5693,10 @@ async def sign_peace_treaty(request: dict):
 @app.post("/api/court/appoint")
 async def appoint_official(request: dict):
     """任命官员"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import CourtEngine
-    engine = CourtEngine(_world_state)
+    engine = CourtEngine(_sess().world_state)
     result = engine.appoint_official(
         faction_id=request.get("faction_id", ""),
         name=request.get("name", ""),
@@ -4596,10 +5710,10 @@ async def appoint_official(request: dict):
 @app.post("/api/court/dismiss")
 async def dismiss_official(request: dict):
     """罢免官员"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import CourtEngine
-    engine = CourtEngine(_world_state)
+    engine = CourtEngine(_sess().world_state)
     result = engine.dismiss_official(official_id=request.get("official_id", ""))
     return ApiResponse.success(result) if result["success"] else ApiResponse.bad_request(result["message"])
 
@@ -4607,10 +5721,10 @@ async def dismiss_official(request: dict):
 @app.post("/api/court/execute")
 async def execute_official(request: dict):
     """处决官员"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import CourtEngine
-    engine = CourtEngine(_world_state)
+    engine = CourtEngine(_sess().world_state)
     result = engine.execute_official(official_id=request.get("official_id", ""))
     return ApiResponse.success(result) if result["success"] else ApiResponse.bad_request(result["message"])
 
@@ -4618,10 +5732,10 @@ async def execute_official(request: dict):
 @app.post("/api/court/prisoner")
 async def handle_prisoner(request: dict):
     """处置俘虏"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import CourtEngine
-    engine = CourtEngine(_world_state)
+    engine = CourtEngine(_sess().world_state)
     result = engine.handle_prisoner(
         prisoner_id=request.get("prisoner_id", ""),
         action=request.get("action", "imprison"),
@@ -4632,15 +5746,15 @@ async def handle_prisoner(request: dict):
 @app.get("/api/court/officials/{faction_id}")
 async def get_faction_officials(faction_id: str):
     """获取势力官员列表"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         officials = [
-            off.model_dump() for oid, off in _world_state.officials.items()
+            off.model_dump() for oid, off in _sess().world_state.officials.items()
             if off.faction_id == faction_id
         ]
         prisoners = [
-            p.model_dump() for pid, p in _world_state.prisoners.items()
+            p.model_dump() for pid, p in _sess().world_state.prisoners.items()
             if p.held_by == faction_id
         ]
         return ApiResponse.success({
@@ -4671,22 +5785,22 @@ async def get_policies():
 @app.get("/api/court/overview/{faction_id}")
 async def get_court_overview(faction_id: str):
     """获取朝堂总览数据"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
-    faction = _world_state.factions.get(faction_id)
+    faction = _sess().world_state.factions.get(faction_id)
     if not faction:
         return ApiResponse.not_found(f"势力 {faction_id} 不存在")
 
     try:
-        officials_count = sum(1 for off in _world_state.officials.values() if off.faction_id == faction_id)
-        prisoners_count = sum(1 for p in _world_state.prisoners.values() if p.held_by == faction_id)
-        decrees_count = len(_world_state.decrees)
-        purges_count = len(_world_state.purges)
-        exiled_count = len(_world_state.exiled_officials)
+        officials_count = sum(1 for off in _sess().world_state.officials.values() if off.faction_id == faction_id)
+        prisoners_count = sum(1 for p in _sess().world_state.prisoners.values() if p.held_by == faction_id)
+        decrees_count = len(_sess().world_state.decrees)
+        purges_count = len(_sess().world_state.purges)
+        exiled_count = len(_sess().world_state.exiled_officials)
 
         # 派系忠诚度汇总
         faction_loyalty_summary = {}
-        for oid, off in _world_state.officials.items():
+        for oid, off in _sess().world_state.officials.items():
             if off.faction_id == faction_id and off.faction_affiliation:
                 aff = off.faction_affiliation
                 if aff not in faction_loyalty_summary:
@@ -4723,58 +5837,60 @@ async def get_court_overview(faction_id: str):
 
 
 @app.post("/api/court/decree")
-async def issue_decree(request: dict):
+async def issue_decree(body: DecreeRequest):
+    request = body.model_dump()
     """颁布敕令"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
-    # 兼容多种参数格式：text / decree_type / params.content
-    decree_text = request.get("text", "")
+    # C-3: 归属校验 —— 只能为自身势力颁布敕令
+    faction_id = _require_player_faction(request.get("faction_id", ""))
+    decree_text = request.get("decree_text", "") or request.get("text", "")
     if not decree_text:
         decree_type = request.get("decree_type", "")
         params_content = (request.get("params") or {}).get("content", "")
         decree_text = params_content or decree_type
 
-    faction_id = request.get("faction_id", "")
-
     if not decree_text:
         return ApiResponse.bad_request("敕令内容不能为空")
 
     decree = {
-        "id": f"decree_{_world_state.current_round}_{len(_world_state.decrees)}",
-        "round": _world_state.current_round,
-        "year": _world_state.current_year,
-        "month": _world_state.current_month,
+        "id": f"decree_{_sess().world_state.current_round}_{len(_sess().world_state.decrees)}",
+        "round": _sess().world_state.current_round,
+        "year": _sess().world_state.current_year,
+        "month": _sess().world_state.current_month,
         "faction_id": faction_id,
         "text": decree_text,
-        "timestamp": _world_state.updated_at or "",
+        "timestamp": _sess().world_state.updated_at or "",
     }
-    _world_state.decrees.append(decree)
+    _sess().world_state.decrees.append(decree)
 
     # 写入治理日志
-    _world_state.governance_logs.append({
-        "round": _world_state.current_round,
+    _sess().world_state.governance_logs.append({
+        "round": _sess().world_state.current_round,
         "title": "颁布敕令",
         "description": decree_text,
-        "narrative": f"第{_world_state.current_round}回合，{_world_state.get_faction(faction_id).name if _world_state.get_faction(faction_id) else faction_id}颁布敕令：{decree_text}",
+        "narrative": f"第{_sess().world_state.current_round}回合，{_sess().world_state.get_faction(faction_id).name if _sess().world_state.get_faction(faction_id) else faction_id}颁布敕令：{decree_text}",
     })
 
-    return ApiResponse.success({"decree": decree, "total_decrees": len(_world_state.decrees)})
+    return ApiResponse.success({"decree": decree, "total_decrees": len(_sess().world_state.decrees)})
 
 
 @app.post("/api/court/unlock-policy")
-async def unlock_policy_endpoint(request: dict):
+async def unlock_policy_endpoint(body: UnlockPolicyRequest):
+    request = body.model_dump()
     """解锁国策"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
+    # C-3: 归属校验
+    faction_id = _require_player_faction(request.get("faction_id", ""))
     policy_id = request.get("policy_id", "")
-    faction_id = request.get("faction_id", "")
 
     if not policy_id:
         return ApiResponse.bad_request("国策ID不能为空")
 
-    faction = _world_state.factions.get(faction_id)
+    faction = _sess().world_state.factions.get(faction_id)
     if not faction:
         return ApiResponse.not_found(f"势力 {faction_id} 不存在")
 
@@ -4809,38 +5925,86 @@ async def unlock_policy_endpoint(request: dict):
     faction.treasury -= cost
     faction.unlocked_policies.append(policy_id)
 
-    # 应用国策效果
+    # 应用国策效果（一次性属性加成）
     from pathlib import Path
     import json
+    applied_effects = {}  # 记录应用的效果，用于日志
     try:
         policy_path = Path(__file__).parent / "data" / "policies.json"
         with open(policy_path, "r", encoding="utf-8") as f:
             policies_data = json.load(f)
 
-        # 查找国策效果
         for cat in policies_data.get("policies", {}).values():
             for branch in cat.get("branches", []):
                 for tier in branch.get("tiers", []):
                     if tier["id"] == policy_id:
                         effects = tier.get("effects", {})
+                        applied_effects = dict(effects)
                         for key, val in effects.items():
+                            # 一次性属性加成
                             if key == "realm_stability":
                                 faction.realm_stability = min(100, faction.realm_stability + val)
                             elif key == "court_stability":
                                 faction.court_stability = min(100, faction.court_stability + val)
                             elif key == "reputation":
                                 faction.reputation = min(100, faction.reputation + val)
-                            elif key == "development_level":
-                                faction.development_level += val
+                            # development_level 已由 settle_engine 每回合从地块自动同步，
+                            # 此处不再单独累加，避免与自动计算冲突
+                            # elif key == "development_level":
+                            #     faction.development_level += val
+                            # elif key == "development_speed":
+                            #     faction.development_level += max(0, int(val * 0.3))
+                            # 即时效用：粮储（grain_storage 直接加粮到国库）
+                            elif key == "grain_storage":
+                                faction.grain += val
+                            # 即时效用：国库收入（treasury_income 一次性银两注入）
+                            elif key == "treasury_income":
+                                faction.treasury += val
+                            elif key == "trade_income":
+                                faction.treasury += val
+                            elif key == "arms_production":
+                                faction.arms += val
+                            elif key == "culture_bonus":
+                                faction.reputation = min(100, faction.reputation + max(0, int(val * 0.5)))
+                            elif key == "official_ability_bonus":
+                                # 提升所有在朝官员能力
+                                for oid, off in _sess().world_state.officials.items():
+                                    if off.faction_id == faction_id:
+                                        off.ability = min(95, off.ability + val)
+                            # 以下效果由 PolicyEngine.get_tech_policy_modifiers() 每回合结算
+                            # （grain_production, population_growth, tax_efficiency,
+                            #   troop_power, morale_bonus, siege_bonus, fortification_bonus,
+                            #   garrison_cost_reduction, land_fertility, famine_resistance,
+                            #   plague_reduction, flood_reduction, construction_speed,
+                            #   march_speed, naval_power, march_cost_reduction 等）
                         break
     except Exception as e:
         logger.warning(f"应用国策效果失败: {e}")
 
-    _world_state.governance_logs.append({
-        "round": _world_state.current_round,
+    # 构建效果描述文本
+    effect_desc_parts = []
+    for k, v in applied_effects.items():
+        label = {
+            "realm_stability": "民心", "court_stability": "朝纲", "reputation": "声望",
+            "development_level": "发展", "development_speed": "发展速度",
+            "grain_production": "粮产", "grain_storage": "储粮",
+            "treasury_income": "银两收入", "trade_income": "贸易收入",
+            "population_growth": "人口增长", "tax_efficiency": "征税效率",
+            "troop_power": "战力", "morale_bonus": "士气", "siege_bonus": "攻城",
+            "fortification_bonus": "城防", "garrison_cost_reduction": "驻军消耗",
+            "land_fertility": "土地肥力", "famine_resistance": "抗灾",
+            "plague_reduction": "防疫", "flood_reduction": "防洪",
+            "construction_speed": "建设速度", "arms_production": "军械产量",
+            "march_speed": "行军速度", "naval_power": "水师",
+            "culture_bonus": "文化", "official_ability_bonus": "官员能力",
+        }.get(k, k)
+        effect_desc_parts.append(f"{label}+{v}")
+
+    _sess().world_state.governance_logs.append({
+        "round": _sess().world_state.current_round,
         "title": f"采纳国策: {policy_id}",
-        "description": f"{faction.name}采纳国策{policy_id}，花费银{cost}两",
-        "narrative": f"第{_world_state.current_round}回合，{faction.name}采纳国策，花费银{cost}两。",
+        "description": f"{faction.name}采纳国策{policy_id}，花费银{cost}两。" + ("效果：" + "、".join(effect_desc_parts) if effect_desc_parts else ""),
+        "narrative": f"第{_sess().world_state.current_round}回合，{faction.name}采纳国策，花费银{cost}两。",
     })
 
     return ApiResponse.success({
@@ -4848,7 +6012,20 @@ async def unlock_policy_endpoint(request: dict):
         "cost": cost,
         "treasury_remaining": faction.treasury,
         "unlocked_policies": faction.unlocked_policies,
+        "applied_effects": applied_effects,
     })
+
+
+@app.get("/api/court/prisoners/{faction_id}")
+async def get_faction_prisoners(faction_id: str):
+    """获取势力俘虏列表"""
+    if not _sess().world_state:
+        return ApiResponse.forbidden("请先开局")
+    prisoners = [
+        p.model_dump() for pid, p in _sess().world_state.prisoners.items()
+        if p.held_by == faction_id
+    ]
+    return ApiResponse.success({"faction_id": faction_id, "prisoners": prisoners, "count": len(prisoners)})
 
 
 @app.get("/api/court/policy-overview/{faction_id}")
@@ -4858,9 +6035,9 @@ async def get_policy_overview(faction_id: str):
     替代前端多处分散查询，一次返回 PolicyPanel 所需的全部数据。
     所有数据以当前 world_state 为唯一来源，保证全局一致性。
     """
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
-    faction = _world_state.factions.get(faction_id)
+    faction = _sess().world_state.factions.get(faction_id)
     if not faction:
         return ApiResponse.not_found(f"势力 {faction_id} 不存在")
     from server.models.world_state import Building, BuildingType
@@ -4881,7 +6058,7 @@ async def get_policy_overview(faction_id: str):
             "has_stable": t.stable > 0,
         }
 
-    owner_tiles = _world_state.get_faction_tiles(faction_id)
+    owner_tiles = _sess().world_state.get_faction_tiles(faction_id)
 
     # ===== 1. 军事 =====
     military: dict = {
@@ -4900,7 +6077,7 @@ async def get_policy_overview(faction_id: str):
         "prisoners_captured": [],
     }
     # 围城
-    for sid, siege in _world_state.siege_states.items():
+    for sid, siege in _sess().world_state.siege_states.items():
         siege_data = siege.model_dump() if hasattr(siege, "model_dump") else siege
         info = {
             "siege_id": siege_data.get("siege_id", sid),
@@ -4913,16 +6090,16 @@ async def get_policy_overview(faction_id: str):
             "wall_damage": siege_data.get("wall_damage", 0),
             "state": siege_data.get("state", "sieging"),
         }
-        tile = _world_state.tiles.get(info["tile_id"])
+        tile = _sess().world_state.tiles.get(info["tile_id"])
         if tile:
             info["tile_name"] = tile.tile_name
             info["region"] = getattr(tile, "region", "")
         att_name = ""
         def_name = ""
-        if info["attacker_faction"] in _world_state.factions:
-            att_name = _world_state.factions[info["attacker_faction"]].name
-        if info["defender_faction"] in _world_state.factions:
-            def_name = _world_state.factions[info["defender_faction"]].name
+        if info["attacker_faction"] in _sess().world_state.factions:
+            att_name = _sess().world_state.factions[info["attacker_faction"]].name
+        if info["defender_faction"] in _sess().world_state.factions:
+            def_name = _sess().world_state.factions[info["defender_faction"]].name
         info["attacker_name"] = att_name
         info["defender_name"] = def_name
         if info["attacker_faction"] == faction_id:
@@ -4930,7 +6107,7 @@ async def get_policy_overview(faction_id: str):
         if info["defender_faction"] == faction_id:
             military["sieges_as_defender"].append(info)
     # 俘虏
-    for pid, prisoner in _world_state.prisoners.items():
+    for pid, prisoner in _sess().world_state.prisoners.items():
         pdata = prisoner.model_dump() if hasattr(prisoner, "model_dump") else prisoner
         pinfo = {
             "prisoner_id": pdata.get("prisoner_id", pid),
@@ -4961,13 +6138,13 @@ async def get_policy_overview(faction_id: str):
         "vassals_of_mine": [],
         "my_suzerain": None,
     }
-    for rkey, rel in _world_state.relations.items():
+    for rkey, rel in _sess().world_state.relations.items():
         rdata = rel.model_dump() if hasattr(rel, "model_dump") else rel
         a, b = rdata.get("faction_a", ""), rdata.get("faction_b", "")
         if a != faction_id and b != faction_id:
             continue
         other_id = b if a == faction_id else a
-        other_f = _world_state.factions.get(other_id)
+        other_f = _sess().world_state.factions.get(other_id)
         diplomacy["relations"].append({
             "faction_id": other_id,
             "faction_name": other_f.name if other_f else other_id,
@@ -4980,43 +6157,43 @@ async def get_policy_overview(faction_id: str):
             "is_alive": other_f.is_alive if other_f else True,
         })
     # 条约
-    for treaty in _world_state.alliance_treaties:
+    for treaty in _sess().world_state.alliance_treaties:
         tdata = treaty.model_dump() if hasattr(treaty, "model_dump") else treaty
         factions_in = tdata.get("factions", [])
         if faction_id in factions_in:
             diplomacy["treaties"].append({
                 "treaty_id": tdata.get("treaty_id", ""),
                 "treaty_type": tdata.get("treaty_type", ""),
-                "parties": [(_world_state.factions[f].name if f in _world_state.factions else f) for f in factions_in if f != faction_id],
+                "parties": [(_sess().world_state.factions[f].name if f in _sess().world_state.factions else f) for f in factions_in if f != faction_id],
                 "signed_round": tdata.get("signed_round", 0),
                 "expires_round": tdata.get("expires_round", 0),
                 "terms": tdata.get("terms", {}),
             })
     # 联盟/附庸
-    for cid, members in _world_state.coalitions.items():
+    for cid, members in _sess().world_state.coalitions.items():
         if faction_id in members:
             diplomacy["coalitions"].append({
                 "coalition_id": cid,
-                "members": [(_world_state.factions[m].name if m in _world_state.factions else m) for m in members if m != faction_id],
+                "members": [(_sess().world_state.factions[m].name if m in _sess().world_state.factions else m) for m in members if m != faction_id],
             })
-    for vid, suzerain_id in _world_state.vassal_relations.items():
+    for vid, suzerain_id in _sess().world_state.vassal_relations.items():
         if vid == faction_id:
-            suz = _world_state.factions.get(suzerain_id)
+            suz = _sess().world_state.factions.get(suzerain_id)
             diplomacy["my_suzerain"] = {"faction_id": suzerain_id, "name": suz.name if suz else suzerain_id}
         if suzerain_id == faction_id:
-            vassal_f = _world_state.factions.get(vid)
+            vassal_f = _sess().world_state.factions.get(vid)
             diplomacy["vassals_of_mine"].append({"faction_id": vid, "name": vassal_f.name if vassal_f else vid})
 
     # ===== 3. 荒政 =====
     civil: dict = {
-        "disaster_index": _world_state.disaster_index,
+        "disaster_index": _sess().world_state.disaster_index,
         "active_disasters": [],
         "total_population": faction.total_population or sum(t.population for t in owner_tiles),
         "total_grain": faction.grain,
         "avg_refugee_ratio": round(
             sum(t.refugee_ratio for t in owner_tiles) / max(1, len(owner_tiles)) * 100, 1
         ),
-        "weather": _world_state.weather if _world_state.weather else {},
+        "weather": _sess().world_state.weather if _sess().world_state.weather else {},
         "development_level": faction.development_level,
         "realm_stability": faction.realm_stability,
         "court_stability": faction.court_stability,
@@ -5032,7 +6209,7 @@ async def get_policy_overview(faction_id: str):
                     "population": t.population,
                 })
     # 全局活跃灾害
-    for d in (_world_state.disasters or []):
+    for d in (_sess().world_state.disasters or []):
         ddata = d.model_dump() if hasattr(d, "model_dump") else d
         civil["active_disasters"].append({
             "type": ddata.get("type", ""),
@@ -5048,10 +6225,10 @@ async def get_policy_overview(faction_id: str):
         "intel_reports": [],
         "false_intel_planted": [],
     }
-    for nid, network in _world_state.spy_networks.items():
+    for nid, network in _sess().world_state.spy_networks.items():
         ndata = network.model_dump() if hasattr(network, "model_dump") else network
         if ndata.get("owner_faction") == faction_id:
-            target_f = _world_state.factions.get(ndata.get("target_faction", ""))
+            target_f = _sess().world_state.factions.get(ndata.get("target_faction", ""))
             spy["networks"].append({
                 "network_id": nid,
                 "target_faction_id": ndata.get("target_faction", ""),
@@ -5061,7 +6238,7 @@ async def get_policy_overview(faction_id: str):
                 "action_points": ndata.get("action_points", 0),
                 "discovered": ndata.get("discovered", False),
             })
-    for intel in (_world_state.spy_intel or []):
+    for intel in (_sess().world_state.spy_intel or []):
         idata = intel.model_dump() if hasattr(intel, "model_dump") else intel
         if idata.get("owner_faction") == faction_id or idata.get("source_faction") == faction_id:
             spy["intel_reports"].append({
@@ -5071,7 +6248,7 @@ async def get_policy_overview(faction_id: str):
                 "round": idata.get("round", 0),
                 "reliability": idata.get("reliability", "未知"),
             })
-    for false_intel in (_world_state.planted_false_intel or []):
+    for false_intel in (_sess().world_state.planted_false_intel or []):
         fi = false_intel.model_dump() if hasattr(false_intel, "model_dump") else false_intel
         if fi.get("owner_faction") == faction_id:
             spy["false_intel_planted"].append({
@@ -5093,7 +6270,7 @@ async def get_policy_overview(faction_id: str):
         "sea_related": [],
     }
     # 工坊/粮仓/军械所/马场 — 从建筑注册表 + 地块建筑
-    for tid, t in _world_state.tiles.items():
+    for tid, t in _sess().world_state.tiles.items():
         if t.faction_id != faction_id:
             continue
         bld = t.buildings or {}
@@ -5112,12 +6289,12 @@ async def get_policy_overview(faction_id: str):
             elif btype == "granary":
                 resources["granaries"].append(entry)
     # 建筑注册表
-    for bid, b in _world_state.building_registry.items():
+    for bid, b in _sess().world_state.building_registry.items():
         if b.faction_id != faction_id:
             continue
         btype = b.building_type if hasattr(b, "building_type") else b.get("building_type", "")
         if btype == "workshop":
-            tile = _world_state.tiles.get(b.tile_id)
+            tile = _sess().world_state.tiles.get(b.tile_id)
             resources["workshops"].append({
                 "building_id": bid,
                 "tile_id": b.tile_id,
@@ -5126,13 +6303,13 @@ async def get_policy_overview(faction_id: str):
                 "level": b.level if hasattr(b, "level") else b.get("level", 1),
             })
     # 通商路线
-    for route in (_world_state.trade_routes or []):
+    for route in (_sess().world_state.trade_routes or []):
         rdata = route.model_dump() if hasattr(route, "model_dump") else route
         a_id = rdata.get("faction_a", "")
         b_id = rdata.get("faction_b", "")
         if faction_id in (a_id, b_id):
             other_id = b_id if a_id == faction_id else a_id
-            other_f = _world_state.factions.get(other_id)
+            other_f = _sess().world_state.factions.get(other_id)
             resources["trade_routes"].append({
                 "route_id": rdata.get("route_id", ""),
                 "partner": other_f.name if other_f else other_id,
@@ -5140,7 +6317,7 @@ async def get_policy_overview(faction_id: str):
                 "income": rdata.get("income", 0),
             })
     # 海策/码头
-    for tid, t in _world_state.tiles.items():
+    for tid, t in _sess().world_state.tiles.items():
         if t.faction_id != faction_id:
             continue
         bld = t.buildings or {}
@@ -5170,23 +6347,15 @@ async def get_policy_overview(faction_id: str):
     return ApiResponse.success({
         "faction_id": faction_id,
         "faction_name": faction.name,
-        "round": _world_state.current_round,
-        "year": _world_state.current_year,
-        "season": str(_world_state.current_season),
+        "round": _sess().world_state.current_round,
+        "year": _sess().world_state.current_year,
+        "season": str(_sess().world_state.current_season),
         "military": military,
         "diplomacy": diplomacy,
         "civil": civil,
         "spy": spy,
         "resources": resources,
     })
-    """获取势力俘虏列表"""
-    if not _world_state:
-        return ApiResponse.forbidden("请先开局")
-    prisoners = [
-        p.model_dump() for pid, p in _world_state.prisoners.items()
-        if p.held_by == faction_id
-    ]
-    return ApiResponse.success({"faction_id": faction_id, "prisoners": prisoners, "count": len(prisoners)})
 
 
 # ============================================================
@@ -5194,18 +6363,22 @@ async def get_policy_overview(faction_id: str):
 # ============================================================
 
 @app.post("/api/march/resolve")
-async def resolve_march_endpoint(request: dict):
+async def resolve_march_endpoint(body: MarchResolveRequest):
+    request = body.model_dump()
     """行军/战斗结算（支持粮草参数）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
+    # C-3: 归属校验 —— 只能指挥己方军队行军
+    attacker = request.get("attacker_faction") or request.get("faction_id", "")
+    attacker = _require_player_faction(attacker)
     try:
         from server.core.settle_engine import MarchEngine
-        engine = MarchEngine(_world_state)
+        engine = MarchEngine(_sess().world_state)
         result = engine.resolve_march(
             from_tile=request.get("from_tile", ""),
             to_tile=request.get("to_tile", ""),
             troops=request.get("troops", 0),
-            attacker_faction=request.get("attacker_faction") or request.get("faction_id", ""),
+            attacker_faction=attacker,
             grain=request.get("grain", 0),
         )
         if isinstance(result, dict):
@@ -5219,12 +6392,12 @@ async def resolve_march_endpoint(request: dict):
 @app.post("/api/march/path")
 async def get_march_path(request: dict):
     """获取行军路径（简化为直达）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from_tile = request.get("from_tile", "")
     to_tile = request.get("to_tile", "")
-    from_t = _world_state.get_tile(from_tile)
-    to_t = _world_state.get_tile(to_tile)
+    from_t = _sess().world_state.get_tile(from_tile)
+    to_t = _sess().world_state.get_tile(to_tile)
     if not from_t or not to_t:
         return ApiResponse.error(404, "地块不存在")
     
@@ -5241,10 +6414,10 @@ async def get_march_path(request: dict):
 @app.get("/api/march/neighbors/{tile_id}")
 async def get_attackable_neighbors(tile_id: str, faction_id: str = ""):
     """获取地块周围可攻击的相邻地块"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import MarchEngine
-    engine = MarchEngine(_world_state)
+    engine = MarchEngine(_sess().world_state)
     neighbors = engine.get_attackable_neighbors(tile_id, faction_id)
     return ApiResponse.success({
         "tile_id": tile_id,
@@ -5258,7 +6431,8 @@ async def get_attackable_neighbors(tile_id: str, faction_id: str = ""):
 # ============================================================
 
 @app.post("/api/war/declare")
-async def declare_war_endpoint(request: dict):
+async def declare_war_endpoint(body: WarDeclareRequest):
+    request = body.model_dump()
     """
     正式宣战 — 触发全链路征伐AI联动
 
@@ -5270,11 +6444,13 @@ async def declare_war_endpoint(request: dict):
     
     返回全链路AI推演摘要
     """
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     
     attacker = request.get("attacker_faction", "") or request.get("faction_id", "")
     defender = request.get("defender_faction", "") or request.get("target_faction", "")
+    # C-3: 归属校验 —— 只能以己方势力宣战
+    attacker = _require_player_faction(attacker)
     reason = request.get("reason", "兴兵讨伐")
     casus_belli = request.get("casus_belli", "conquest")
     war_goal_tiles = request.get("war_goal_tiles", [])
@@ -5282,8 +6458,8 @@ async def declare_war_endpoint(request: dict):
     if not attacker or not defender:
         return ApiResponse.bad_request("请指定攻方和守方势力")
     
-    atk_faction = _world_state.factions.get(attacker)
-    dff_faction = _world_state.factions.get(defender)
+    atk_faction = _sess().world_state.factions.get(attacker)
+    dff_faction = _sess().world_state.factions.get(defender)
     
     if not atk_faction or not dff_faction:
         return ApiResponse.bad_request("势力不存在")
@@ -5291,15 +6467,23 @@ async def declare_war_endpoint(request: dict):
     if not atk_faction.is_alive or not dff_faction.is_alive:
         return ApiResponse.bad_request("势力已覆灭")
 
+    # 扣除宣战声望消耗（从 validate_casus_belli 中分离，避免CB列表查询误扣）
+    try:
+        from server.war.casus_belli import CasusBelli, deduct_cb_prestige_cost
+        cb_enum = CasusBelli(casus_belli)
+        deduct_cb_prestige_cost(cb_enum, attacker, _sess().world_state)
+    except (ValueError, ImportError):
+        pass
+
     try:
         # 1. 设置外交关系为战争
         from server.core.settle_engine import MarchEngine
-        march = MarchEngine(_world_state)
+        march = MarchEngine(_sess().world_state)
         march._ensure_war_stance(attacker, defender)
 
         # 2. 清理同盟/附庸关系
-        key = _world_state.relation_key(attacker, defender)
-        rel = _world_state.relations.get(key)
+        key = _sess().world_state.relation_key(attacker, defender)
+        rel = _sess().world_state.relations.get(key)
         if rel:
             rel.alliance_active = False
             rel.trade_active = False
@@ -5309,10 +6493,10 @@ async def declare_war_endpoint(request: dict):
                 rel.vassal_suzerain = None
 
         # 3. 写入宣战事件
-        _world_state.events_log.append({
-            "round": _world_state.current_round,
-            "year": getattr(_world_state, 'current_year', 1),
-            "month": getattr(_world_state, 'current_month', 1),
+        _sess().world_state.events_log.append({
+            "round": _sess().world_state.current_round,
+            "year": getattr(_sess().world_state, 'current_year', 1),
+            "month": getattr(_sess().world_state, 'current_month', 1),
             "event_type": "war_declaration",
             "severity": "critical",
             "attacker": attacker,
@@ -5338,8 +6522,8 @@ async def declare_war_endpoint(request: dict):
         }
 
         # 异步触发AI联动（如果LLM客户端可用）
-        if _round_engine and hasattr(_round_engine, '_war_orchestrator'):
-            orchestrator = _round_engine._war_orchestrator
+        if _sess().round_engine and hasattr(_sess().round_engine, '_war_orchestrator'):
+            orchestrator = _sess().round_engine._war_orchestrator
             if orchestrator:
                 import asyncio
                 try:
@@ -5389,14 +6573,14 @@ async def declare_war_endpoint(request: dict):
 @app.get("/api/war/status")
 async def get_war_status(attacker: str = "", defender: str = ""):
     """获取两方之间的战争状态摘要"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     round_engine = getattr(app.state, 'round_engine', None)
     wars = []
 
-    if _round_engine and hasattr(_round_engine, '_war_orchestrator'):
-        orchestrator = _round_engine._war_orchestrator
+    if _sess().round_engine and hasattr(_sess().round_engine, '_war_orchestrator'):
+        orchestrator = _sess().round_engine._war_orchestrator
         if orchestrator:
             for war_id, ctx in orchestrator.active_wars.items():
                 if (not attacker or ctx.attacker_faction == attacker or
@@ -5409,7 +6593,7 @@ async def get_war_status(attacker: str = "", defender: str = ""):
                             "defender": ctx.defender_faction,
                             "stage": ctx.stage.value,
                             "declared_round": ctx.declared_round,
-                            "duration": _world_state.current_round - ctx.declared_round,
+                            "duration": _sess().world_state.current_round - ctx.declared_round,
                             "casus_belli": ctx.casus_belli,
                             "casus_belli_name": ctx.casus_belli_name,
                             "war_score": ctx.get_war_score().get_status(),
@@ -5433,13 +6617,13 @@ async def get_war_status(attacker: str = "", defender: str = ""):
 @app.get("/api/war/active")
 async def get_active_wars():
     """获取所有活跃战争列表（简化版，供前端轮询）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     active = []
 
-    if _round_engine and hasattr(_round_engine, '_war_orchestrator'):
-        orchestrator = _round_engine._war_orchestrator
+    if _sess().round_engine and hasattr(_sess().round_engine, '_war_orchestrator'):
+        orchestrator = _sess().round_engine._war_orchestrator
         if orchestrator:
             # 使用新的摘要方法获取含战争分数的完整列表
             try:
@@ -5447,9 +6631,9 @@ async def get_active_wars():
             except Exception:
                 # 回退到旧格式
                 for war_id, ctx in orchestrator.active_wars.items():
-                    atk_name = (_world_state.factions.get(ctx.attacker_faction) or
+                    atk_name = (_sess().world_state.factions.get(ctx.attacker_faction) or
                                 type('', (), {'name': ctx.attacker_faction})()).name
-                    dff_name = (_world_state.factions.get(ctx.defender_faction) or
+                    dff_name = (_sess().world_state.factions.get(ctx.defender_faction) or
                                 type('', (), {'name': ctx.defender_faction})()).name
                     active.append({
                         "war_id": war_id,
@@ -5477,7 +6661,7 @@ async def get_active_wars():
 @app.get("/api/war/cb-list")
 async def get_cb_list(faction_id: str = "", target_faction_id: str = ""):
     """获取对目标势力可用的宣战理由列表"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     if not faction_id or not target_faction_id:
@@ -5485,7 +6669,7 @@ async def get_cb_list(faction_id: str = "", target_faction_id: str = ""):
 
     try:
         from server.war.casus_belli import get_available_cb_list
-        cb_list = get_available_cb_list(_world_state, faction_id, target_faction_id)
+        cb_list = get_available_cb_list(_sess().world_state, faction_id, target_faction_id)
         return ApiResponse.success({"cb_list": cb_list, "target": target_faction_id})
     except ImportError as e:
         return ApiResponse.server_error(f"CB系统加载失败: {e}")
@@ -5497,13 +6681,13 @@ async def get_cb_list(faction_id: str = "", target_faction_id: str = ""):
 @app.get("/api/war/score")
 async def get_war_score(war_id: str = "", attacker: str = "", defender: str = ""):
     """获取指定战争的分数与状态"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
-    if not _round_engine or not hasattr(_round_engine, '_war_orchestrator'):
+    if not _sess().round_engine or not hasattr(_sess().round_engine, '_war_orchestrator'):
         return ApiResponse.success({"war_score": None, "message": "无战争编排器"})
 
-    orchestrator = _round_engine._war_orchestrator
+    orchestrator = _sess().round_engine._war_orchestrator
     if not orchestrator:
         return ApiResponse.success({"war_score": None})
 
@@ -5531,7 +6715,7 @@ async def get_war_score(war_id: str = "", attacker: str = "", defender: str = ""
 @app.post("/api/war/peace/propose")
 async def propose_peace_endpoint(request: dict):
     """发起和平提议"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     war_id = request.get("war_id", "")
@@ -5543,10 +6727,10 @@ async def propose_peace_endpoint(request: dict):
     if not war_id or not terms:
         return ApiResponse.bad_request("请提供 war_id 和 terms")
 
-    if not _round_engine or not hasattr(_round_engine, '_war_orchestrator'):
+    if not _sess().round_engine or not hasattr(_sess().round_engine, '_war_orchestrator'):
         return ApiResponse.server_error("无战争编排器")
 
-    orchestrator = _round_engine._war_orchestrator
+    orchestrator = _sess().round_engine._war_orchestrator
     if not orchestrator:
         return ApiResponse.server_error("无战争编排器")
 
@@ -5556,7 +6740,7 @@ async def propose_peace_endpoint(request: dict):
 
     try:
         from server.war.peace_negotiation import PeaceNegotiationEngine
-        engine = PeaceNegotiationEngine(_world_state)
+        engine = PeaceNegotiationEngine(_sess().world_state)
         ws = ctx.get_war_score()
 
         # 构造提议
@@ -5605,15 +6789,15 @@ async def propose_peace_endpoint(request: dict):
 @app.post("/api/war/peace/available-terms")
 async def get_available_peace_terms(request: dict):
     """获取当前战争分数下可用和平条款"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     war_id = request.get("war_id", "")
     if not war_id:
         return ApiResponse.bad_request("请提供 war_id")
 
-    orchestrator = _round_engine._war_orchestrator if (
-        _round_engine and hasattr(_round_engine, '_war_orchestrator')
+    orchestrator = _sess().round_engine._war_orchestrator if (
+        _sess().round_engine and hasattr(_sess().round_engine, '_war_orchestrator')
     ) else None
     if not orchestrator:
         return ApiResponse.server_error("无战争编排器")
@@ -5624,7 +6808,7 @@ async def get_available_peace_terms(request: dict):
 
     try:
         from server.war.peace_negotiation import PeaceNegotiationEngine
-        engine = PeaceNegotiationEngine(_world_state)
+        engine = PeaceNegotiationEngine(_sess().world_state)
         ws = ctx.get_war_score()
         available = engine.get_available_terms(
             ws,
@@ -5647,7 +6831,7 @@ async def get_available_peace_terms(request: dict):
 @app.post("/api/war/peace/evaluate")
 async def evaluate_peace_endpoint(request: dict):
     """预评估和平提议是否会被接受（不执行）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     war_id = request.get("war_id", "")
@@ -5658,8 +6842,8 @@ async def evaluate_peace_endpoint(request: dict):
     if not war_id or not terms:
         return ApiResponse.bad_request("请提供 war_id 和 terms")
 
-    orchestrator = _round_engine._war_orchestrator if (
-        _round_engine and hasattr(_round_engine, '_war_orchestrator')
+    orchestrator = _sess().round_engine._war_orchestrator if (
+        _sess().round_engine and hasattr(_sess().round_engine, '_war_orchestrator')
     ) else None
     if not orchestrator:
         return ApiResponse.server_error("无战争编排器")
@@ -5670,7 +6854,7 @@ async def evaluate_peace_endpoint(request: dict):
 
     try:
         from server.war.peace_negotiation import PeaceNegotiationEngine
-        engine = PeaceNegotiationEngine(_world_state)
+        engine = PeaceNegotiationEngine(_sess().world_state)
         ws = ctx.get_war_score()
         proposal = engine.propose_peace(ws, terms, is_from_attacker, tile_ids)
         receiving_id = ctx.defender_faction if is_from_attacker else ctx.attacker_faction
@@ -5707,10 +6891,10 @@ async def get_layers_data(faction_id: str = ""):
     - buildings: 城建建筑
     - disasters: 灾害数据
     """
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
-    ws = _world_state
+    ws = _sess().world_state
     player_fid = faction_id or ws.player_faction_id
 
     # 1. 地块状态聚合
@@ -5764,8 +6948,8 @@ async def get_layers_data(faction_id: str = ""):
 
     # 4. 补给线（从 trade_routes 或 war orchestrator 中提取）
     supply_lines = []
-    if _round_engine and hasattr(_round_engine, '_war_orchestrator'):
-        orch = _round_engine._war_orchestrator
+    if _sess().round_engine and hasattr(_sess().round_engine, '_war_orchestrator'):
+        orch = _sess().round_engine._war_orchestrator
         if orch:
             for war_id, ctx in (getattr(orch, 'active_wars', {}) or {}).items():
                 for sl in getattr(ctx, 'supply_lines', []) or []:
@@ -5872,14 +7056,14 @@ async def get_layers_data(faction_id: str = ""):
 @app.get("/api/military/recruit-info/{tile_id}")
 async def get_recruit_info(tile_id: str, faction_id: str = ""):
     """获取地块征兵信息（成本、限制等）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
-    tile = _world_state.tiles.get(tile_id)
+    tile = _sess().world_state.tiles.get(tile_id)
     if not tile:
         return ApiResponse.not_found(f"地块 {tile_id} 不存在")
 
-    faction = _world_state.factions.get(faction_id) if faction_id else None
+    faction = _sess().world_state.factions.get(faction_id) if faction_id else None
     cost_per = 3 if tile.tile_type.value in ('city', 'port') else 2
     max_recruit = int(tile.population * 0.15)
     max_garrison = 5000 + tile.fortification * 2000
@@ -5888,7 +7072,7 @@ async def get_recruit_info(tile_id: str, faction_id: str = ""):
     # 检查马场
     has_stable = False
     if faction:
-        for t in _world_state.get_faction_tiles(faction_id):
+        for t in _sess().world_state.get_faction_tiles(faction_id):
             if getattr(t, 'stable', 0) > 0:
                 has_stable = True
                 break
@@ -5919,10 +7103,10 @@ async def get_recruit_info(tile_id: str, faction_id: str = ""):
 @app.get("/api/vassal/check/{faction_id}")
 async def check_vassal_rebellion(faction_id: str):
     """检查藩镇叛乱风险"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import CourtEngine
-    engine = CourtEngine(_world_state)
+    engine = CourtEngine(_sess().world_state)
     result = engine.check_vassal_rebellion(faction_id)
     return ApiResponse.success({
         "faction_id": faction_id,
@@ -5937,9 +7121,9 @@ async def check_vassal_rebellion(faction_id: str):
 @app.get("/api/economy/workshops/{faction_id}")
 async def get_workshops(faction_id: str):
     """获取势力工坊信息"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
-    tiles = _world_state.get_faction_tiles(faction_id)
+    tiles = _sess().world_state.get_faction_tiles(faction_id)
     workshops = []
     for t in tiles:
         ws = []
@@ -5972,31 +7156,31 @@ async def get_workshops(faction_id: str):
 @app.get("/api/game/ending")
 async def get_ending():
     """获取结局信息（增强版：含演出数据、对话、渐进提示）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     
     ending = _check_ending()
-    player = _world_state.get_player_faction()
+    player = _sess().world_state.get_player_faction()
     stats = {}
     if player:
-        player_tiles = _world_state.get_faction_tiles(player.faction_id)
-        player_conquered = [c for c in _world_state.tile_changes if c.get("new_faction_id") == player.faction_id]
-        player_lost = [c for c in _world_state.tile_changes if c.get("old_faction_id") == player.faction_id]
+        player_tiles = _sess().world_state.get_faction_tiles(player.faction_id)
+        player_conquered = [c for c in _sess().world_state.tile_changes if c.get("new_faction_id") == player.faction_id]
+        player_lost = [c for c in _sess().world_state.tile_changes if c.get("old_faction_id") == player.faction_id]
         stats = {
-            "total_rounds": _world_state.current_round,
+            "total_rounds": _sess().world_state.current_round,
             "final_treasury": player.treasury,
             "final_troops": player.total_troops,
             "final_population": player.total_population,
             "tiles_held": len(player_tiles),
             "tiles_conquered": len(player_conquered),
             "tiles_lost": len(player_lost),
-            "battles_fought": sum(1 for e in _world_state.events_log if e.get("event_type") == "battle"),
-            "officials_count": sum(1 for o in _world_state.officials.values() if o.faction_id == player.faction_id),
+            "battles_fought": sum(1 for e in _sess().world_state.events_log if e.get("event_type") == "battle"),
+            "officials_count": sum(1 for o in _sess().world_state.officials.values() if o.faction_id == player.faction_id),
         }
     return ApiResponse.success({
         "ending": ending,
         "statistics": stats,
-        "governance_logs": _world_state.governance_logs[-50:] if hasattr(_world_state, 'governance_logs') else [],
+        "governance_logs": _sess().world_state.governance_logs[-50:] if hasattr(_sess().world_state, 'governance_logs') else [],
     })
 
 
@@ -6017,7 +7201,7 @@ async def get_endings_config():
 @app.get("/api/game/endings/progress")
 async def get_endings_progress():
     """获取所有结局的当前进度状态（每个结局的触发条件满足情况）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     
     engine = get_ending_engine()
@@ -6059,11 +7243,11 @@ async def get_endings_legacy():
 @app.get("/api/territory/changes/{faction_id}")
 async def get_territory_changes(faction_id: str, limit: int = 50):
     """获取势力地盘变更记录"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     # 筛选该势力相关的地盘变更
-    all_changes = _world_state.tile_changes
+    all_changes = _sess().world_state.tile_changes
     faction_changes = [
         c for c in all_changes
         if c.get("old_faction_id") == faction_id or c.get("new_faction_id") == faction_id
@@ -6089,14 +7273,14 @@ async def get_territory_changes(faction_id: str, limit: int = 50):
 @app.get("/api/territory/summary/{faction_id}")
 async def get_territory_summary(faction_id: str):
     """获取势力领土摘要"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
-    faction = _world_state.factions.get(faction_id)
+    faction = _sess().world_state.factions.get(faction_id)
     if not faction:
         return ApiResponse.not_found(f"势力 {faction_id} 不存在")
 
-    tiles = _world_state.get_faction_tiles(faction_id)
+    tiles = _sess().world_state.get_faction_tiles(faction_id)
     capital = next((t for t in tiles if t.is_capital), None)
 
     # 按地区分组
@@ -6118,7 +7302,7 @@ async def get_territory_summary(faction_id: str):
 
     # 最近地盘变更
     recent_changes = [
-        c for c in _world_state.tile_changes
+        c for c in _sess().world_state.tile_changes
         if c.get("old_faction_id") == faction_id or c.get("new_faction_id") == faction_id
     ][-20:]
 
@@ -6141,10 +7325,10 @@ async def get_territory_summary(faction_id: str):
 @app.get("/api/territory/global-changes")
 async def get_global_territory_changes(round_num: int = 0, limit: int = 30):
     """获取全局地盘变更（最近N回合）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
-    changes = _world_state.tile_changes
+    changes = _sess().world_state.tile_changes
     if round_num > 0:
         changes = [c for c in changes if c.get("round") == round_num]
 
@@ -6160,7 +7344,7 @@ async def get_global_territory_changes(round_num: int = 0, limit: int = 30):
         grouped[r].append(c)
 
     return ApiResponse.success({
-        "total_changes": len(_world_state.tile_changes),
+        "total_changes": len(_sess().world_state.tile_changes),
         "recent_changes": changes,
         "grouped_by_round": grouped,
     })
@@ -6169,19 +7353,19 @@ async def get_global_territory_changes(round_num: int = 0, limit: int = 30):
 @app.get("/api/territory/tile-history/{tile_id}")
 async def get_tile_history(tile_id: str):
     """获取单个地块的归属变更历史"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
-    tile = _world_state.tiles.get(tile_id)
+    tile = _sess().world_state.tiles.get(tile_id)
     if not tile:
         return ApiResponse.not_found(f"地块 {tile_id} 不存在")
 
-    changes = [c for c in _world_state.tile_changes if c.get("tile_id") == tile_id]
+    changes = [c for c in _sess().world_state.tile_changes if c.get("tile_id") == tile_id]
     changes.sort(key=lambda x: x.get("round", 0))
 
     current_faction = ""
     if tile.faction_id:
-        f = _world_state.factions.get(tile.faction_id)
+        f = _sess().world_state.factions.get(tile.faction_id)
         current_faction = f.name if f else tile.faction_id
 
     return ApiResponse.success({
@@ -6201,9 +7385,9 @@ async def get_tile_history(tile_id: str):
 @app.get("/api/panel/royal/{faction_id}")
 async def get_royal_panel(faction_id: str):
     """皇子宗室面板数据"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
-    faction = _world_state.factions.get(faction_id)
+    faction = _sess().world_state.factions.get(faction_id)
     if not faction:
         return ApiResponse.not_found(f"势力 {faction_id} 不存在")
 
@@ -6235,9 +7419,9 @@ async def get_royal_panel(faction_id: str):
 @app.get("/api/panel/medical/{faction_id}")
 async def get_medical_panel(faction_id: str):
     """疲病伤病面板数据"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
-    tiles = _world_state.get_faction_tiles(faction_id)
+    tiles = _sess().world_state.get_faction_tiles(faction_id)
     if not tiles:
         return ApiResponse.not_found(f"势力 {faction_id} 无领地")
 
@@ -6252,12 +7436,12 @@ async def get_medical_panel(faction_id: str):
     # 瘟疫风险计算
     base_plague = total_disaster_count * 15 + max(0, 20 - clinics * 3)
     # 夏季瘟疫风险提高
-    if _world_state.current_season.value == "夏":
+    if _sess().world_state.current_season.value == "夏":
         base_plague += 10
     plague_risk = min(100, base_plague)
 
     # 伤病率
-    injury_rate = max(0, min(30, 10 - clinics * 2 + _world_state.disaster_index * 2))
+    injury_rate = max(0, min(30, 10 - clinics * 2 + _sess().world_state.disaster_index * 2))
 
     # 总伤病人数估算
     total_pop = sum(t.population for t in tiles)
@@ -6270,16 +7454,16 @@ async def get_medical_panel(faction_id: str):
         "injury_rate": injury_rate,
         "injured_population": injured_count,
         "active_disasters": list(active_disasters),
-        "disaster_index": _world_state.disaster_index,
+        "disaster_index": _sess().world_state.disaster_index,
     })
 
 
 @app.get("/api/panel/sea/{faction_id}")
 async def get_sea_panel(faction_id: str):
     """海策远洋面板数据"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
-    tiles = _world_state.get_faction_tiles(faction_id)
+    tiles = _sess().world_state.get_faction_tiles(faction_id)
 
     ports = sum(1 for t in tiles if t.is_port)
     port_tiles = [{"tile_id": t.tile_id, "tile_name": t.tile_name} for t in tiles if t.is_port]
@@ -6288,9 +7472,9 @@ async def get_sea_panel(faction_id: str):
     fleet_size = ports * 3
     # 贸易收入
     trade_income = ports * 80
-    if _world_state.current_season.value == "冬":
+    if _sess().world_state.current_season.value == "冬":
         trade_income = int(trade_income * 0.5)
-    elif _world_state.current_season.value == "夏":
+    elif _sess().world_state.current_season.value == "夏":
         trade_income = int(trade_income * 1.25)
 
     # 航线数
@@ -6310,34 +7494,34 @@ async def get_sea_panel(faction_id: str):
         "trade_income": trade_income,
         "routes": routes,
         "port_levels": port_levels,
-        "season": _world_state.current_season.value,
+        "season": _sess().world_state.current_season.value,
     })
 
 
 @app.get("/api/panel/culture/{faction_id}")
 async def get_culture_panel(faction_id: str):
     """民俗国史面板数据"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     # 年号
     era_name = "至正"
-    year_label = f"至正{_world_state.current_year - 1340}年"
+    year_label = f"至正{_sess().world_state.current_year - 1340}年"
 
     # 收集该势力相关的重要事件
     faction_events = [
-        e for e in _world_state.events_log
+        e for e in _sess().world_state.events_log
         if e.get("faction_id") == faction_id
     ]
     faction_events.sort(key=lambda x: x.get("round", 0), reverse=True)
 
     # 治理日志
-    gov_logs = _world_state.governance_logs[-20:]
+    gov_logs = _sess().world_state.governance_logs[-20:]
 
     # 国史数据
-    history_count = len(_world_state.events_log)
-    decrees_count = len(_world_state.decrees)
-    battles_count = sum(1 for e in _world_state.events_log if e.get("event_type") == "battle")
+    history_count = len(_sess().world_state.events_log)
+    decrees_count = len(_sess().world_state.decrees)
+    battles_count = sum(1 for e in _sess().world_state.events_log if e.get("event_type") == "battle")
 
     # 近期大事
     recent_events = [
@@ -6354,15 +7538,15 @@ async def get_culture_panel(faction_id: str):
         "faction_id": faction_id,
         "era_name": era_name,
         "year_label": year_label,
-        "current_round": _world_state.current_round,
-        "current_year": _world_state.current_year,
-        "current_season": _world_state.current_season.value,
+        "current_round": _sess().world_state.current_round,
+        "current_year": _sess().world_state.current_year,
+        "current_season": _sess().world_state.current_season.value,
         "history_count": history_count,
         "decrees_count": decrees_count,
         "battles_count": battles_count,
         "recent_events": recent_events,
         "governance_logs": gov_logs[-10:],
-        "tile_changes_count": len(_world_state.tile_changes),
+        "tile_changes_count": len(_sess().world_state.tile_changes),
     })
 
 
@@ -6373,37 +7557,37 @@ async def get_culture_panel(faction_id: str):
 @app.get("/api/history/{faction_id}")
 async def get_national_history(faction_id: str):
     """获取势力国史（所有历史事件、治理日志、圣旨记录）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
-    faction = _world_state.get_faction(faction_id)
+    faction = _sess().world_state.get_faction(faction_id)
     faction_name = faction.name if faction else faction_id
 
     # 收集该势力相关的所有事件
     faction_events = [
-        e for e in _world_state.events_log
+        e for e in _sess().world_state.events_log
         if e.get("faction_id") == faction_id
     ]
     faction_events.sort(key=lambda x: x.get("round", 0), reverse=True)
 
     # 圣旨记录
     decrees = [
-        d for d in _world_state.decrees
+        d for d in _sess().world_state.decrees
         if d.get("faction_id") == faction_id
     ]
 
     # 治理日志
-    gov_logs = _world_state.governance_logs[-30:]
+    gov_logs = _sess().world_state.governance_logs[-30:]
 
     # 地块变更
     tile_changes = [
-        c for c in _world_state.tile_changes
+        c for c in _sess().world_state.tile_changes
         if c.get("faction_id") == faction_id
     ]
 
     # 战役记录
     battles = [
-        e for e in _world_state.events_log
+        e for e in _sess().world_state.events_log
         if e.get("event_type") == "battle" and (
             e.get("attacker_faction") == faction_id or e.get("defender_faction") == faction_id
         )
@@ -6414,7 +7598,7 @@ async def get_national_history(faction_id: str):
     for e in faction_events[:50]:
         formatted_events.append({
             "round": e.get("round", 0),
-            "year": e.get("year", _world_state.current_year),
+            "year": e.get("year", _sess().world_state.current_year),
             "title": e.get("title", ""),
             "description": e.get("description", ""),
             "event_type": e.get("event_type", ""),
@@ -6434,22 +7618,22 @@ async def get_national_history(faction_id: str):
         "decrees": decrees[-20:],
         "battles": battles[-20:],
         "governance_logs": gov_logs[-10:],
-        "current_round": _world_state.current_round,
-        "current_year": _world_state.current_year,
+        "current_round": _sess().world_state.current_round,
+        "current_year": _sess().world_state.current_year,
     })
 
 
 @app.get("/api/panel/weather")
 async def get_weather():
     """获取当前天气信息"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
-    weather = _world_state.weather or {}
+    weather = _sess().world_state.weather or {}
     return ApiResponse.success({
         "weather": weather,
-        "season": _world_state.current_season.value,
-        "year": _world_state.current_year,
-        "month": _world_state.current_month,
+        "season": _sess().world_state.current_season.value,
+        "year": _sess().world_state.current_year,
+        "month": _sess().world_state.current_month,
     })
 
 
@@ -6462,11 +7646,11 @@ async def get_weather():
 @app.get("/api/rebel/list")
 async def list_rebels():
     """获取所有活跃叛军"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     rebels = []
-    for rid, rebel in _world_state.rebel_armies.items():
-        tile = _world_state.get_tile(rebel.tile_id)
+    for rid, rebel in _sess().world_state.rebel_armies.items():
+        tile = _sess().world_state.get_tile(rebel.tile_id)
         rebels.append({
             "rebel_id": rebel.rebel_id,
             "tile_id": rebel.tile_id,
@@ -6475,23 +7659,22 @@ async def list_rebels():
             "leader": rebel.leader,
             "cause": rebel.cause,
             "spawned_round": rebel.spawned_round,
-            "age": _world_state.current_round - rebel.spawned_round,
+            "age": _sess().world_state.current_round - rebel.spawned_round,
         })
     return ApiResponse.success({"rebels": rebels, "total": len(rebels)})
 
 
 @app.post("/api/rebel/suppress")
-async def suppress_rebellion(req: Request):
+async def suppress_rebellion(body: SuppressRebelRequest):
     """镇压叛军"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
-    data = await req.json()
-    faction_id = data.get("faction_id", "")
-    rebel_id = data.get("rebel_id", "")
-    troops = data.get("troops", 0)
+    faction_id = body.faction_id
+    rebel_id = body.rebel_id
+    troops = body.troops
 
     from server.core.advanced_features import RebelEngine
-    engine = RebelEngine(_world_state, _game_const)
+    engine = RebelEngine(_sess().world_state, _game_const)
     result = engine.suppress_rebellion(faction_id, rebel_id, troops)
     return ApiResponse.success(result) if result["success"] else ApiResponse.error(400, result["message"])
 
@@ -6501,7 +7684,7 @@ async def suppress_rebellion(req: Request):
 @app.post("/api/march/ambush")
 async def attempt_ambush(req: Request):
     """伏击"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     data = await req.json()
     attacker = data.get("attacker_faction", "")
@@ -6510,7 +7693,7 @@ async def attempt_ambush(req: Request):
     troops = data.get("troops", 0)
 
     from server.core.advanced_features import AmbushRaidEngine
-    engine = AmbushRaidEngine(_world_state, _game_const)
+    engine = AmbushRaidEngine(_sess().world_state, _game_const)
     result = engine.attempt_ambush(attacker, target, tile_id, troops)
     return ApiResponse.success(result) if result["success"] else ApiResponse.error(400, result["message"])
 
@@ -6518,7 +7701,7 @@ async def attempt_ambush(req: Request):
 @app.post("/api/march/raid")
 async def raid_supply(req: Request):
     """劫掠补给线（需要派遣兵力，细作情报影响成功率，被发现影响好感度）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     data = await req.json()
     raider = data.get("raider_faction", "")
@@ -6526,7 +7709,7 @@ async def raid_supply(req: Request):
     troops = data.get("troops", 0)
 
     from server.core.advanced_features import AmbushRaidEngine
-    engine = AmbushRaidEngine(_world_state, _game_const)
+    engine = AmbushRaidEngine(_sess().world_state, _game_const)
     result = engine.raid_supply_line(raider, target, troops)
     return ApiResponse.success(result) if result["success"] else ApiResponse.error(400, result["message"])
 
@@ -6534,7 +7717,7 @@ async def raid_supply(req: Request):
 @app.post("/api/march/border_raid")
 async def border_raid(req: Request):
     """边境劫掠"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     data = await req.json()
     raider = data.get("raider_faction", "")
@@ -6542,7 +7725,7 @@ async def border_raid(req: Request):
     troops = data.get("troops", 0)
 
     from server.core.advanced_features import AmbushRaidEngine
-    engine = AmbushRaidEngine(_world_state, _game_const)
+    engine = AmbushRaidEngine(_sess().world_state, _game_const)
     result = engine.border_raid(raider, target, troops)
     return ApiResponse.success(result) if result["success"] else ApiResponse.error(400, result["message"])
 
@@ -6552,14 +7735,14 @@ async def border_raid(req: Request):
 @app.post("/api/diplomacy/vassal/annex")
 async def annex_vassal(req: Request):
     """吞并附庸"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     data = await req.json()
     suzerain = data.get("suzerain_id", "")
     vassal = data.get("vassal_id", "")
 
     from server.core.advanced_features import VassalAnnexEngine
-    engine = VassalAnnexEngine(_world_state, _game_const)
+    engine = VassalAnnexEngine(_sess().world_state, _game_const)
     result = engine.annex_vassal(suzerain, vassal)
     return ApiResponse.success(result) if result["success"] else ApiResponse.error(400, result["message"])
 
@@ -6567,11 +7750,11 @@ async def annex_vassal(req: Request):
 @app.get("/api/diplomacy/vassal/check_independence/{suzerain_id}/{vassal_id}")
 async def check_vassal_independence(suzerain_id: str, vassal_id: str):
     """检查附庸独立战争"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     from server.core.advanced_features import VassalAnnexEngine
-    engine = VassalAnnexEngine(_world_state, _game_const)
+    engine = VassalAnnexEngine(_sess().world_state, _game_const)
     result = engine.check_vassal_independence(suzerain_id, vassal_id)
     return ApiResponse.success(result or {"independence_declared": False})
 
@@ -6581,14 +7764,14 @@ async def check_vassal_independence(suzerain_id: str, vassal_id: str):
 @app.post("/api/spy/double_agent")
 async def turn_double_agent(req: Request):
     """策反双面间谍"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     data = await req.json()
     owner = data.get("owner_faction", "")
     target = data.get("target_faction", "")
 
     from server.core.advanced_features import AdvancedSpyEngine
-    engine = AdvancedSpyEngine(_world_state, _game_const)
+    engine = AdvancedSpyEngine(_sess().world_state, _game_const)
     result = engine.turn_double_agent(owner, target)
     return ApiResponse.success(result) if result["success"] else ApiResponse.error(400, result["message"])
 
@@ -6596,7 +7779,7 @@ async def turn_double_agent(req: Request):
 @app.post("/api/spy/false_intel")
 async def plant_false_intel(req: Request):
     """植入假情报"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     data = await req.json()
     planter = data.get("planter_faction", "")
@@ -6605,7 +7788,7 @@ async def plant_false_intel(req: Request):
     fake_data = data.get("fake_data", {})
 
     from server.core.advanced_features import AdvancedSpyEngine
-    engine = AdvancedSpyEngine(_world_state, _game_const)
+    engine = AdvancedSpyEngine(_sess().world_state, _game_const)
     result = engine.plant_false_intel(planter, target, intel_type, fake_data)
     return ApiResponse.success(result) if result["success"] else ApiResponse.error(400, result["message"])
 
@@ -6613,14 +7796,14 @@ async def plant_false_intel(req: Request):
 @app.post("/api/spy/counter")
 async def counter_spy(req: Request):
     """反间行动"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     data = await req.json()
     owner = data.get("owner_faction", "")
     target = data.get("target_faction", "")
 
     from server.core.advanced_features import AdvancedSpyEngine
-    engine = AdvancedSpyEngine(_world_state, _game_const)
+    engine = AdvancedSpyEngine(_sess().world_state, _game_const)
     result = engine.counter_spy(owner, target)
     return ApiResponse.success(result) if result["success"] else ApiResponse.error(400, result["message"])
 
@@ -6630,14 +7813,14 @@ async def counter_spy(req: Request):
 @app.post("/api/diplomacy/hostage/send")
 async def send_hostage(req: Request):
     """派遣质子"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     data = await req.json()
     sender = data.get("sender_faction", "")
     receiver = data.get("receiver_faction", "")
 
     from server.core.advanced_features import AdvancedDiplomacyEngine
-    engine = AdvancedDiplomacyEngine(_world_state, _game_const)
+    engine = AdvancedDiplomacyEngine(_sess().world_state, _game_const)
     result = engine.send_hostage(sender, receiver)
     return ApiResponse.success(result) if result["success"] else ApiResponse.error(400, result["message"])
 
@@ -6645,14 +7828,14 @@ async def send_hostage(req: Request):
 @app.post("/api/diplomacy/hostage/recall")
 async def recall_hostage(req: Request):
     """召回质子"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     data = await req.json()
     sender = data.get("sender_faction", "")
     receiver = data.get("receiver_faction", "")
 
     from server.core.advanced_features import AdvancedDiplomacyEngine
-    engine = AdvancedDiplomacyEngine(_world_state, _game_const)
+    engine = AdvancedDiplomacyEngine(_sess().world_state, _game_const)
     result = engine.recall_hostage(sender, receiver)
     return ApiResponse.success(result) if result["success"] else ApiResponse.error(400, result["message"])
 
@@ -6660,16 +7843,15 @@ async def recall_hostage(req: Request):
 # --- 宗室高级功能 ---
 
 @app.post("/api/royal/move_capital")
-async def move_capital(req: Request):
+async def move_capital(body: MoveCapitalRequest):
     """迁都"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
-    data = await req.json()
-    faction_id = data.get("faction_id", "")
-    new_tile_id = data.get("new_tile_id", "")
+    faction_id = body.faction_id
+    new_tile_id = body.new_tile_id
 
     from server.core.advanced_features import RoyalAdvancedEngine
-    engine = RoyalAdvancedEngine(_world_state, _game_const)
+    engine = RoyalAdvancedEngine(_sess().world_state, _game_const)
     result = engine.move_capital(faction_id, new_tile_id)
     return ApiResponse.success(result) if result["success"] else ApiResponse.error(400, result["message"])
 
@@ -6677,17 +7859,17 @@ async def move_capital(req: Request):
 @app.get("/api/court/capital-candidates/{faction_id}")
 async def get_capital_candidates(faction_id: str):
     """获取可选都城列表（含战略评估）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
-    faction = _world_state.factions.get(faction_id)
+    faction = _sess().world_state.factions.get(faction_id)
     if not faction:
         return ApiResponse.not_found(f"势力 {faction_id} 不存在")
 
     current_capital_id = faction.capital_tile or getattr(faction, 'capital', '')
-    current_tile = _world_state.get_tile(current_capital_id) if current_capital_id else None
+    current_tile = _sess().world_state.get_tile(current_capital_id) if current_capital_id else None
 
     candidates = []
-    for t in _world_state.tiles.values():
+    for t in _sess().world_state.tiles.values():
         if t.faction_id != faction_id:
             continue
         if t.tile_id == current_capital_id:
@@ -6811,13 +7993,13 @@ async def get_capital_candidates(faction_id: str):
 @app.get("/api/court/capital-history/{faction_id}")
 async def get_capital_history(faction_id: str):
     """获取势力迁都历史"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
-    history = [d for d in _world_state.capital_history if d.get("faction_id") == faction_id]
+    history = [d for d in _sess().world_state.capital_history if d.get("faction_id") == faction_id]
     history.sort(key=lambda x: (x.get("round", 0), x.get("record_id", "")), reverse=True)
-    faction = _world_state.factions.get(faction_id)
+    faction = _sess().world_state.factions.get(faction_id)
     current_capital_id = faction.capital_tile or getattr(faction, 'capital', '') if faction else ""
-    current_tile = _world_state.get_tile(current_capital_id) if current_capital_id else None
+    current_tile = _sess().world_state.get_tile(current_capital_id) if current_capital_id else None
     return ApiResponse.success({
         "faction_id": faction_id,
         "current_capital": current_tile.tile_name if current_tile else current_capital_id,
@@ -6829,13 +8011,13 @@ async def get_capital_history(faction_id: str):
 @app.post("/api/royal/sacrifice")
 async def perform_sacrifice(req: Request):
     """祭祀天地"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     data = await req.json()
     faction_id = data.get("faction_id", "")
 
     from server.core.advanced_features import RoyalAdvancedEngine
-    engine = RoyalAdvancedEngine(_world_state, _game_const)
+    engine = RoyalAdvancedEngine(_sess().world_state, _game_const)
     result = engine.perform_sacrifice(faction_id)
     return ApiResponse.success(result) if result["success"] else ApiResponse.error(400, result["message"])
 
@@ -6843,16 +8025,15 @@ async def perform_sacrifice(req: Request):
 # --- 官员系统 ---
 
 @app.post("/api/court/recruit_officials")
-async def recruit_officials(req: Request):
+async def recruit_officials(body: RecruitOfficialsRequest):
     """科举选拔官员"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
-    data = await req.json()
-    faction_id = data.get("faction_id", "")
-    count = data.get("count", 1)
+    faction_id = body.faction_id
+    count = body.count
 
     from server.core.advanced_features import OfficialAdvancedEngine
-    engine = OfficialAdvancedEngine(_world_state, _game_const)
+    engine = OfficialAdvancedEngine(_sess().world_state, _game_const)
     result = engine.recruit_officials(faction_id, count)
     return ApiResponse.success(result) if result["success"] else ApiResponse.error(400, result["message"])
 
@@ -6862,7 +8043,7 @@ async def recruit_officials(req: Request):
 @app.post("/api/court/apply-debate-result")
 async def apply_debate_result(req: Request):
     """廷议决议落实 - 君主对廷议结果做出裁决并影响朝纲"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     data = await req.json()
     faction_id = data.get("faction_id", "")
@@ -6872,7 +8053,7 @@ async def apply_debate_result(req: Request):
     override_text = data.get("override_text", "")
     debate_npcs = data.get("debate_npcs", [])  # [{npc_id, npc_name, role_label}, ...]
 
-    faction = _world_state.factions.get(faction_id)
+    faction = _sess().world_state.factions.get(faction_id)
     if not faction:
         return ApiResponse.not_found(f"势力 {faction_id} 不存在")
 
@@ -6905,15 +8086,15 @@ async def apply_debate_result(req: Request):
             loyalty_delta = 0
         loyalty_changes[npc_id] = {"name": npc_name, "delta": loyalty_delta}
         # 更新官员记录中的忠诚度
-        for off in _world_state.officials.values():
+        for off in _sess().world_state.officials.values():
             if off.name == npc_name:
                 off.loyalty = max(0, min(100, off.loyalty + loyalty_delta))
                 break
 
     # 记录廷议历史
     debate_record = {
-        "debate_id": f"debate_{_world_state.current_round}_{len(_world_state.debate_history) + 1}",
-        "round": _world_state.current_round,
+        "debate_id": f"debate_{_sess().world_state.current_round}_{len(_sess().world_state.debate_history) + 1}",
+        "round": _sess().world_state.current_round,
         "faction_id": faction_id,
         "topic": topic,
         "summary": summary[:200] if summary else "",
@@ -6922,14 +8103,14 @@ async def apply_debate_result(req: Request):
         "override_text": override_text,
         "npc_count": len(debate_npcs),
         "stability_change": faction.court_stability - old_stability,
-        "year": _world_state.current_year,
-        "season": _world_state.current_season.value if hasattr(_world_state.current_season, 'value') else str(_world_state.current_season),
+        "year": _sess().world_state.current_year,
+        "season": _sess().world_state.current_season.value if hasattr(_sess().world_state.current_season, 'value') else str(_sess().world_state.current_season),
     }
-    _world_state.debate_history.append(debate_record)
+    _sess().world_state.debate_history.append(debate_record)
 
     # 记录到事件日志
-    _world_state.events_log.append({
-        "round": _world_state.current_round,
+    _sess().world_state.events_log.append({
+        "round": _sess().world_state.current_round,
         "event_type": "court_debate_resolved",
         "faction_id": faction_id,
         "faction_name": faction.name,
@@ -6954,9 +8135,9 @@ async def apply_debate_result(req: Request):
 @app.get("/api/court/debate-history/{faction_id}")
 async def get_debate_history(faction_id: str):
     """获取势力廷议历史"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
-    history = [d for d in _world_state.debate_history if d.get("faction_id") == faction_id]
+    history = [d for d in _sess().world_state.debate_history if d.get("faction_id") == faction_id]
     history.sort(key=lambda x: (x.get("round", 0), x.get("debate_id", "")), reverse=True)
     return ApiResponse.success({
         "faction_id": faction_id,
@@ -6970,7 +8151,7 @@ async def get_debate_history(faction_id: str):
 @app.post("/api/march/naval_battle")
 async def naval_battle(req: Request):
     """海战"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     data = await req.json()
     attacker = data.get("attacker_faction", "")
@@ -6980,7 +8161,7 @@ async def naval_battle(req: Request):
     tile_id = data.get("tile_id", "")
 
     from server.core.advanced_features import WorldAdvancedEngine
-    engine = WorldAdvancedEngine(_world_state, _game_const)
+    engine = WorldAdvancedEngine(_sess().world_state, _game_const)
     result = engine.naval_battle(attacker, defender, atk_troops, def_troops, tile_id)
     return ApiResponse.success(result) if result["success"] else ApiResponse.error(400, result["message"])
 
@@ -6994,26 +8175,27 @@ async def naval_battle(req: Request):
 @app.get("/api/building/available/{tile_id}")
 async def get_available_buildings(tile_id: str):
     """获取地块可建造建筑列表"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.building_system import BuildingEngine
-    engine = BuildingEngine(_world_state)
+    engine = BuildingEngine(_sess().world_state)
     available = engine.get_available_buildings(tile_id)
     existing = engine.get_tile_buildings(tile_id)
     return ApiResponse.success({"tile_id": tile_id, "available": available, "existing": existing})
 
 
 @app.post("/api/building/construct")
-async def construct_building(request: dict):
+async def construct_building(body: ConstructBuildingRequest):
+    request = body.model_dump()
     """建造建筑"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     tile_id = request.get("tile_id", "")
     building_type_str = request.get("building_type", "")
     faction_id = request.get("faction_id", "")
 
     # 权限校验
-    player = _world_state.get_player_faction()
+    player = _sess().world_state.get_player_faction()
     if not player:
         return ApiResponse.forbidden("未找到玩家势力")
     if faction_id != player.faction_id:
@@ -7026,7 +8208,7 @@ async def construct_building(request: dict):
         return ApiResponse.bad_request(f"无效建筑类型: {building_type_str}")
 
     from server.core.building_system import BuildingEngine
-    engine = BuildingEngine(_world_state)
+    engine = BuildingEngine(_sess().world_state)
     result = engine.construct_building(tile_id, building_type, faction_id)
     if result["success"]:
         return ApiResponse.success(result)
@@ -7036,19 +8218,19 @@ async def construct_building(request: dict):
 @app.post("/api/building/upgrade")
 async def upgrade_building(request: dict):
     """升级建筑"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     building_id = request.get("building_id", "")
     faction_id = request.get("faction_id", "")
 
-    player = _world_state.get_player_faction()
+    player = _sess().world_state.get_player_faction()
     if not player:
         return ApiResponse.forbidden("未找到玩家势力")
     if faction_id != player.faction_id:
         return ApiResponse.forbidden(f"无权操控其他势力！")
 
     from server.core.building_system import BuildingEngine
-    engine = BuildingEngine(_world_state)
+    engine = BuildingEngine(_sess().world_state)
     result = engine.upgrade_building(building_id, faction_id)
     if result["success"]:
         return ApiResponse.success(result)
@@ -7058,19 +8240,19 @@ async def upgrade_building(request: dict):
 @app.post("/api/building/demolish")
 async def demolish_building(request: dict):
     """拆除建筑"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     building_id = request.get("building_id", "")
     faction_id = request.get("faction_id", "")
 
-    player = _world_state.get_player_faction()
+    player = _sess().world_state.get_player_faction()
     if not player:
         return ApiResponse.forbidden("未找到玩家势力")
     if faction_id != player.faction_id:
         return ApiResponse.forbidden(f"无权操控其他势力！")
 
     from server.core.building_system import BuildingEngine
-    engine = BuildingEngine(_world_state)
+    engine = BuildingEngine(_sess().world_state)
     result = engine.demolish_building(building_id, faction_id)
     if result["success"]:
         return ApiResponse.success(result)
@@ -7102,10 +8284,10 @@ async def get_available_policies():
 @app.get("/api/policy/active/{faction_id}")
 async def get_active_policies(faction_id: str):
     """获取势力当前激活的国策"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.policy_system import PolicyEngine
-    engine = PolicyEngine(_world_state)
+    engine = PolicyEngine(_sess().world_state)
     policies = engine.get_faction_policies(faction_id)
     return ApiResponse.success({"faction_id": faction_id, "active_policies": policies})
 
@@ -7113,12 +8295,12 @@ async def get_active_policies(faction_id: str):
 @app.post("/api/policy/activate")
 async def activate_policy(request: dict):
     """激活国策"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     faction_id = request.get("faction_id", "")
     policy_str = request.get("policy", "")
 
-    player = _world_state.get_player_faction()
+    player = _sess().world_state.get_player_faction()
     if not player:
         return ApiResponse.forbidden("未找到玩家势力")
     if faction_id != player.faction_id:
@@ -7131,7 +8313,7 @@ async def activate_policy(request: dict):
         return ApiResponse.bad_request(f"无效国策: {policy_str}")
 
     from server.core.policy_system import PolicyEngine
-    engine = PolicyEngine(_world_state)
+    engine = PolicyEngine(_sess().world_state)
     result = engine.activate_policy(faction_id, policy_type)
     if result["success"]:
         return ApiResponse.success(result)
@@ -7141,12 +8323,12 @@ async def activate_policy(request: dict):
 @app.post("/api/policy/deactivate")
 async def deactivate_policy(request: dict):
     """废除国策"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     faction_id = request.get("faction_id", "")
     policy_str = request.get("policy", "")
 
-    player = _world_state.get_player_faction()
+    player = _sess().world_state.get_player_faction()
     if not player:
         return ApiResponse.forbidden("未找到玩家势力")
     if faction_id != player.faction_id:
@@ -7159,7 +8341,7 @@ async def deactivate_policy(request: dict):
         return ApiResponse.bad_request(f"无效国策: {policy_str}")
 
     from server.core.policy_system import PolicyEngine
-    engine = PolicyEngine(_world_state)
+    engine = PolicyEngine(_sess().world_state)
     result = engine.deactivate_policy(faction_id, policy_type)
     if result["success"]:
         return ApiResponse.success(result)
@@ -7169,10 +8351,10 @@ async def deactivate_policy(request: dict):
 @app.get("/api/supply/status/{tile_id}")
 async def get_supply_status(tile_id: str):
     """查询地块补给状态"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.supply_system import SupplyEngine
-    engine = SupplyEngine(_world_state)
+    engine = SupplyEngine(_sess().world_state)
     status = engine.get_supply_status(tile_id)
     if status:
         return ApiResponse.success({"tile_id": tile_id, "supply": status})
@@ -7182,10 +8364,10 @@ async def get_supply_status(tile_id: str):
 @app.get("/api/supply/summary/{faction_id}")
 async def get_supply_summary(faction_id: str):
     """获取势力补给摘要"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.supply_system import SupplyEngine
-    engine = SupplyEngine(_world_state)
+    engine = SupplyEngine(_sess().world_state)
     summary = engine.get_faction_supply_summary(faction_id)
     return ApiResponse.success({"faction_id": faction_id, "summary": summary})
 
@@ -7197,13 +8379,13 @@ async def get_supply_summary(faction_id: str):
 @app.post("/api/building/batch-construct")
 async def batch_construct_buildings(request: dict):
     """批量建造建筑"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     tile_ids = request.get("tile_ids", [])
     building_type_str = request.get("building_type", "")
     faction_id = request.get("faction_id", "")
 
-    player = _world_state.get_player_faction()
+    player = _sess().world_state.get_player_faction()
     if not player:
         return ApiResponse.forbidden("未找到玩家势力")
     if faction_id != player.faction_id:
@@ -7216,7 +8398,7 @@ async def batch_construct_buildings(request: dict):
         return ApiResponse.bad_request(f"无效建筑类型: {building_type_str}")
 
     from server.core.building_system import BuildingEngine
-    engine = BuildingEngine(_world_state)
+    engine = BuildingEngine(_sess().world_state)
 
     results = []
     total_cost = 0
@@ -7240,14 +8422,15 @@ async def batch_construct_buildings(request: dict):
 
 
 @app.post("/api/military/batch-recruit")
-async def batch_recruit_troops(request: dict):
+async def batch_recruit_troops(body: BatchRecruitRequest):
+    request = body.model_dump()
     """批量征兵"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     recruitments = request.get("recruitments", [])  # [{tile_id, amount}, ...]
     faction_id = request.get("faction_id", "")
 
-    player = _world_state.get_player_faction()
+    player = _sess().world_state.get_player_faction()
     if not player:
         return ApiResponse.forbidden("未找到玩家势力")
     if faction_id != player.faction_id:
@@ -7261,7 +8444,7 @@ async def batch_recruit_troops(request: dict):
         tile_id = item.get("tile_id", "")
         amount = item.get("amount", 0)
 
-        tile = _world_state.tiles.get(tile_id)
+        tile = _sess().world_state.tiles.get(tile_id)
         if not tile:
             results.append({"tile_id": tile_id, "success": False, "message": "地块不存在", "recruited": 0})
             continue
@@ -7305,10 +8488,10 @@ async def batch_recruit_troops(request: dict):
 @app.get("/api/tiles/owned/{faction_id}")
 async def get_owned_tiles_summary(faction_id: str):
     """获取势力所有地块摘要（供批量操作面板使用）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     tiles_summary = []
-    for tile_id, tile in _world_state.tiles.items():
+    for tile_id, tile in _sess().world_state.tiles.items():
         if tile.faction_id == faction_id:
             tiles_summary.append({
                 "tile_id": tile_id,
@@ -7335,9 +8518,9 @@ async def get_owned_tiles_summary(faction_id: str):
 @app.get("/api/generals/{faction_id}")
 async def get_faction_generals(faction_id: str):
     """获取势力所有武将"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
-    generals = _world_state.__dict__.get("_generals", {}).get(faction_id, [])
+    generals = _sess().world_state.__dict__.get("_generals", {}).get(faction_id, [])
     return ApiResponse.success({"generals": [g.model_dump() if hasattr(g, 'model_dump') else g for g in generals]})
 
 
@@ -7347,20 +8530,20 @@ async def get_talent_market():
     人才市场 - 浏览当前可招募的流浪武将
     每回合自动刷新候选池（复用已生成的流浪武将）
     """
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     from server.core.general_engine import GeneralEngine
-    engine = GeneralEngine(_world_state)
+    engine = GeneralEngine(_sess().world_state)
 
     # 获取当前流浪武将池（faction_id == "_wandering"）
-    wandering = _world_state.__dict__.get("_generals", {}).get("_wandering", [])
+    wandering = _sess().world_state.__dict__.get("_generals", {}).get("_wandering", [])
 
     # 如果流浪武将不足，自动补充
     if len(wandering) < 5:
         new_talents = engine.generate_wandering_talents(8 - len(wandering))
-        _world_state.__dict__.setdefault("_generals", {}).setdefault("_wandering", []).extend(new_talents)
-        wandering = _world_state.__dict__["_generals"]["_wandering"]
+        _sess().world_state.__dict__.setdefault("_generals", {}).setdefault("_wandering", []).extend(new_talents)
+        wandering = _sess().world_state.__dict__["_generals"]["_wandering"]
 
     return ApiResponse.success({
         "talents": [g.model_dump() if hasattr(g, 'model_dump') else g for g in wandering],
@@ -7374,7 +8557,7 @@ async def recruit_talent(req: Request):
     人才市场 - 招募一名流浪武将
     参数: { faction_id, general_id }
     """
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
 
     data = await req.json()
@@ -7385,7 +8568,7 @@ async def recruit_talent(req: Request):
         return ApiResponse.bad_request("请指定势力和武将")
 
     from server.core.general_engine import GeneralEngine
-    engine = GeneralEngine(_world_state)
+    engine = GeneralEngine(_sess().world_state)
     result = engine.recruit_talent(faction_id, general_id, cost_silver=500)
 
     if result["success"]:
@@ -7396,16 +8579,16 @@ async def recruit_talent(req: Request):
 @app.get("/api/legions/{faction_id}")
 async def get_faction_legions(faction_id: str):
     """获取势力所有军团"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
-    legions = _world_state.__dict__.get("_legions", {}).get(faction_id, [])
+    legions = _sess().world_state.__dict__.get("_legions", {}).get(faction_id, [])
     return ApiResponse.success({"legions": [l.model_dump() if hasattr(l, 'model_dump') else l for l in legions]})
 
 
 @app.post("/api/legion/create")
 async def create_legion(request: dict):
     """创建军团"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         from server.core.general_engine import GeneralEngine
@@ -7417,10 +8600,10 @@ async def create_legion(request: dict):
         unit_composition = request.get("unit_composition", {})
         formation_str = request.get("formation", "balanced")
 
-        engine = GeneralEngine(_world_state)
+        engine = GeneralEngine(_sess().world_state)
 
         # 查找武将
-        all_generals = _world_state.__dict__.get("_generals", {}).get(faction_id, [])
+        all_generals = _sess().world_state.__dict__.get("_generals", {}).get(faction_id, [])
         commander = None
         for g in all_generals:
             if g.general_id == commander_id:
@@ -7433,9 +8616,9 @@ async def create_legion(request: dict):
         legion = engine.create_legion(name, faction_id, commander, unit_composition, formation=formation)
 
         # 存储军团
-        if "_legions" not in _world_state.__dict__:
-            _world_state.__dict__["_legions"] = {}
-        _world_state.__dict__["_legions"].setdefault(faction_id, []).append(legion)
+        if "_legions" not in _sess().world_state.__dict__:
+            _sess().world_state.__dict__["_legions"] = {}
+        _sess().world_state.__dict__["_legions"].setdefault(faction_id, []).append(legion)
 
         return ApiResponse.success({"legion": legion.model_dump(), "message": f"军团{name}组建成功"})
     except ValueError as e:
@@ -7447,18 +8630,18 @@ async def create_legion(request: dict):
 @app.post("/api/legion/autonomous")
 async def set_legion_autonomous(request: dict):
     """设置军团委任自主作战"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     legion_id = request.get("legion_id", "")
     enabled = request.get("enabled", False)
     priority = request.get("priority", "defensive")
 
-    all_legions = _world_state.__dict__.get("_legions", {})
+    all_legions = _sess().world_state.__dict__.get("_legions", {})
     for fid, legions in all_legions.items():
         for legion in legions:
             if legion.legion_id == legion_id:
                 from server.core.general_engine import GeneralEngine
-                engine = GeneralEngine(_world_state)
+                engine = GeneralEngine(_sess().world_state)
                 engine.set_legion_autonomous(legion, enabled, priority)
                 return ApiResponse.success({"legion_id": legion_id, "is_autonomous": enabled, "message": "设置成功"})
 
@@ -7468,13 +8651,13 @@ async def set_legion_autonomous(request: dict):
 @app.post("/api/general/assign")
 async def assign_general_to_legion(request: dict):
     """将武将分配给军团"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     general_id = request.get("general_id", "")
     legion_id = request.get("legion_id", "")
 
-    all_generals = _world_state.__dict__.get("_generals", {})
-    all_legions = _world_state.__dict__.get("_legions", {})
+    all_generals = _sess().world_state.__dict__.get("_generals", {})
+    all_legions = _sess().world_state.__dict__.get("_legions", {})
 
     target_general = None
     for fid, gens in all_generals.items():
@@ -7529,12 +8712,12 @@ async def assign_general_to_legion(request: dict):
 @app.post("/api/legion/disband")
 async def disband_legion(request: dict):
     """解散军团"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     legion_id = request.get("legion_id", "")
 
-    all_legions = _world_state.__dict__.get("_legions", {})
-    all_generals = _world_state.__dict__.get("_generals", {})
+    all_legions = _sess().world_state.__dict__.get("_legions", {})
+    all_generals = _sess().world_state.__dict__.get("_generals", {})
 
     for fid, legions in all_legions.items():
         for i, legion in enumerate(legions):
@@ -7565,13 +8748,13 @@ async def disband_legion(request: dict):
 @app.post("/api/legion/remove-subcommander")
 async def remove_subcommander_from_legion(request: dict):
     """从军团中移除副将"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     legion_id = request.get("legion_id", "")
     general_id = request.get("general_id", "")
 
-    all_legions = _world_state.__dict__.get("_legions", {})
-    all_generals = _world_state.__dict__.get("_generals", {})
+    all_legions = _sess().world_state.__dict__.get("_legions", {})
+    all_generals = _sess().world_state.__dict__.get("_generals", {})
 
     for fid, legions in all_legions.items():
         for legion in legions:
@@ -7598,11 +8781,11 @@ async def remove_subcommander_from_legion(request: dict):
 @app.post("/api/diplomacy/strategic-position")
 async def analyze_strategic_position(request: dict):
     """分析战略位置（远交近攻策略）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         from server.core.diplomacy_deep import DeepDiplomacyEngine
-        engine = DeepDiplomacyEngine(_world_state)
+        engine = DeepDiplomacyEngine(_sess().world_state)
         result = engine.analyze_strategic_position(request.get("faction_id", ""))
         return ApiResponse.success(result)
     except Exception as e:
@@ -7612,12 +8795,12 @@ async def analyze_strategic_position(request: dict):
 @app.post("/api/diplomacy/discord")
 async def sow_discord(request: dict):
     """发动离间计"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         from server.core.diplomacy_deep import DeepDiplomacyEngine
         from server.models.generals import DiscordType
-        engine = DeepDiplomacyEngine(_world_state)
+        engine = DeepDiplomacyEngine(_sess().world_state)
         result = engine.sow_discord(
             request.get("schemer_faction", ""),
             (request.get("target_a", ""), request.get("target_b", "")),
@@ -7631,12 +8814,12 @@ async def sow_discord(request: dict):
 @app.post("/api/diplomacy/coopt")
 async def attempt_coopt(request: dict):
     """招安/招降势力"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         from server.core.diplomacy_deep import DeepDiplomacyEngine
         from server.models.generals import CooptType
-        engine = DeepDiplomacyEngine(_world_state)
+        engine = DeepDiplomacyEngine(_sess().world_state)
         result = engine.attempt_coopt(
             request.get("coopter_faction", ""),
             request.get("target_faction", ""),
@@ -7650,11 +8833,11 @@ async def attempt_coopt(request: dict):
 @app.get("/api/diplomacy/recommendations/{faction_id}")
 async def get_diplomatic_recommendations(faction_id: str):
     """获取外交行动推荐"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         from server.core.diplomacy_deep import DeepDiplomacyEngine
-        engine = DeepDiplomacyEngine(_world_state)
+        engine = DeepDiplomacyEngine(_sess().world_state)
         result = engine.recommend_diplomatic_actions(faction_id)
         return ApiResponse.success({"recommendations": result})
     except Exception as e:
@@ -7668,15 +8851,15 @@ async def get_diplomatic_recommendations(faction_id: str):
 @app.get("/api/history/anchors/{faction_id}")
 async def get_history_anchors(faction_id: str):
     """获取历史剧情锚点"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         # 懒初始化锚点引擎
-        if "_history_anchor_engine" not in _world_state.__dict__:
+        if "_history_anchor_engine" not in _sess().world_state.__dict__:
             from server.core.history_anchors import HistoryAnchorEngine
-            _world_state.__dict__["_history_anchor_engine"] = HistoryAnchorEngine(_world_state)
+            _sess().world_state.__dict__["_history_anchor_engine"] = HistoryAnchorEngine(_sess().world_state)
 
-        engine = _world_state.__dict__["_history_anchor_engine"]
+        engine = _sess().world_state.__dict__["_history_anchor_engine"]
         triggered = engine.check_all_anchors()  # 每回合检查
         existing = engine.get_triggered_anchors()
 
@@ -7692,14 +8875,14 @@ async def get_history_anchors(faction_id: str):
 @app.post("/api/history/choose-branch")
 async def choose_history_branch(request: dict):
     """选择历史剧情分支"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
-        if "_history_anchor_engine" not in _world_state.__dict__:
+        if "_history_anchor_engine" not in _sess().world_state.__dict__:
             from server.core.history_anchors import HistoryAnchorEngine
-            _world_state.__dict__["_history_anchor_engine"] = HistoryAnchorEngine(_world_state)
+            _sess().world_state.__dict__["_history_anchor_engine"] = HistoryAnchorEngine(_sess().world_state)
 
-        engine = _world_state.__dict__["_history_anchor_engine"]
+        engine = _sess().world_state.__dict__["_history_anchor_engine"]
         result = engine.choose_branch(
             request.get("anchor_id", ""),
             request.get("branch_id", ""),
@@ -7732,11 +8915,11 @@ async def get_unit_types():
 @app.get("/api/ai/snapshot/{faction_id}")
 async def get_ai_snapshot(faction_id: str):
     """获取AI沙盘快照（统一JSON接口）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         from server.core.ai_interface import AIInterface
-        iface = AIInterface(_world_state)
+        iface = AIInterface(_sess().world_state)
         snapshot = iface.build_snapshot(player_faction_id=faction_id)
         return ApiResponse.success(snapshot.model_dump())
     except Exception as e:
@@ -7746,11 +8929,11 @@ async def get_ai_snapshot(faction_id: str):
 @app.get("/api/ai/faction-detail/{faction_id}")
 async def get_faction_ai_detail(faction_id: str):
     """获取单势力AI详细数据"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         from server.core.ai_interface import AIInterface
-        iface = AIInterface(_world_state)
+        iface = AIInterface(_sess().world_state)
         detail = iface.build_faction_snapshot(faction_id)
         return ApiResponse.success(detail)
     except Exception as e:
@@ -7760,11 +8943,11 @@ async def get_faction_ai_detail(faction_id: str):
 @app.post("/api/ai/civil/analyze")
 async def civil_ai_analyze(request: dict):
     """文官内政AI - 全面分析"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         from server.core.civil_ai import CivilAI
-        ai = CivilAI(_world_state)
+        ai = CivilAI(_sess().world_state)
         result = ai.analyze_faction(request.get("faction_id", ""))
         return ApiResponse.success(result)
     except Exception as e:
@@ -7774,11 +8957,11 @@ async def civil_ai_analyze(request: dict):
 @app.post("/api/ai/civil/build-plan")
 async def civil_ai_build_plan(request: dict):
     """文官内政AI - 城建计划"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         from server.core.civil_ai import CivilAI
-        ai = CivilAI(_world_state)
+        ai = CivilAI(_sess().world_state)
         budget = request.get("budget", 0)
         plan = ai.generate_build_plan(request.get("faction_id", ""), budget)
         return ApiResponse.success(plan.model_dump())
@@ -7789,11 +8972,11 @@ async def civil_ai_build_plan(request: dict):
 @app.post("/api/ai/civil/resource-plan")
 async def civil_ai_resource_plan(request: dict):
     """文官内政AI - 资源调配方案"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         from server.core.civil_ai import CivilAI
-        ai = CivilAI(_world_state)
+        ai = CivilAI(_sess().world_state)
         result = ai.generate_resource_plan(request.get("faction_id", ""))
         return ApiResponse.success(result)
     except Exception as e:
@@ -7803,19 +8986,19 @@ async def civil_ai_resource_plan(request: dict):
 @app.post("/api/ai/civil/auto")
 async def civil_ai_auto(request: dict):
     """文官内政AI - 自动执行（按委任等级）"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         from server.core.civil_ai import CivilAI
         from server.models.ai_protocol import DelegationLevel
-        ai = CivilAI(_world_state)
+        ai = CivilAI(_sess().world_state)
         level_str = request.get("delegation_level", "advisory")
         level = DelegationLevel(level_str)
         result = ai.generate_auto_commands(request.get("faction_id", ""), level)
 
         # 校验
         from server.core.ai_validator import AIValidator
-        validator = AIValidator(_world_state)
+        validator = AIValidator(_sess().world_state)
         report = validator.validate_command_set(result)
 
         return ApiResponse.success({
@@ -7829,11 +9012,11 @@ async def civil_ai_auto(request: dict):
 @app.post("/api/ai/tactical/path")
 async def tactical_ai_path(request: dict):
     """战术AI - 最优行军路径"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         from server.core.tactical_ai import TacticalAI
-        ai = TacticalAI(_world_state)
+        ai = TacticalAI(_sess().world_state)
         result = ai.find_optimal_path(
             request.get("from_tile", ""),
             request.get("to_tile", ""),
@@ -7849,11 +9032,11 @@ async def tactical_ai_path(request: dict):
 @app.post("/api/ai/tactical/battle-predict")
 async def tactical_ai_battle_predict(request: dict):
     """战术AI - 战损推演"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         from server.core.tactical_ai import TacticalAI
-        ai = TacticalAI(_world_state)
+        ai = TacticalAI(_sess().world_state)
         result = ai.predict_battle(
             request.get("from_tile", ""),
             request.get("tile_id", ""),
@@ -7868,11 +9051,11 @@ async def tactical_ai_battle_predict(request: dict):
 @app.post("/api/ai/tactical/garrison")
 async def tactical_ai_garrison(request: dict):
     """战术AI - 驻防优先级"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         from server.core.tactical_ai import TacticalAI
-        ai = TacticalAI(_world_state)
+        ai = TacticalAI(_sess().world_state)
         result = ai.garrison_priority(request.get("faction_id", ""))
         return ApiResponse.success({"priorities": result})
     except Exception as e:
@@ -7882,11 +9065,11 @@ async def tactical_ai_garrison(request: dict):
 @app.post("/api/ai/tactical/plan")
 async def tactical_ai_plan(request: dict):
     """战术AI - 战术作战规划"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         from server.core.tactical_ai import TacticalAI
-        ai = TacticalAI(_world_state)
+        ai = TacticalAI(_sess().world_state)
         result = ai.plan_tactical_operation(
             request.get("faction_id", ""),
             request.get("tile_id", ""),
@@ -7897,19 +9080,20 @@ async def tactical_ai_plan(request: dict):
 
 
 @app.post("/api/ai/faction/decisions")
-async def faction_ai_decisions(request: dict):
+async def faction_ai_decisions(body: FactionAIDecisionRequest):
+    request = body.model_dump()
     """群雄敌对AI - 生成势力决策"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         from server.core.faction_ai_enhanced import FactionAIEngine
-        engine = FactionAIEngine(_world_state, _factions_config)
+        engine = FactionAIEngine(_sess().world_state, _factions_config)
         personality = request.get("personality", "steady")
         result = engine.generate_decisions(request.get("faction_id", ""), personality)
 
         # 校验
         from server.core.ai_validator import AIValidator
-        validator = AIValidator(_world_state)
+        validator = AIValidator(_sess().world_state)
         report = validator.validate_command_set(result)
 
         return ApiResponse.success({
@@ -7921,14 +9105,15 @@ async def faction_ai_decisions(request: dict):
 
 
 @app.post("/api/ai/nl-command")
-async def nl_command_route(request: dict):
+async def nl_command_route(body: NLCommandRequest):
+    request = body.model_dump()
     """自然语言指令路由 - 统一NL操控所有AI模块"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         from server.core.nl_command_router import NLCommandRouter
         from server.models.ai_protocol import NLCommandRequest
-        router = NLCommandRouter(_world_state)
+        router = NLCommandRouter(_sess().world_state)
         # 2026-07-15 修复: route() 接收 NLCommandRequest 对象，非两个独立字符串参数
         nl_request = NLCommandRequest(
             text=request.get("text", ""),
@@ -7943,7 +9128,7 @@ async def nl_command_route(request: dict):
 
         # 校验
         from server.core.ai_validator import AIValidator
-        validator = AIValidator(_world_state)
+        validator = AIValidator(_sess().world_state)
         report = validator.validate_command_set(command_set) if command_set.commands else None
 
         return ApiResponse.success({
@@ -7959,15 +9144,15 @@ async def nl_command_route(request: dict):
 @app.post("/api/ai/delegation/config")
 async def get_delegation_config(request: dict):
     """获取/设置委任配置"""
-    if not _world_state:
+    if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     try:
         fid = request.get("faction_id", "")
         # 存储委任配置
         if "domains" in request:
-            _world_state.__dict__[f"_delegation_{fid}"] = request["domains"]
+            _sess().world_state.__dict__[f"_delegation_{fid}"] = request["domains"]
 
-        existing = _world_state.__dict__.get(f"_delegation_{fid}", {})
+        existing = _sess().world_state.__dict__.get(f"_delegation_{fid}", {})
         return ApiResponse.success({"faction_id": fid, "domains": existing})
     except Exception as e:
         return ApiResponse.server_error(str(e))
@@ -7990,20 +9175,331 @@ async def get_agents_status():
 
 
 # ============================================================
+# 成就系统 API
+# ============================================================
+
+@app.get("/api/achievements/list")
+async def achievements_list(faction_id: str = ""):
+    """获取全部成就定义及指定势力的解锁状态"""
+    try:
+        from server.core.achievement_system import AchievementTracker, ACHIEVEMENTS
+        tracker = AchievementTracker()
+        all_defs = tracker.get_all_achievements()
+        unlocked = tracker.get_unlocked(faction_id) if faction_id else {}
+        newly = tracker.get_newly_unlocked(faction_id) if faction_id else []
+
+        result = []
+        for ach_def in all_defs:
+            is_unlocked = ach_def["id"] in unlocked
+            unlock_info = unlocked.get(ach_def["id"], {})
+            result.append({
+                **ach_def,
+                "unlocked": is_unlocked,
+                "isNew": ach_def["id"] in [n["id"] for n in newly],
+                "unlockedAt": unlock_info.get("unlocked_at", ""),
+                "unlockedRound": unlock_info.get("unlocked_round", 0),
+            })
+
+        return ApiResponse.success({
+            "achievements": result,
+            "total": len(all_defs),
+            "unlocked": sum(1 for a in result if a["unlocked"]),
+        })
+    except Exception as e:
+        logger.error(f"获取成就列表失败: {e}", exc_info=True)
+        return ApiResponse.server_error(str(e))
+
+
+@app.post("/api/achievements/check")
+async def achievements_check(request: dict):
+    """回合结算后检测成就"""
+    if not _sess().world_state:
+        return ApiResponse.forbidden("请先开局")
+    try:
+        from server.core.achievement_system import AchievementTracker, check_achievements
+        tracker = AchievementTracker()
+        newly = check_achievements(_sess().world_state, tracker)
+        return ApiResponse.success({
+            "newly_unlocked": newly,
+            "count": len(newly),
+        })
+    except Exception as e:
+        logger.error(f"成就检测失败: {e}", exc_info=True)
+        return ApiResponse.server_error(str(e))
+
+
+# ============================================================
+# 教程系统 API
+# ============================================================
+
+@app.get("/api/tutorial/state")
+async def tutorial_state(faction_id: str = ""):
+    """获取教程状态"""
+    try:
+        from server.core.tutorial_system import TutorialManager
+        mgr = TutorialManager()
+        state = mgr.get_state(faction_id)
+        step = mgr.get_current_step_detail(faction_id)
+        return ApiResponse.success({
+            "state": state,
+            "current_step": step,
+        })
+    except Exception as e:
+        logger.error(f"获取教程状态失败: {e}", exc_info=True)
+        return ApiResponse.server_error(str(e))
+
+
+@app.post("/api/tutorial/advance")
+async def tutorial_advance(request: dict):
+    """推进教程步骤"""
+    try:
+        from server.core.tutorial_system import TutorialManager
+        mgr = TutorialManager()
+        faction_id = request.get("faction_id", "")
+        state = mgr.advance_step(faction_id)
+        step = mgr.get_current_step_detail(faction_id)
+        return ApiResponse.success({
+            "state": state,
+            "current_step": step,
+        })
+    except Exception as e:
+        logger.error(f"教程推进失败: {e}", exc_info=True)
+        return ApiResponse.server_error(str(e))
+
+
+@app.post("/api/tutorial/skip")
+async def tutorial_skip(request: dict):
+    """跳过教程"""
+    try:
+        from server.core.tutorial_system import TutorialManager
+        mgr = TutorialManager()
+        faction_id = request.get("faction_id", "")
+        state = mgr.skip(faction_id)
+        return ApiResponse.success({"state": state, "skipped": True})
+    except Exception as e:
+        logger.error(f"教程跳过失败: {e}", exc_info=True)
+        return ApiResponse.server_error(str(e))
+
+
+@app.post("/api/tutorial/reset")
+async def tutorial_reset(request: dict):
+    """重置教程"""
+    try:
+        from server.core.tutorial_system import TutorialManager
+        mgr = TutorialManager()
+        faction_id = request.get("faction_id", "")
+        state = mgr.reset(faction_id)
+        step = mgr.get_current_step_detail(faction_id)
+        return ApiResponse.success({
+            "state": state,
+            "current_step": step,
+        })
+    except Exception as e:
+        logger.error(f"教程重置失败: {e}", exc_info=True)
+        return ApiResponse.server_error(str(e))
+
+
+# ============================================================
+# 科技树（国策）API
+# ============================================================
+
+@app.get("/api/tech/tree")
+async def tech_tree(faction_id: str = ""):
+    """获取科技树数据"""
+    if not _sess().world_state:
+        return ApiResponse.forbidden("请先开局")
+    try:
+        import json
+        policies_path = Path(__file__).parent / "data" / "policies.json"
+        policies_data = {}
+        if policies_path.exists():
+            with open(policies_path, "r", encoding="utf-8") as f:
+                policies_data = json.load(f)
+
+        # 获取势力已解锁的国策（统一使用 unlocked_policies）
+        faction = _sess().world_state.factions.get(faction_id) if faction_id else None
+        unlocked = list(faction.unlocked_policies) if faction else []
+        treasury = faction.treasury if faction and hasattr(faction, "treasury") else 0
+
+        # 构建科技树结构（policies.json 为对象格式：{policies: {civil: {branches: [{tiers: [...]}]}}}）
+        categories = []
+        cat_name_map = {"civil": "内政", "military": "军事", "diplomacy": "外交", "economy": "经济"}
+        cat_icon_map = {"civil": "🏛️", "military": "⚔️", "diplomacy": "🤝", "economy": "💰"}
+        policies_root = policies_data.get("policies", {}) if isinstance(policies_data, dict) else {}
+
+        for cat_id, cat_data in policies_root.items():
+            cat_name = cat_name_map.get(cat_id, cat_data.get("name", cat_id))
+            cat_icon = cat_icon_map.get(cat_id, cat_data.get("icon", "📋"))
+            cat_desc = cat_data.get("description", "") if isinstance(cat_data, dict) else ""
+
+            existing_cat = {
+                "id": cat_id, "name": cat_name, "icon": cat_icon,
+                "description": cat_desc, "branches": [],
+            }
+
+            branches = cat_data.get("branches", []) if isinstance(cat_data, dict) else []
+            for branch_data in branches:
+                branch_id = branch_data.get("id", "")
+                branch_name = branch_data.get("name", "")
+                existing_branch = {
+                    "id": branch_id, "name": branch_name, "icon": "📜",
+                    "description": "", "nodes": [],
+                }
+
+                tiers = branch_data.get("tiers", [])
+                for tier in tiers:
+                    policy_id = tier.get("id", "")
+                    requires = tier.get("requires", []) or []
+                    is_unlocked = policy_id in unlocked
+                    available = (not is_unlocked and all(r in unlocked for r in requires)) if requires else (not is_unlocked)
+
+                    existing_branch["nodes"].append({
+                        "id": policy_id,
+                        "name": tier.get("name", ""),
+                        "tier": tier.get("tier", 1),
+                        "cost": tier.get("cost", 100),
+                        "requires": requires,
+                        "effects": tier.get("effects", {}),
+                        "description": tier.get("description", ""),
+                        "unlocked": is_unlocked,
+                        "available": available,
+                    })
+
+                existing_cat["branches"].append(existing_branch)
+
+            categories.append(existing_cat)
+
+        return ApiResponse.success({
+            "categories": categories,
+            "unlocked_policies": unlocked,
+            "treasury": treasury,
+        })
+    except Exception as e:
+        logger.error(f"获取科技树失败: {e}", exc_info=True)
+        return ApiResponse.server_error(str(e))
+
+
+@app.post("/api/tech/research")
+async def tech_research(request: dict):
+    """研究一项国策"""
+    if not _sess().world_state:
+        return ApiResponse.forbidden("请先开局")
+    try:
+        faction_id = request.get("faction_id", "")
+        policy_id = request.get("policy_id", "")
+
+        faction = _sess().world_state.factions.get(faction_id)
+        if not faction:
+            return ApiResponse.bad_request("势力不存在")
+
+        # 加载国策配置（policies.json 为对象格式：{policies: {civil: {branches: [{tiers: [...]}]}}}）
+        import json
+        policies_path = Path(__file__).parent / "data" / "policies.json"
+        if not policies_path.exists():
+            return ApiResponse.bad_request("国策数据不存在")
+        with open(policies_path, "r", encoding="utf-8") as f:
+            policies_data = json.load(f)
+
+        # 遍历嵌套结构查找国策定义
+        policy_def = None
+        policies_root = policies_data.get("policies", {}) if isinstance(policies_data, dict) else {}
+        for cat_data in policies_root.values():
+            if not isinstance(cat_data, dict):
+                continue
+            for branch_data in cat_data.get("branches", []):
+                for tier in branch_data.get("tiers", []):
+                    if tier.get("id") == policy_id:
+                        policy_def = tier
+                        break
+                if policy_def:
+                    break
+            if policy_def:
+                break
+        if not policy_def:
+            return ApiResponse.bad_request(f"国策不存在: {policy_id}")
+
+        # 检查前置（统一使用 unlocked_policies）
+        unlocked = faction.unlocked_policies if hasattr(faction, "unlocked_policies") else []
+        if policy_id in unlocked:
+            return ApiResponse.bad_request("该政策已研究")
+        for req in (policy_def.get("requires") or []):
+            if req not in unlocked:
+                return ApiResponse.bad_request(f"前置国策未完成: {req}")
+
+        # 扣费
+        cost = policy_def.get("cost", 100)
+        if faction.treasury < cost:
+            return ApiResponse.bad_request(f"库银不足: 需{cost}, 现有{faction.treasury}")
+        faction.treasury -= cost
+
+        # 解锁（写入 unlocked_policies，与 /api/court/unlock-policy 保持一致）
+        faction.unlocked_policies.append(policy_id)
+
+        # 应用效果（与 /api/court/unlock-policy 保持一致）
+        effects = policy_def.get("effects", {})
+        applied_effects = {}
+        for key, val in effects.items():
+            applied_effects[key] = val
+            if key == "realm_stability":
+                faction.realm_stability = min(100, faction.realm_stability + val)
+            elif key == "court_stability":
+                faction.court_stability = min(100, faction.court_stability + val)
+            elif key == "reputation":
+                faction.reputation = min(100, faction.reputation + val)
+            elif key == "grain_storage":
+                faction.grain += val
+            elif key == "treasury_income":
+                faction.treasury += val
+            elif key == "trade_income":
+                faction.treasury += val
+            elif key == "arms_production":
+                faction.arms += val
+            elif key == "culture_bonus":
+                faction.reputation = min(100, faction.reputation + max(0, int(val * 0.5)))
+            elif key == "official_ability_bonus":
+                for oid, off in _sess().world_state.officials.items():
+                    if off.faction_id == faction_id:
+                        off.ability = min(95, off.ability + val)
+            # 其余效果由 PolicyEngine.get_tech_policy_modifiers() 每回合结算
+
+        # 写入治理日志
+        effect_desc = "、".join(f"{k}+{v}" for k, v in applied_effects.items())
+        _sess().world_state.governance_logs.append({
+            "round": _sess().world_state.current_round,
+            "title": f"研究国策: {policy_def.get('name', policy_id)}",
+            "description": f"{faction.name}研究国策「{policy_def.get('name', policy_id)}」，花费银{cost}两。" + (f"效果：{effect_desc}" if effect_desc else ""),
+            "narrative": f"第{_sess().world_state.current_round}回合，{faction.name}采纳变法之策。",
+        })
+
+        return ApiResponse.success({
+            "success": True,
+            "policy_id": policy_id,
+            "policy_name": policy_def.get("name", policy_id),
+            "cost": cost,
+            "treasury": faction.treasury,
+            "effects": effects,
+        })
+    except Exception as e:
+        logger.error(f"科技研究失败: {e}", exc_info=True)
+        return ApiResponse.server_error(str(e))
+
+
+# ============================================================
 # 根路径
 # ============================================================
 
 _frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
 
 @app.get("/")
+@app.head("/")
 async def root():
     """当 dist 存在时返回前端页面，否则返回 API 信息"""
     index_html = _frontend_dist / "index.html"
     if index_html.exists():
         return FileResponse(str(index_html))
     return ApiResponse.success({
-        "name": "元末逐鹿 3.0 API",
-        "version": "3.0.0",
+        "name": "元末逐鹿 4.0 API",
+        "version": "4.0.0",
         "docs": "/docs",
         "health": "/api/health",
     })
@@ -8016,6 +9512,7 @@ async def root():
 # 避开 app.mount("/") 会干扰 FastAPI route 匹配的坑。
 if _frontend_dist.exists():
     @app.get("/{path:path}")
+    @app.head("/{path:path}")
     async def serve_frontend(path: str):
         # 安全：拒绝路径穿越
         if ".." in path or path.startswith("/"):
@@ -8037,7 +9534,12 @@ if _frontend_dist.exists():
 
 def start():
     import uvicorn
-    logger.info("启动元末逐鹿 3.0 API 服务器...")
+    logger.info("启动元末逐鹿 3.0 API 服务器（多玩家会话隔离模式）...")
+    # 初始化会话管理器
+    from server.session_manager import init_session_manager
+    from pathlib import Path
+    _project_root = Path(__file__).parent.parent
+    init_session_manager(_project_root)
     uvicorn.run(
         "server.api_server:app",
         host="0.0.0.0",

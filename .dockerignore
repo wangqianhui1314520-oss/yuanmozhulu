@@ -41,6 +41,25 @@ data/archives/
 .pytest_cache
 .mypy_cache
 
+# 开发产物（审计报告/修复计划等，只用于开发，与游戏运行无关）
+*_AUDIT_*.md
+*_AUDIT_*.html
+*_REPORT*.md
+*_REPORT*.html
+*_FIX_*.md
+*_PLAN*.md
+*_PLAN*.html
+BUG_REPORT*.md
+BUG_AUDIT*.md
+SELF_AUDIT*.md
+COMPREHENSIVE_AUDIT*.md
+GLOBAL_AUDIT_REPORT*.md
+SKILL_OPTIMIZATION_PLAN*.md
+VISUAL_ART_OPTIMIZATION_PLAN*.md
+autoplay_output*.txt
+autoplay_verify*.txt
+test_output.txt
+
 # 临时文件
 *.tmp
 *.swp
