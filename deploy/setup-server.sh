@@ -69,8 +69,8 @@ install_deps() {
     fi
     log_info "Docker Compose ✓"
 
-    # 确保当前用户在 docker 组中
-    if ! groups | grep -q docker; then
+    # 确保当前用户在 docker 组中（root 用户跳过）
+    if [ "$(id -u)" != "0" ] && ! groups | grep -q docker; then
         log_warn "当前用户不在 docker 组，添加中..."
         sudo usermod -aG docker "$USER"
         log_warn "请重新登录以生效，然后重新运行本脚本"
