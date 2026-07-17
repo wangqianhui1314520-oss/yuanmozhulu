@@ -30,7 +30,7 @@ class UnitType(Enum):
 
 
 # ================================================================
-# 势力buff常量（从 factions.json 提取）
+# 势力buff常量（数据源自 factions.json，数值调整参考 game_const.yaml 平衡参数）
 # ================================================================
 FACTION_COMBAT_BUFFS: dict[str, dict] = {
     "faction_yuan": {"cavalry_attack": 0.35},

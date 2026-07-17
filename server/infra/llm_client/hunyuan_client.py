@@ -106,7 +106,7 @@ class TencentHunyuanClient:
         self.agent_group = agent_group  # advisor / law / enemy
         self.fallback_mode = False
         self._fallback_since: float = 0.0  # P3: 记录降级时间，用于自动恢复
-        self._fallback_recovery_interval: float = 600.0  # 10分钟后尝试恢复
+        self._fallback_recovery_interval: float = 60.0  # 60秒后尝试恢复（原600s过于保守）
         self._fallback_lock = asyncio.Lock()  # 保护 fallback_mode 读写竞争
         self._client: Optional[httpx.AsyncClient] = None
         self._set_fallback = self._set_fallback_mode  # 便捷别名

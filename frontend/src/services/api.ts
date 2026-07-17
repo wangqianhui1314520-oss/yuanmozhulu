@@ -102,11 +102,22 @@ if (typeof document !== 'undefined') {
 // ============================================================
 const PLAYER_ID_KEY = 'yuanmo_player_id'
 
+/** 生成 UUID v4，兼容非安全上下文（HTTP） */
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  // 降级：手动生成 UUID v4（HTTP 环境 crypto.randomUUID 不可用）
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16)
+  })
+}
+
 function getPlayerId(): string {
   let pid = localStorage.getItem(PLAYER_ID_KEY)
   if (!pid) {
-    // 生成唯一玩家 ID（UUID v4）
-    pid = 'player_' + crypto.randomUUID()
+    pid = 'player_' + generateUUID()
     localStorage.setItem(PLAYER_ID_KEY, pid)
   }
   return pid
@@ -801,9 +812,10 @@ export async function courtConflict(params: {
 // ----- 战斗 -----
 
 /**
- * [已废弃 v3.2] 战斗结算 — 后端 endpoint 已标注废弃，仅保留向后兼容。
- * 无 Vue 组件主动调用此函数，全局仅 gameStore.resolveBattleAI 引用。
- * 未来迁移方向：行军/战斗统一走 /api/march/resolve（参数结构不同，需同步重构调用方）。
+ * AI 直驱战斗结算 — 用于 autoplay / AI 智能体之间的即时战斗判定。
+ * 与 /api/march/resolve（玩家行军-遭遇战斗）分离，
+ * 本端点跳过行军路径计算，直接计算两军在同一格位的战斗结果。
+ * 唯一调用方：gameStore.resolveBattleAI
  */
 export async function resolveBattle(params: {
   attacker_faction: string
@@ -2438,6 +2450,16 @@ export async function setAIDelegationConfig(params: {
 }): Promise<any> {
   const { data } = await api.post('/ai/delegation/config', params)
   return data.data
+}
+
+/** AI画师：调用混元文生图，生成历史题材水墨画 */
+export async function aiPaint(params: {
+  prompt: string
+  api_key?: string
+  api_base?: string
+}): Promise<{ success: boolean; image_url?: string; base64?: string; format?: string; message?: string }> {
+  const { data } = await api.post('/art/ai-paint', params)
+  return data.success ? data.data : { success: false, message: data.message || '生成失败' }
 }
 
 export default api

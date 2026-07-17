@@ -38,3 +38,8 @@ class ApiResponse:
     @staticmethod
     def server_error(msg: str = "服务器内部异常") -> dict:
         return {"code": 500, "msg": msg, "data": None}
+
+    @staticmethod
+    def fail(msg: str = "操作失败") -> dict:
+        """优雅降级：业务失败（HTTP 200 + code 500 语义）"""
+        return {"code": 500, "msg": msg, "data": None}

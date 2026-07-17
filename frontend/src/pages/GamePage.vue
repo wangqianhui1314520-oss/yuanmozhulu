@@ -12,6 +12,12 @@
   <!-- 主游戏界面 -->
   <div v-else class="game-container">
 
+    <!-- 新手引导浮层（首次访问一次性提示） -->
+    <OnboardingOverlay />
+
+    <!-- 新手教程引导（后端状态机驱动，逐步引导核心操作） -->
+    <TutorialOverlay />
+
 
 
     <!-- ============ 顶层：天命气象 ============ -->
@@ -102,8 +108,9 @@
           <button v-audio class="top-btn" @click="closeAllPanels(); showPolicy = true; panelSide = 'right'" title="国策">策</button>
           <button v-audio class="top-btn" @click="openAdvisorPopupFn(); panelSide = 'right'" title="谋臣献策">谋</button>
           <button v-audio class="top-btn" @click="closeAllPanels(); store.togglePanel('factions'); panelSide = 'right'" title="大势">势</button>
+          <button v-audio class="top-btn" @click="closeAllPanels(); showMuseum = true; panelSide = 'right'" title="史馆札记">史</button>
           <button v-audio class="top-btn" @click="quickSaveHandler" title="快速存档" :disabled="quickSaving">存</button>
-          <button v-audio class="top-btn" @click="$router.push('/save-manager')" title="存档管理">档</button>
+          <button v-audio class="top-btn" @click="navigateToSaveManager" title="存档管理">档</button>
           <button v-audio class="top-btn" @click="closeAllPanels(); showSettings = true; panelSide = 'right'" title="设置">⚙</button>
           <button v-audio class="top-btn" @click="closeAllPanels(); showSecurity = true; panelSide = 'right'" title="EdgeOne安全态势">🛡</button>
           <span class="top-btn-divider"></span>
@@ -136,12 +143,12 @@
       <!-- 中央：沙盘舆图 -->
       <div class="map-surface">
 
-        <!-- 加载中 -->
+        <!-- 加载中 -->  
         <div v-if="isMapLoading" class="map-status-overlay">
           <div class="map-status-content">
             <div class="map-status-spinner"></div>
             <div class="map-status-text">舆图加载中…</div>
-            <div class="map-status-hint">首次加载需获取地图数据</div>
+            <div class="map-status-hint">首次加载需获取地图数据<span v-if="mapLoadTimeout">（加载超时，请<button class="btn-reload-map" @click="loadStaticMap()">重试</button>）</span></div>
           </div>
         </div>
 
@@ -531,6 +538,7 @@
     <AIControlPanel :visible="showAIControl" @close="showAIControl = false" />
     <AchievementPanel :visible="showAchievement" :faction-id="store.playerFactionId" @close="showAchievement = false" />
     <TechTreePanel :visible="showTechTree" :faction-id="store.playerFactionId" @close="showTechTree = false" />
+    <MuseumPanel :visible="showMuseum" @close="showMuseum = false" />
     <EndingPanel v-if="store.showEnding" />
     <!-- 回合大事录圣旨弹窗 -->
     <TurnSummaryScroll
@@ -704,6 +712,40 @@
       :progress="loadingProgress"
       :show-progress="loadingShowProgress"
     />
+
+    <!-- v4.4: 回合过渡动画 -->
+    <TurnTransition
+      :visible="store.showTurnTransition"
+      :prev-round="store.lastRound"
+      :prev-year="store.lastYear"
+      :prev-month="store.lastMonth"
+      :prev-season="store.lastSeason"
+      :new-round="store.currentRound"
+      :new-year="store.currentYear"
+      :new-month="store.currentMonth"
+      :new-season="store.currentSeason"
+      @done="store.closeTurnTransition()"
+    />
+
+    <!-- v4.4: 上回合总结报告 -->
+    <TurnReport
+      :visible="store.showTurnReport"
+      :round="store.currentRound"
+      :year="store.currentYear"
+      :month="store.currentMonth"
+      :season="store.currentSeason"
+      :snapshot="store.lastSnapshot"
+      :battle-events="store.lastBattleEvents"
+      :tile-changes="store.lastTileChanges"
+      :other-events="store.lastOtherEvents"
+      :faction-configs="store.factionConfigMap"
+      :player-faction-id="store.playerFactionId"
+      :narrative="store.turnSummaryNarrative"
+      :narrative-minister="store.turnSummaryMinister"
+      :narrative-title="store.turnSummaryTitle"
+      :loading-narrative="store.turnSummaryLoading"
+      @close="store.closeTurnReport()"
+    />
   </div>
 </template>
 
@@ -753,14 +795,21 @@ import HistoryAnchorPanel from '@/components/HistoryAnchorPanel.vue'
 import AIControlPanel from '@/components/AIControlPanel.vue'
 import EndingPanel from '@/components/EndingPanel.vue'
 import TurnSummaryScroll from '@/components/TurnSummaryScroll.vue'
+import TurnTransition from '@/components/TurnTransition.vue'
+import TurnReport from '@/components/TurnReport.vue'
 import WarPanel from '@/components/WarPanel.vue'
 import PeaceNegotiation from '@/components/PeaceNegotiation.vue'
 import GameEventOverlay from '@/components/GameEventOverlay.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import AchievementPanel from '@/components/AchievementPanel.vue'
 import TechTreePanel from '@/components/TechTreePanel.vue'
+import MuseumPanel from '@/components/MuseumPanel.vue'
+import OnboardingOverlay from '@/components/OnboardingOverlay.vue'
+import TutorialOverlay from '@/components/TutorialOverlay.vue'
+import { useTutorialStore } from '@/stores/tutorialStore'
 import type { GameEvent as GameEventType } from '@/components/GameEventOverlay.vue'
 import { audioManager } from '@/utils/audioManager'
+import { storeToRefs } from 'pinia'
 import { useGameAudioBridge } from '@/audio/gameAudioBridge'
 import {
   sfxTerritoryGain, sfxTerritoryLose, sfxBattleVictory, sfxBattleDefeat,
@@ -771,6 +820,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 const store = useGameStore()
+const tutorialStore = useTutorialStore()
 
 const showPolicy = ref(false)
 const showAdvisor = ref(false)
@@ -788,16 +838,18 @@ const showHistory = ref(false)
 const showAIControl = ref(false)
 const showAchievement = ref(false)
 const showTechTree = ref(false)
+const showMuseum = ref(false)
 
 // ===== 游戏音频桥接（场景氛围 + 事件音效） =====
+const { showWarPanel, showEnding, endingData, isProcessing, currentRound } = storeToRefs(store)
 const gameAudio = useGameAudioBridge({
-  showWarPanel: store.showWarPanel,
+  showWarPanel,
   showDiplomacyPanel: showDiplomacyDeep,
   showPolicyPanel: showPolicy,
-  showEnding: store.showEnding,
-  endingData: store.endingData,
-  isProcessing: store.isProcessing,
-  currentRound: store.currentRound,
+  showEnding,
+  endingData,
+  isProcessing,
+  currentRound,
   isBgmMuted: computed(() => !audioManager.isBgmPlaying()),
 })
 
@@ -1383,6 +1435,7 @@ const staticMapTiles = ref<Record<string, HexTile>>({})  // tile_id → HexTile
 const staticBoundaries = ref<BoundaryData | null>(null)
 const staticOutlines = ref<AdminOutline[] | null>(null)
 const isMapLoading = ref(true)
+const mapLoadTimeout = ref(false)  // 30秒超时后显示重试按钮
 
 /** 合并静态地图 + 运行时势力归属 → 供 HexMapView 渲染 */
 const hexMapTiles = computed<HexTile[]>(() => {
@@ -1454,6 +1507,9 @@ function ingestMapTiles(data: any) {
 async function loadStaticMap() {
   if (Object.keys(staticMapTiles.value).length > 0) return  // 已加载
   isMapLoading.value = true
+  mapLoadTimeout.value = false
+  // 30秒超时：若地图数据迟迟未到，显示重试按钮
+  const timeoutTimer = setTimeout(() => { mapLoadTimeout.value = true }, 30000)
 
   let tilesLoaded = false
 
@@ -1492,7 +1548,10 @@ async function loadStaticMap() {
   }
 
   // ✓ 地块数据就绪 → 立即显示地图，边界线/图层配置后台异步加载
-  if (tilesLoaded) isMapLoading.value = false
+  if (tilesLoaded) {
+    isMapLoading.value = false
+    clearTimeout(timeoutTimer)
+  }
 
   // 2) 边界线 + 行省轮廓 (API → 本地 JSON，3秒超时竞速)
   try {
@@ -1545,6 +1604,8 @@ async function loadStaticMap() {
   }
 
   isMapLoading.value = false
+  mapLoadTimeout.value = false
+  clearTimeout(timeoutTimer)
 }
 
 // 玩家势力颜色
@@ -1653,6 +1714,7 @@ const rightToolbarItems = [
   { id: 'spy', icon: '🕵️', label: '谍报' },
   { id: 'culture', icon: '📜', label: '民俗' },
   { id: 'law', icon: '⚖️', label: '律法' },
+  { id: 'law-interrogate', icon: '🔍', label: '刑讯' },
   { id: 'royal', icon: '👑', label: '宗室' },
   { id: 'territory', icon: '🗺️', label: '领土' },
   { id: 'faction_network', icon: '🕸️', label: '势力图' },
@@ -1669,6 +1731,7 @@ const rightToolbarItems = [
   { id: 'replay', icon: '⏪', label: '回放' },
   { id: 'achievement', icon: '🏆', label: '功勋' },
   { id: 'techTree', icon: '🌳', label: '国策' },
+  { id: 'museum', icon: '🏛', label: '史馆' },
 ] as const
 
 /** 当前弹出面板所在侧 */
@@ -1690,6 +1753,7 @@ function isToolActive(id: string): boolean {
   if (id === 'security') return showSecurity.value
   if (id === 'achievement') return showAchievement.value
   if (id === 'techTree') return showTechTree.value
+  if (id === 'museum') return showMuseum.value
   return store.activePanel === id
 }
 
@@ -1711,15 +1775,28 @@ function closeAllPanels() {
   showReplay.value = false
   showAchievement.value = false
   showTechTree.value = false
-  // 关闭 store 管理的面板（行军/战争/和平谈判）
+  showMuseum.value = false
+  // 关闭 store 管理的面板（行军/战争/和平谈判/结局/回合大事录）
   store.showMarchPanel = false
   store.showWarPanel = false
   store.showPeacePanel = false
+  store.showEnding = false
+  store.showTurnSummary = false
   // 关闭事件详情 / 圣旨结果 / 圣旨抽屉
   eventDetail.value = null
   edictResult.value = null
   edictDrawerOpen.value = false
   panelSide.value = ''
+}
+
+/** 导航至存档管理页：先清理全部面板 → 等待 DOM 卸载 → 再跳转。
+ *  确保 GamePage 的 Konva 重 DOM 在 Vue 过渡前进入干净状态，
+ *  避免 mode="out-in" 因大量 canvas 拆卸卡住 transitionend。 */
+async function navigateToSaveManager() {
+  closeAllPanels()
+  await nextTick()
+  sessionStorage.setItem('_skip_transition', '1')
+  router.push('/save-manager')
 }
 
 /** 一键快速存档 */
@@ -1759,6 +1836,7 @@ async function onToolClick(tool: { id: string }) {
   if (tool.id === 'security') { showSecurity.value = true; return }
   if (tool.id === 'achievement') { showAchievement.value = true; return }
   if (tool.id === 'techTree') { showTechTree.value = true; return }
+  if (tool.id === 'museum') { showMuseum.value = true; return }
   store.activePanel = tool.id as any
 }
 
@@ -2003,30 +2081,11 @@ async function handleAdvanceTurn() {
   sfxTurnAdvance()
 
   // 显示加载覆盖层
-  showLoading('天下推演', '诸谋臣正在研判时局，天道正在运转...', true)
-  updateLoadingProgress(10, 'A1 谋策阁 研判局势...')
+  showLoading('天下推演', 'AI 正在推演天下大势，请稍候…', true)
 
   try {
-    // 模拟加载阶段（实际的 AI 推演在服务端）
-    const progressStages = [
-      { pct: 20, msg: 'A2 群雄殿 各方势力决策...' },
-      { pct: 40, msg: 'A3 律法堂 朝政运转...' },
-      { pct: 55, msg: 'A5 司天台 天象异变...' },
-      { pct: 70, msg: 'A6 外交署 纵横捭阖...' },
-      { pct: 85, msg: '军机结算 粮草周转...' },
-    ]
-
-    let stageIdx = 0
-    const progressTimer = setInterval(() => {
-      if (stageIdx < progressStages.length) {
-        const s = progressStages[stageIdx]
-        updateLoadingProgress(s.pct, s.msg)
-        stageIdx++
-      }
-    }, 600)
-
+    // 后端 AI 推演（实际进度由服务端控制，前端仅等待）
     await store.advanceTurn()
-    clearInterval(progressTimer)
 
     updateLoadingProgress(95, '誊写邸报...')
 
@@ -2253,6 +2312,17 @@ onMounted(async () => {
   await doInit(factionId)
   // 全屏事件由 useFullscreen composable 内部管理，不再重复注册
   window.addEventListener('add-edict-decision', onAddEdictDecision)
+
+  // 新手教程：等待 OnboardingOverlay 关闭后再启动，避免两个浮层叠加
+  const ONBOARDING_KEY = 'yuanmo_onboarding_seen'
+  const initTutorialWhenReady = () => {
+    if (localStorage.getItem(ONBOARDING_KEY)) {
+      tutorialStore.init(factionId)
+    } else {
+      setTimeout(initTutorialWhenReady, 500)
+    }
+  }
+  setTimeout(initTutorialWhenReady, 1200)
 })
 
 onUnmounted(() => {

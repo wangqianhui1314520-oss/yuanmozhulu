@@ -456,7 +456,7 @@ async def _rebuild_clients_with_key(api_key: str):
         }
         _sess().llm_available = True
         _sess().api_key = api_key
-        logger.info(f"LLM客户端已使用玩家 API Key 重建 (key={api_key[:8]}...)")
+        logger.info(f"LLM客户端已使用玩家 API Key 重建")
         return True
     except Exception as e:
         logger.error(f"使用玩家 API Key 重建 LLM 客户端失败: {e}")
@@ -1921,6 +1921,7 @@ async def submit_command(request: dict):
         "farm", "appoint", "dismiss", "execute",
         "prisoner_action", "court_settlement",
         "supply", "reinforce", "retreat", "policy_unlock",
+        "workshop_focus",
     ]
     if action not in valid_actions:
         return ApiResponse.bad_request(f"未知指令类型: {action}，支持: {valid_actions}")
@@ -2239,6 +2240,8 @@ async def advance_turn(request: dict = None):
             # 3.3: 部分阶段失败提示（前端可据此提示玩家数据可能不完整）
             "partial_failure": round_summary.get("partial_failure", False),
             "failed_phases": round_summary.get("failed_phases", []),
+            # v4.4: AI 模式标记（前端可据此展示"AI降级"提示）
+            "ai_mode": "fallback" if not _sess().llm_available else "normal",
         }, f"第 {_sess().world_state.current_round} 回合执行完毕")
     except asyncio.TimeoutError:
         logger.error("回合执行超时（300秒），可能有死锁")
@@ -3498,8 +3501,10 @@ async def court_conflict(request: dict):
 @app.post("/api/battle/resolve")
 async def resolve_battle(request: dict):
     """
-    [已废弃 v3.2] 战斗结算 — 请使用 /api/march/resolve 行军结算
-    本端点保留仅用于向后兼容，前端组件中已无调用。
+    AI 直驱战斗结算 — autoplay / AI 智能体即时战斗判定。
+    跳过行军路径计算，直接计算两军在同一格位的即时战斗结果。
+    与 /api/march/resolve（玩家行军-遭遇战斗）分离，服务于不同调用场景。
+    调用方：gameStore.resolveBattleAI（前端 autoplay / AI 智能体）。
     """
     # P1修复: 类型安全校验 — 前端可能传入 dict/str 等非预期类型导致 TypeError
     attacker_troops = request.get('attacker_troops', 0)
@@ -4537,7 +4542,7 @@ async def save_game(request: dict):
             "filename": filename,
             "round": current_round,
         }, f"存档成功 - 第{current_round}回合")
-    except json.JSONEncodeError as e:
+    except TypeError as e:
         logger.error(f"存档序列化失败: {e}")
         # P3: 清理残留临时文件
         if 'temp_path' in dir() and temp_path.exists():
@@ -4970,7 +4975,7 @@ async def quick_save(request: dict):
             "filename": filename,
             "round": current_round,
         }, f"快速存档成功 - 槽{auto_slot + 1} 第{current_round}回合")
-    except json.JSONEncodeError as e:
+    except TypeError as e:
         logger.error(f"快速存档 JSON 序列化失败: {e}", exc_info=True)
         if 'temp_path' in locals() and temp_path.exists():
             try: temp_path.unlink()
@@ -9509,6 +9514,102 @@ async def tech_research(request: dict):
     except Exception as e:
         logger.error(f"科技研究失败: {e}", exc_info=True)
         return ApiResponse.server_error(str(e))
+
+
+# ============================================================
+# AI画师 — 调用混元文生图（零副作用：仅响应请求，不修改游戏状态）
+# ============================================================
+
+@app.post("/api/art/ai-paint")
+async def ai_paint(fastapi_request: Request):
+    """
+    调用混元文生图 API 生成历史题材画作。
+    请求：{ prompt: str, api_key?: str, api_base?: str }
+    响应：{ success: bool, image_url?: str, base64?: str, message?: str }
+    零副作用：不写入磁盘，不修改游戏状态，API 不可用时优雅降级。
+    """
+    try:
+        request = await fastapi_request.json()
+    except Exception:
+        return ApiResponse.fail("请求体格式错误，需要 JSON")
+
+    prompt = (request.get("prompt") or "").strip()
+    if not prompt:
+        return ApiResponse.fail("prompt 不能为空")
+
+    # 强制中文水墨历史风格 + 安全约束
+    safe_prompt = (
+        f"Chinese ink wash painting, historical art style, Yuan Dynasty (14th century): "
+        f"{prompt}. Traditional Chinese painting technique, elegant composition."
+    )
+
+    # 优先使用请求中传入的玩家API Key，否则使用服务端环境变量
+    api_key = (request.get("api_key") or "").strip()
+    if not api_key:
+        api_key = os.getenv("TENCENT_API_KEY", "")
+    if not api_key:
+        return ApiResponse.fail("AI画师服务未配置 API Key，请在设置→AI模型中配置画师 API Key，或联系管理员配置服务端密钥")
+
+    import httpx
+    api_base = (request.get("api_base") or "").strip()
+    if not api_base:
+        api_base = os.getenv("TENCENT_TOKENHUB_URL", "")
+    candidates = []
+    if api_base:
+        candidates.append(api_base.rstrip("/"))
+    candidates.append("https://copilot.tencent.com/v2")
+
+    payload = {
+        "model": "hunyuan-vision",
+        "prompt": safe_prompt,
+        "size": "1024x1024",
+        "n": 1,
+        "style": "chinese-ink-wash",
+    }
+
+    last_error = ""
+    for base_url in candidates:
+        url = f"{base_url}/images/generations"
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(90)) as client:
+                resp = await client.post(
+                    url,
+                    json=payload,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    image_url = (
+                        data.get("data", [{}])[0].get("url", "")
+                        or data.get("data", [{}])[0].get("b64_json", "")
+                    )
+                    if image_url:
+                        if image_url.startswith("http"):
+                            return ApiResponse.success({
+                                "image_url": image_url,
+                                "format": "url",
+                            })
+                        else:
+                            return ApiResponse.success({
+                                "base64": image_url,
+                                "format": "base64",
+                            })
+                elif resp.status_code == 429:
+                    last_error = "API 额度已耗尽，请稍后再试"
+                elif resp.status_code == 404:
+                    continue  # 尝试下一个端点
+                else:
+                    last_error = f"API 返回 {resp.status_code}"
+        except Exception as e:
+            last_error = str(e)
+            continue
+
+    if last_error:
+        return ApiResponse.fail(f"生成失败: {last_error}")
+    return ApiResponse.fail("所有可用端点均不可达，AI画师暂不可用")
 
 
 # ============================================================

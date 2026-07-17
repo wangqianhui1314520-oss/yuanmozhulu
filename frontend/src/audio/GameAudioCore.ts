@@ -22,9 +22,8 @@ export function getGameAudioContext(): AudioContext {
     _masterGain.gain.value = _masterVolume
     _masterGain.connect(_ctx.destination)
   }
-  if (_ctx.state === 'suspended') {
-    _ctx.resume().catch(() => {})
-  }
+  // 不在无手势上下文中 resume()，避免浏览器警告。
+  // 恢复由 initGameAudio() 的用户手势事件监听器负责。
   return _ctx
 }
 

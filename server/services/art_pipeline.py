@@ -47,15 +47,15 @@ UI_ART_DIR.mkdir(parents=True, exist_ok=True)
 # 九大势力配色体系
 # ============================================================
 FACTION_PROFILES = {
-    "yuan":      {"name": "元廷",   "color": "deep_crimson",   "hex": "#8B0000", "bg": (245, 232, 228), "ink": (80, 25, 20),  "accent": (180, 60, 40),   "label": "正统的黄昏"},
-    "wangbaobao": {"name": "王保保", "color": "cold_bluegrey",  "hex": "#666699", "bg": (230, 232, 240), "ink": (50, 50, 75),   "accent": (100, 100, 150), "label": "最后的蒙古名将"},
-    "mobei":     {"name": "漠北诸部","color": "earth_brown",    "hex": "#887766", "bg": (240, 228, 215), "ink": (70, 55, 40),   "accent": (150, 120, 90),  "label": "草原雄鹰"},
-    "zhuyuan":   {"name": "朱元璋", "color": "blood_red",      "hex": "#DC143C", "bg": (242, 230, 230), "ink": (90, 20, 20),   "accent": (200, 40, 50),   "label": "布衣天子"},
-    "chenyd":    {"name": "陈友谅", "color": "deep_blue",      "hex": "#1E90FF", "bg": (228, 235, 245), "ink": (30, 45, 80),   "accent": (50, 120, 200),  "label": "鄱阳湖之王"},
-    "zhangsc":   {"name": "张士诚", "color": "warm_orange",    "hex": "#FF8C00", "bg": (248, 238, 225), "ink": (80, 50, 25),   "accent": (200, 120, 40),  "label": "江南首富"},
-    "xushouhui": {"name": "徐寿辉", "color": "earth_red",      "hex": "#996633", "bg": (242, 235, 225), "ink": (70, 45, 25),   "accent": (160, 90, 50),   "label": "红巾先驱"},
-    "fangguozhen":{"name": "方国珍","color": "sea_green",      "hex": "#20B2AA", "bg": (225, 240, 238), "ink": (25, 60, 55),   "accent": (40, 150, 140),  "label": "海商之王"},
-    "mingyz":    {"name": "明玉珍", "color": "earth_gold",     "hex": "#B8860B", "bg": (242, 235, 218), "ink": (65, 50, 25),   "accent": (170, 120, 40),  "label": "蜀道之主"},
+    "faction_yuan":      {"name": "元廷",   "color": "deep_crimson",   "hex": "#8B0000", "bg": (245, 232, 228), "ink": (80, 25, 20),  "accent": (180, 60, 40),   "label": "正统的黄昏"},
+    "faction_wangbaobao": {"name": "王保保", "color": "cold_bluegrey",  "hex": "#666699", "bg": (230, 232, 240), "ink": (50, 50, 75),   "accent": (100, 100, 150), "label": "最后的蒙古名将"},
+    "faction_mobei":     {"name": "漠北诸部","color": "earth_brown",    "hex": "#887766", "bg": (240, 228, 215), "ink": (70, 55, 40),   "accent": (150, 120, 90),  "label": "草原雄鹰"},
+    "faction_zhuyuanzhang":   {"name": "朱元璋", "color": "blood_red",      "hex": "#DC143C", "bg": (242, 230, 230), "ink": (90, 20, 20),   "accent": (200, 40, 50),   "label": "布衣天子"},
+    "faction_chenyouliang":    {"name": "陈友谅", "color": "deep_blue",      "hex": "#1E90FF", "bg": (228, 235, 245), "ink": (30, 45, 80),   "accent": (50, 120, 200),  "label": "鄱阳湖之王"},
+    "faction_zhangshicheng":   {"name": "张士诚", "color": "warm_orange",    "hex": "#FF8C00", "bg": (248, 238, 225), "ink": (80, 50, 25),   "accent": (200, 120, 40),  "label": "江南首富"},
+    "faction_xushouhui": {"name": "徐寿辉", "color": "earth_red",      "hex": "#996633", "bg": (242, 235, 225), "ink": (70, 45, 25),   "accent": (160, 90, 50),   "label": "红巾先驱"},
+    "faction_fangguozhen":{"name": "方国珍","color": "sea_green",      "hex": "#20B2AA", "bg": (225, 240, 238), "ink": (25, 60, 55),   "accent": (40, 150, 140),  "label": "海商之王"},
+    "faction_mingyuzhen":    {"name": "明玉珍", "color": "earth_gold",     "hex": "#B8860B", "bg": (242, 235, 218), "ink": (65, 50, 25),   "accent": (170, 120, 40),  "label": "蜀道之主"},
 }
 
 # ============================================================
@@ -177,55 +177,55 @@ ART_SPECS = [
 # ============================================================
 FACTION_PORTRAIT_SPECS = [
     {
-        "id": "portrait_yuan", "faction": "yuan", "file": "ai_portrait_yuan.png",
+        "id": "portrait_yuan", "faction": "faction_yuan", "file": "ai_portrait_yuan.png",
         "width": 1024, "height": 1024,
         "label": "元顺帝立绘",
         "prompt": "A middle-aged Mongolian emperor in his 40s, wearing golden imperial dragon robes with intricate cloud patterns, sitting on a dragon throne in a dim palace hall. The emperor has a worried expression, with deep-set eyes, a thin mustache, and a tired but dignified bearing. Dark Chinese ink wash art style, side lighting from lanterns casting long shadows. The background is a grand but decaying Yuan Dynasty palace interior with silk curtains and bronze incense burners. Palette: deep crimson (#8B0000), dark gold (#C9A96E), ink black. Inspired by Yuan Dynasty portrait paintings, with textured brushstrokes.",
     },
     {
-        "id": "portrait_wangbaobao", "faction": "wangbaobao", "file": "ai_portrait_wangbaobao.png",
+        "id": "portrait_wangbaobao", "faction": "faction_wangbaobao", "file": "ai_portrait_wangbaobao.png",
         "width": 1024, "height": 1024,
         "label": "王保保立绘",
         "prompt": "A fierce Mongolian warrior-general in his 30s, wearing ornate lamellar armor with fur-trimmed collar, holding a Mongolian saber. He has a proud, defiant expression, with a scar on his cheek, strong jaw, intense dark eyes. Standing on a snow-covered cliff overlooking the northern steppes. Dark Chinese ink wash style, cold blue-grey (#666699) and dark gold (#C9A96E) palette. Wind sweeping snow and horsehair standard behind him. Heroic composition, dynamic pose.",
     },
     {
-        "id": "portrait_mobei", "faction": "mobei", "file": "ai_portrait_mobei.png",
+        "id": "portrait_mobei", "faction": "faction_mobei", "file": "ai_portrait_mobei.png",
         "width": 1024, "height": 1024,
         "label": "漠北大汗立绘",
         "prompt": "A weathered Mongolian tribal chieftain in his 50s, wearing traditional fur and leather nomadic warrior attire, with a bow slung across his back. He has a thick beard, weather-beaten face, fierce hawk-like eyes gazing at the distant horizon. Standing beside a Mongolian horse on the vast green steppe under a stormy sky. Dark ink wash style, earthy brown (#887766) and dark gold palette. Yurt tents and galloping horses in distant background.",
     },
     {
-        "id": "portrait_zhuyuan", "faction": "zhuyuan", "file": "ai_portrait_zhuyuan.png",
+        "id": "portrait_zhuyuan", "faction": "faction_zhuyuanzhang", "file": "ai_portrait_zhuyuan.png",
         "width": 1024, "height": 1024,
         "label": "朱元璋立绘",
         "prompt": "A determined Chinese rebel leader in his early 40s, wearing deep red battle robes with simple leather armor, standing in a war council tent. He has a long face with prominent cheekbones, penetrating eyes showing both wisdom and ruthlessness, a thin mustache. Behind him is a partially visible map on a wooden table. Dark Chinese ink wash style, crimson (#DC143C) and ink black palette. Candlelight illumination. Historically-inspired portrait style, dignified but not ostentatious.",
     },
     {
-        "id": "portrait_chenyd", "faction": "chenyd", "file": "ai_portrait_chenyd.png",
+        "id": "portrait_chenyd", "faction": "faction_chenyouliang", "file": "ai_portrait_chenyd.png",
         "width": 1024, "height": 1024,
         "label": "陈友谅立绘",
         "prompt": "A fierce Chinese warlord in his 40s, wearing ornate blue battle armor with gold trim, standing on the deck of a massive war junk ship. He has a sharp, ambitious face with piercing eyes and a thin black beard. Behind him are towering warship masts, lake waters churning, and distant naval battle smoke. Dark Chinese ink wash style, deep blue (#1E90FF) and dark gold palette. Dramatic stormy lighting.",
     },
     {
-        "id": "portrait_zhangsc", "faction": "zhangsc", "file": "ai_portrait_zhangsc.png",
+        "id": "portrait_zhangsc", "faction": "faction_zhangshicheng", "file": "ai_portrait_zhangsc.png",
         "width": 1024, "height": 1024,
         "label": "张士诚立绘",
         "prompt": "A wealthy-looking Chinese warlord in his late 30s, wearing elegant silk robes in warm orange tones with jade ornaments, sitting in a luxurious garden pavilion in Suzhou. He has a round, prosperous face, calm gentle eyes, looking slightly complacent. Behind him: Jiangnan garden with lotus pond, curved bridges, willow trees. Dark ink wash style, warm orange (#FF8C00) and dark gold palette. Soft afternoon light.",
     },
     {
-        "id": "portrait_xushouhui", "faction": "xushouhui", "file": "ai_portrait_xushouhui.png",
+        "id": "portrait_xushouhui", "faction": "faction_xushouhui", "file": "ai_portrait_xushouhui.png",
         "width": 1024, "height": 1024,
         "label": "徐寿辉立绘",
         "prompt": "A charismatic Chinese rebel leader in his 40s with a spiritual aura, wearing simple robes with Buddhist prayer beads, a red headband (red turban). He has an earnest, zealous expression, with eyes looking upward as if receiving divine mandate. Holding a Buddhist sutra in one hand and a sword in the other. Background: mountain temple with prayer flags, misty peaks. Dark ink wash style, earthy brown (#996633) and crimson palette.",
     },
     {
-        "id": "portrait_fangguozhen", "faction": "fangguozhen", "file": "ai_portrait_fangguozhen.png",
+        "id": "portrait_fangguozhen", "faction": "faction_fangguozhen", "file": "ai_portrait_fangguozhen.png",
         "width": 1024, "height": 1024,
         "label": "方国珍立绘",
         "prompt": "A cunning Chinese maritime merchant-lord in his 40s, wearing practical coastal trader's clothing in sea-green tones with a compass hanging from his belt. He has a shrewd, calculating expression with a slight knowing smile. Standing at the bow of a Chinese junk ship, with a bustling harbor and island archipelago behind him. Dark ink wash style, sea-green (#20B2AA) and ink black palette. Sea spray and dramatic clouds.",
     },
     {
-        "id": "portrait_mingyz", "faction": "mingyz", "file": "ai_portrait_mingyz.png",
+        "id": "portrait_mingyz", "faction": "faction_mingyuzhen", "file": "ai_portrait_mingyz.png",
         "width": 1024, "height": 1024,
         "label": "明玉珍立绘",
         "prompt": "A benevolent-looking Chinese ruler in his 40s, wearing modest imperial robes in dark gold with jade accessories, standing on a cliff overlooking the Sichuan basin with its winding rivers and terraced fields. He has a kind, reserved expression with calm eyes. Behind him: the majestic Three Gorges mountains shrouded in mist, stone fortress walls. Dark ink wash style, earth gold (#B8860B) and ink black palette.",
@@ -236,23 +236,23 @@ FACTION_PORTRAIT_SPECS = [
 # 九大势力都城场景概念图 (1920×1080)
 # ============================================================
 CAPITAL_SCENE_SPECS = [
-    {"id": "capital_yuan",      "faction": "yuan",      "file": "ai_capital_yuan.png",       "width": 1920, "height": 1080, "label": "大都城",
+    {"id": "capital_yuan",      "faction": "faction_yuan",      "file": "ai_capital_yuan.png",       "width": 1920, "height": 1080, "label": "大都城",
      "prompt": "Chinese ink wash landscape painting of Dadu (Khanbaliq/Beijing) in the 14th century Yuan Dynasty. A grand walled city seen from outside, with towering gate towers, Mongol yurt encampments outside the walls, and the Forbidden City-like palace complex within. Snow on the northern mountains in distance. Dark, moody atmosphere. Oil-paper lanterns glowing at dusk. Cinematic wide shot. Palette: dark crimson, ink black, dark gold."},
-    {"id": "capital_wangbaobao","faction": "wangbaobao","file": "ai_capital_wangbaobao.png",  "width": 1920, "height": 1080, "label": "太原城",
+    {"id": "capital_wangbaobao","faction": "faction_wangbaobao","file": "ai_capital_wangbaobao.png",  "width": 1920, "height": 1080, "label": "太原城",
      "prompt": "Chinese ink wash landscape painting of Taiyuan in the 14th century. A northern frontier fortress city on the edge of the steppe, with massive rammed-earth walls, cavalry training grounds with thousands of horses, and snow-capped northern mountains beyond. Mongolian yurt encampments outside the walls. Cinematic wide shot. Cold blue-grey palette."},
-    {"id": "capital_mobei",     "faction": "mobei",     "file": "ai_capital_mobei.png",       "width": 1920, "height": 1080, "label": "和林城",
+    {"id": "capital_mobei",     "faction": "faction_mobei",     "file": "ai_capital_mobei.png",       "width": 1920, "height": 1080, "label": "和林城",
      "prompt": "Chinese ink wash landscape painting of Karakorum in the 14th century. The ancient Mongol capital on the vast grassland steppe, a city of yurts and low wooden buildings surrounding a golden Buddhist temple, with herds of horses stretching to the horizon. Storm clouds gathering over the endless grass sea. Cinematic wide shot. Earth-brown palette."},
-    {"id": "capital_zhuyuan",   "faction": "zhuyuan",   "file": "ai_capital_zhuyuan.png",    "width": 1920, "height": 1080, "label": "应天府",
+    {"id": "capital_zhuyuan",   "faction": "faction_zhuyuanzhang",   "file": "ai_capital_zhuyuan.png",    "width": 1920, "height": 1080, "label": "应天府",
      "prompt": "Chinese ink wash painting of Yingtian (Nanjing) in the 14th century. A fortified city on the south bank of the Yangtze River, with the massive stone city walls, drum towers, and a grand river port with hundreds of trade junks. Purple Mountain visible in background mist. Spring atmosphere with plum blossoms. Cinematic wide shot. Crimson and ink black palette."},
-    {"id": "capital_chenyd",    "faction": "chenyd",    "file": "ai_capital_chenyd.png",     "width": 1920, "height": 1080, "label": "武昌城",
+    {"id": "capital_chenyd",    "faction": "faction_chenyouliang",    "file": "ai_capital_chenyd.png",     "width": 1920, "height": 1080, "label": "武昌城",
      "prompt": "Chinese ink wash painting of Wuchang in the 14th century. A lakeside fortress city where the Han River meets the Yangtze, with towering warship docks, naval shipyards with massive vessels under construction, and fortified river walls. Stormy sky with lightning over the water. Cinematic wide shot. Deep blue and ink black palette."},
-    {"id": "capital_zhangsc",   "faction": "zhangsc",   "file": "ai_capital_zhangsc.png",    "width": 1920, "height": 1080, "label": "平江城",
+    {"id": "capital_zhangsc",   "faction": "faction_zhangshicheng",   "file": "ai_capital_zhangsc.png",    "width": 1920, "height": 1080, "label": "平江城",
      "prompt": "Chinese ink wash painting of Pingjiang (Suzhou) in the 14th century. A prosperous canal city with white-walled buildings, curved stone bridges, silk workshops along the waterways, and elegant garden pavilions. Merchant boats laden with goods. Cherry blossoms and willow trees. Lively market scene along the Grand Canal. Cinematic wide shot. Warm orange-golden palette."},
-    {"id": "capital_xushouhui", "faction": "xushouhui", "file": "ai_capital_xushouhui.png",  "width": 1920, "height": 1080, "label": "襄阳城",
+    {"id": "capital_xushouhui", "faction": "faction_xushouhui", "file": "ai_capital_xushouhui.png",  "width": 1920, "height": 1080, "label": "襄阳城",
      "prompt": "Chinese ink wash painting of Xiangyang in the 14th century. A strategic fortress city on the Han River, with thick stone walls pierced by arrow towers, where the river forms a natural moat. Red turban flags flying from the battlements. Temple pagodas visible within. Sunset lighting creates a dramatic silhouette. Cinematic wide shot. Earth-brown and crimson palette."},
-    {"id": "capital_fangguozhen","faction":"fangguozhen","file": "ai_capital_fangguozhen.png", "width": 1920, "height": 1080, "label": "庆元城",
+    {"id": "capital_fangguozhen","faction":"faction_fangguozhen","file": "ai_capital_fangguozhen.png", "width": 1920, "height": 1080, "label": "庆元城",
      "prompt": "Chinese ink wash painting of Qingyuan (Ningbo) in the 14th century. A bustling coastal port city with a vast natural harbor, hundreds of ocean-going junks with battened sails, island fortifications, lighthouse tower on a hill, and warehouse districts along the waterfront. Sea mist and dramatic clouds. Cinematic wide shot. Sea-green and ink black palette."},
-    {"id": "capital_mingyz",    "faction": "mingyz",    "file": "ai_capital_mingyz.png",     "width": 1920, "height": 1080, "label": "重庆城",
+    {"id": "capital_mingyz",    "faction": "faction_mingyuzhen",    "file": "ai_capital_mingyz.png",     "width": 1920, "height": 1080, "label": "重庆城",
      "prompt": "Chinese ink wash painting of Chongqing in the 14th century. A mountain fortress city built on steep cliffs where two great rivers meet, connected by rope bridges and steep stone stairs. Watchtowers on every peak, surrounded by misty gorges and terraced rice fields climbing the mountainsides. Cinematic wide shot. Earth-gold and ink black palette."},
 ]
 
@@ -528,7 +528,7 @@ def generate_faction_portrait_via_pillow(spec: dict) -> Path:
 
     import random
     faction_id = spec["faction"]
-    profile = FACTION_PROFILES.get(faction_id, FACTION_PROFILES["yuan"])
+    profile = FACTION_PROFILES.get(faction_id, FACTION_PROFILES["faction_yuan"])
     width, height = spec["width"], spec["height"]
     rng = random.Random(hash(spec["id"]) % (2**31))
 
@@ -612,7 +612,7 @@ def generate_faction_portrait_via_pillow(spec: dict) -> Path:
     edraw = ImageDraw.Draw(element)
 
     # 势力背景符号（根据势力类型不同）
-    if faction_id in ("yuan", "wangbaobao", "mobei"):
+    if faction_id in ("faction_yuan", "faction_wangbaobao", "faction_mobei"):
         # 蒙古势力：草原+马匹暗示
         for _ in range(6):
             ex = rng.randint(int(width * 0.1), int(width * 0.9))

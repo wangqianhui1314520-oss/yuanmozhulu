@@ -6,16 +6,37 @@
       <span class="error-msg">{{ globalError }}</span>
       <button class="error-dismiss" @click="dismissError">✕</button>
     </div>
-    <router-view v-slot="{ Component }">
-      <transition name="page-fade" mode="out-in">
-        <component :is="Component" />
+    <router-view v-slot="{ Component, route }">
+      <transition :name="pageFadeName" :mode="pageFadeMode">
+        <component :is="Component" :key="route.path" />
       </transition>
     </router-view>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
+
+// 动态过渡控制：外部可通过 sessionStorage('_skip_transition','1') 跳过本次 out-in 过渡
+// GamePage → SaveManagerPage 时 Konva 重 DOM 拆卸会吞掉 transitionend，需按需跳过
+const pageFadeName = ref<string>('page-fade')
+const pageFadeMode = ref<'out-in' | undefined>('out-in')
+
+watch(() => route.path, () => {
+  if (sessionStorage.getItem('_skip_transition') === '1') {
+    sessionStorage.removeItem('_skip_transition')
+    pageFadeName.value = ''
+    pageFadeMode.value = undefined
+    // 下一帧恢复，后续导航过渡不受影响
+    nextTick(() => {
+      pageFadeName.value = 'page-fade'
+      pageFadeMode.value = 'out-in'
+    })
+  }
+})
 
 const globalError = ref('')
 const errorTimer = ref<ReturnType<typeof setTimeout> | null>(null)

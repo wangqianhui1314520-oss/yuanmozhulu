@@ -116,6 +116,36 @@
                 <span class="token-hint" v-else>🐢 慢</span>
               </div>
             </div>
+            <div class="config-card painter-card">
+              <h4>🎨 AI画师 · 文生图</h4>
+              <p class="config-desc">
+                调用混元文生图 API 生成元末历史题材水墨画。在史馆→画师页面输入描述词即可生成。
+                需自备腾讯云混元 API Key（或使用服务端已配置的全局密钥）。
+              </p>
+              <div class="config-row">
+                <label>API Key</label>
+                <div class="key-input-group">
+                  <input
+                    :type="painterKeyVisible ? 'text' : 'password'"
+                    v-model="painterApiKey"
+                    class="config-input"
+                    :placeholder="painterApiKey ? maskApiKey(painterApiKey) : '输入混元 API Key（留空使用服务端默认）'"
+                  />
+                  <button class="key-toggle" @click="painterKeyVisible = !painterKeyVisible" :title="painterKeyVisible ? '隐藏' : '显示'">
+                    {{ painterKeyVisible ? '🙈' : '👁' }}
+                  </button>
+                </div>
+              </div>
+              <div class="config-row">
+                <label>API地址</label>
+                <input type="text" v-model="painterApiBase" class="config-input" placeholder="留空使用服务端默认地址" />
+              </div>
+              <div class="config-actions">
+                <button class="cfg-btn cfg-save" @click="savePainterConfig">保存画师配置</button>
+                <button class="cfg-btn cfg-reset" @click="clearPainterConfig">清除</button>
+              </div>
+              <p class="status-msg" v-if="painterStatusMsg">{{ painterStatusMsg }}</p>
+            </div>
             <div class="config-actions">
               <button class="cfg-btn cfg-test" @click="testConnection" :disabled="testingModel">
                 {{ testingModel ? '测试中...' : '连通性测试' }}
@@ -637,6 +667,49 @@ function clearElevenLabsKey() {
   } catch { /* ignore */ }
 }
 
+// ========== AI画师 API Key ==========
+const painterApiKey = ref('')
+const painterApiBase = ref('')
+const painterKeyVisible = ref(false)
+const painterStatusMsg = ref('')
+
+function loadPainterConfig() {
+  try {
+    const savedKeys = JSON.parse(localStorage.getItem('yuanmo_llm_api_keys') || '{}')
+    painterApiKey.value = savedKeys?.painter || ''
+    painterApiBase.value = savedKeys?.painterApiBase || ''
+  } catch { /* ignore */ }
+}
+
+function savePainterConfig() {
+  if (!painterApiKey.value.trim()) {
+    painterStatusMsg.value = '⚠ 未输入 Key，将使用服务端默认密钥（可能不可用）'
+  }
+  try {
+    const savedKeys = JSON.parse(localStorage.getItem('yuanmo_llm_api_keys') || '{}')
+    savedKeys['painter'] = painterApiKey.value.trim()
+    savedKeys['painterApiBase'] = painterApiBase.value.trim()
+    localStorage.setItem('yuanmo_llm_api_keys', JSON.stringify(savedKeys))
+    painterStatusMsg.value = painterApiKey.value.trim()
+      ? '✓ 画师 API Key 已保存（仅存本地浏览器，不会上传服务器）'
+      : '✓ 设置已保存，将使用服务端默认密钥'
+  } catch {
+    painterStatusMsg.value = '✗ 保存失败，请检查浏览器存储空间'
+  }
+}
+
+function clearPainterConfig() {
+  painterApiKey.value = ''
+  painterApiBase.value = ''
+  try {
+    const savedKeys = JSON.parse(localStorage.getItem('yuanmo_llm_api_keys') || '{}')
+    delete savedKeys['painter']
+    delete savedKeys['painterApiBase']
+    localStorage.setItem('yuanmo_llm_api_keys', JSON.stringify(savedKeys))
+    painterStatusMsg.value = '✓ 画师配置已清除'
+  } catch { /* ignore */ }
+}
+
 onMounted(async () => {
   try {
     const health = await healthCheck()
@@ -696,6 +769,9 @@ onMounted(async () => {
   loadAudioSettings()
   // 加载 TTS 提供商设置
   loadTtsSettings()
+
+  // 加载 AI画师配置
+  loadPainterConfig()
 
   // 加载画面设置（本地持久化）
   const savedDisplay = localStorage.getItem('yuanmo_display')

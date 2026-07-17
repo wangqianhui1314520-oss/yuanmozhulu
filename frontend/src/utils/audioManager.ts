@@ -108,16 +108,6 @@ export class AudioManager {
     for (const evt of events) {
       document.addEventListener(evt, handler, true)
     }
-
-    // 如果文档已经交互过了（页面刷新等场景），直接标记
-    if (document.readyState === 'complete') {
-      setTimeout(() => {
-        if (!this._userInteracted) {
-          // 页面加载完成后自动尝试一次解锁
-          this._userInteracted = true
-        }
-      }, 500)
-    }
   }
 
   /** 设置主音量 */
@@ -213,6 +203,13 @@ export class AudioManager {
     // 静音状态下不播放
     if (this._isMuted) return
 
+    // 用户尚未交互 → 暂存待交互后播放，避免浏览器 NotAllowedError 警告
+    if (!this._userInteracted) {
+      this._pendingBgmId = track.id
+      this._pendingBgmFadeIn = fadeIn
+      return
+    }
+
     // 淡出并销毁旧BGM播放器，防止内存泄漏
     if (this._bgmPlayer && !this._bgmPlayer.paused) {
       this._fadeOutAndStop(this._bgmPlayer, 1.0)
@@ -236,7 +233,6 @@ export class AudioManager {
     }).catch(err => {
       // 浏览器自动播放策略限制 → 暂存，等用户交互后重试
       if (err.name === 'NotAllowedError') {
-        console.warn('[AudioManager] BGM自动播放被浏览器阻止，等待用户交互后重试')
         this._pendingBgmId = track.id
         this._pendingBgmFadeIn = fadeIn
         return

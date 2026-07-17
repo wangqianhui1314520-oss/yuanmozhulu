@@ -105,6 +105,7 @@ class AgentGuard:
             "marriage", "tribute", "pledge", "vassal",
             "counter_spy", "sabotage", "bribe", "assassinate",
             "survey", "move_capital", "decree", "conscript",
+            "workshop_focus",
         }
 
         self._ioa = get_ioa_engine()

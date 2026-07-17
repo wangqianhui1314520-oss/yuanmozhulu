@@ -25,6 +25,20 @@ civil:
   # 3.0 平衡：元廷debuff下限保护
   yuan_min_treasury_pct: 0.30  # 国库不低于初始30%
   yuan_min_stability: 20       # 民心/稳定度不低于20
+  # v4.4: 人口结构与税收参数（从代码硬编码提取到配置）
+  pop_farmer_ratio: 0.60       # 农民占总人口比例
+  pop_artisan_ratio: 0.15      # 工匠占比
+  pop_merchant_ratio: 0.10     # 商人占比
+  pop_soldier_ratio: 0.15      # 士兵占比
+  morale_tax_high: 70          # 民心高于此值 → 踊跃纳粮 1.1x
+  morale_tax_low: 30           # 民心低于此值 → 抗税打折 0.7x
+  morale_tax_high_mult: 1.1    # 高民心税收倍率
+  morale_tax_low_mult: 0.7     # 低民心税收倍率
+  # 四季税收修正
+  season_tax_spring: 0.9
+  season_tax_summer: 1.0
+  season_tax_autumn: 1.3
+  season_tax_winter: 0.7
 
 march:
   base_march_cost: 10

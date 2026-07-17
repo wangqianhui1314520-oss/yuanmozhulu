@@ -76,13 +76,14 @@ class PopulationStructure:
         return self.farmers + self.artisans + self.merchants + self.soldiers
 
     @classmethod
-    def from_total(cls, total: int) -> "PopulationStructure":
-        """从总人口按默认比例创建（农民60% 工匠15% 商人10% 士兵15%）"""
+    def from_total(cls, total: int, ratios: dict = None) -> "PopulationStructure":
+        """从总人口按比例创建（默认从 game_const.yaml civil 节读取）"""
+        r = ratios or {}
         return cls(
-            farmers=int(total * 0.60),
-            artisans=int(total * 0.15),
-            merchants=int(total * 0.10),
-            soldiers=int(total * 0.15),
+            farmers=int(total * r.get("pop_farmer_ratio", 0.60)),
+            artisans=int(total * r.get("pop_artisan_ratio", 0.15)),
+            merchants=int(total * r.get("pop_merchant_ratio", 0.10)),
+            soldiers=int(total * r.get("pop_soldier_ratio", 0.15)),
         )
 
     def to_dict(self) -> dict:
@@ -133,7 +134,7 @@ class EconomyEngine:
             for tile in self.world.tiles.values():
                 if tile.faction_id != fid or tile.population <= 0:
                     continue
-                self._pop_structure[fid][tile.tile_id] = PopulationStructure.from_total(tile.population)
+                self._pop_structure[fid][tile.tile_id] = PopulationStructure.from_total(tile.population, self.const)
 
     def get_pop_structure(self, tile_id: str) -> Optional[PopulationStructure]:
         """获取地块人口结构"""
@@ -144,7 +145,7 @@ class EconomyEngine:
         if fid not in self._pop_structure:
             self._pop_structure[fid] = {}
         if tile_id not in self._pop_structure[fid]:
-            self._pop_structure[fid][tile_id] = PopulationStructure.from_total(tile.population)
+            self._pop_structure[fid][tile_id] = PopulationStructure.from_total(tile.population, self.const)
         return self._pop_structure[fid][tile_id]
 
     # ================================================================
@@ -171,14 +172,16 @@ class EconomyEngine:
         tile_mult = self._get_tile_tax_mult(tile.tile_type)
 
         # 四季修正
-        season_mult = self._get_season_tax_mult(season)
+        season_mult = self._get_season_tax_mult(season, self.const)
 
-        # 民心修正（渐进）
+        # 民心修正（渐进，阈值与倍率从 game_const.yaml 读取）
         morale = getattr(tile, 'morale', 50)
-        if morale < 30:
-            morale_mult = 0.7  # 抗税打折
-        elif morale > 70:
-            morale_mult = 1.1  # 踊跃纳粮
+        low_threshold = self.const.get("morale_tax_low", 30)
+        high_threshold = self.const.get("morale_tax_high", 70)
+        if morale < low_threshold:
+            morale_mult = self.const.get("morale_tax_low_mult", 0.7)
+        elif morale > high_threshold:
+            morale_mult = self.const.get("morale_tax_high_mult", 1.1)
         else:
             morale_mult = 1.0
 
@@ -218,11 +221,14 @@ class EconomyEngine:
         return mapping.get(tile_type, 0.5)
 
     @staticmethod
-    def _get_season_tax_mult(season: Season) -> float:
-        """四季税收修正"""
+    def _get_season_tax_mult(season: Season, const: dict = None) -> float:
+        """四季税收修正（从 game_const.yaml 读取）"""
+        c = const or {}
         mapping = {
-            Season.SPRING: 0.9, Season.SUMMER: 1.0,
-            Season.AUTUMN: 1.3, Season.WINTER: 0.7,
+            Season.SPRING: c.get("season_tax_spring", 0.9),
+            Season.SUMMER: c.get("season_tax_summer", 1.0),
+            Season.AUTUMN: c.get("season_tax_autumn", 1.3),
+            Season.WINTER: c.get("season_tax_winter", 0.7),
         }
         return mapping.get(season, 1.0)
 

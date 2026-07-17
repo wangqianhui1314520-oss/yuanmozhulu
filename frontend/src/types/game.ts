@@ -516,7 +516,7 @@ export type PanelType =
   | 'advisor' | 'war' | 'diplomacy' | 'policy'
   | 'recruit' | 'march' | 'general' | 'spy'
   | 'ending' | 'replay' | 'settings' | 'security'
-  | 'talent' | 'history' | 'batch_build' | 'batch_recruit'
+  | 'talent' | 'history' | 'batch-build' | 'batch-recruit'
   | 'treasury' | 'factions' | 'court' | 'disaster'
   | 'military' | 'events' | 'construction' | 'ai-strategy'
   | 'audio' | 'law' | 'law-interrogate' | 'royal'
@@ -526,13 +526,7 @@ export type PanelType =
   | 'agent' | 'faction_network' | 'achievement'
   | 'techTree' | 'tutorial' | '';
 
-/** 面板显示状态 */
-export interface PanelVisibility {
-  [key: string]: boolean;
-}
-
-/** 地图视图模式 */
-export type MapViewMode = 'terrain' | 'political' | 'military' | 'economic' | 'admin';
+// PanelVisibility / MapViewMode 已移除 — 唯一使用者 uiStore.ts 为死代码已被清理
 
 /** 地图视口状态 */
 export interface MapViewport {

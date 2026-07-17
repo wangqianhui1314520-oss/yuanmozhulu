@@ -87,7 +87,7 @@ export const useGameStore = defineStore('game', () => {
   const endingData = ref<any>(null)
   const gameStatistics = ref<any>(null)
 
-  // ===== 回合大事录（圣旨弹窗） =====
+  // ===== 回合大事录（圣旨弹窗）（v4.4 保留兼容，新流程走 TurnReport） =====
   const showTurnSummary = ref(false)
   const turnSummaryLoading = ref(false)
   const turnSummaryNarrative = ref('')
@@ -98,6 +98,25 @@ export const useGameStore = defineStore('game', () => {
   const turnSummaryYear = ref(0)
   const turnSummaryMonth = ref(0)
   const turnSummarySeason = ref('')
+
+  // ===== v4.4 回合过渡动画 + 总结报告 =====
+  const showTurnTransition = ref(false)
+  const showTurnReport = ref(false)
+  /** 上回合的势力快照数据 */
+  const lastSnapshot = ref<Record<string, any>>({})
+  /** 上回合的战事事件 */
+  const lastBattleEvents = ref<any[]>([])
+  /** 上回合的其余事件 */
+  const lastOtherEvents = ref<any[]>([])
+  /** 上回合的版图变更 */
+  const lastTileChanges = ref<any[]>([])
+  /** 上回合号（过渡动画用） */
+  const lastRound = ref(0)
+  const lastYear = ref(0)
+  const lastMonth = ref(0)
+  const lastSeason = ref('')
+  /** 势力配置（名称+颜色，从后端获取） */
+  const factionConfigMap = ref<Record<string, { name: string; color: string }>>({})
 
   // ===== UI状态 =====
   const activePanel = ref<PanelType>('')
@@ -293,6 +312,12 @@ export const useGameStore = defineStore('game', () => {
     try {
       const result = await API.advanceTurn()
 
+      // v4.4: 保存上回合值（在 applyWorldState 覆盖前）
+      const prevRoundVal = currentRound.value
+      const prevYearVal = currentYear.value
+      const prevMonthVal = currentMonth.value
+      const prevSeasonVal = currentSeason.value
+
       // 全量同步世界状态（events_log 由后端权威返回，避免本地重复）
       if (result.world_state) {
         _applyWorldState(result.world_state)
@@ -380,13 +405,35 @@ export const useGameStore = defineStore('game', () => {
         })
       }
 
-      // 触发回合大事录弹窗（非首回合 + 非结局）
+      // v4.4: 存储上回合数据供总结报告使用
       if (currentRound.value > 1 && !result.ending) {
+        const currentSnap = result.snapshot?.factions || {}
+        lastSnapshot.value = currentSnap
+        lastTileChanges.value = result.tile_changes || []
+        // 使用 applyWorldState 前保存的旧值
+        lastRound.value = prevRoundVal
+        lastYear.value = prevYearVal
+        lastMonth.value = prevMonthVal
+        lastSeason.value = prevSeasonVal
+
+        // 分类事件
+        const battleTypes = new Set(['battle', 'combat', 'war', 'raid', 'siege', 'conquest', 'ambush'])
+        lastBattleEvents.value = (result.new_events || []).filter(
+          (e: any) => battleTypes.has(e.event_type) || battleTypes.has(e.type)
+        )
+        lastOtherEvents.value = (result.new_events || []).filter(
+          (e: any) => !battleTypes.has(e.event_type) && !battleTypes.has(e.type)
+        ).slice(0, 12)
+
+        // 触发过渡动画（代替原来的 TurnSummaryScroll）
+        showTurnTransition.value = true
+
+        // 同时异步获取 AI 叙事（TurnReport 展示时用）
         triggerTurnSummary(
-          result.current_round || currentRound.value,
-          result.current_year || currentYear.value,
-          result.current_month || currentMonth.value,
-          result.current_season || currentSeason.value,
+          currentRound.value,
+          currentYear.value,
+          currentMonth.value,
+          currentSeason.value,
         )
       }
 
@@ -437,6 +484,17 @@ export const useGameStore = defineStore('game', () => {
   function closeTurnSummary() {
     showTurnSummary.value = false
     turnSummaryLoading.value = false
+  }
+
+  /** 过渡动画结束后 → 显示总结报告 */
+  function closeTurnTransition() {
+    showTurnTransition.value = false
+    showTurnReport.value = true
+  }
+
+  /** 总结报告关闭 */
+  function closeTurnReport() {
+    showTurnReport.value = false
   }
 
   /**
@@ -534,6 +592,16 @@ export const useGameStore = defineStore('game', () => {
         }
       }
       factions.value = cleanFactions
+
+      // v4.4: 从 factions 同步势力配置映射（名称 + 颜色）
+      const configMap: Record<string, { name: string; color: string }> = {}
+      for (const [fid, f] of Object.entries(cleanFactions)) {
+        configMap[fid] = {
+          name: (f as any).name || fid,
+          color: (f as any).color || '#c8a84a',
+        }
+      }
+      factionConfigMap.value = configMap
     }
     if (state.tiles) tiles.value = state.tiles as Record<string, TileState>
     if (state.relations) relations.value = state.relations
@@ -1690,11 +1758,17 @@ export const useGameStore = defineStore('game', () => {
     disasterIndex, activeDisasters,
     // 结局
     showEnding, endingData, gameStatistics,
-    // 回合大事录
+    // 回合大事录（旧，保留兼容）
     showTurnSummary, turnSummaryLoading, turnSummaryNarrative,
     turnSummaryMinister, turnSummaryTitle, turnSummaryAiGenerated,
     turnSummaryRound, turnSummaryYear, turnSummaryMonth, turnSummarySeason,
     closeTurnSummary,
+    // v4.4: 回合过渡动画 + 总结报告
+    showTurnTransition, showTurnReport,
+    lastSnapshot, lastBattleEvents, lastOtherEvents, lastTileChanges,
+    lastRound, lastYear, lastMonth, lastSeason,
+    factionConfigMap,
+    closeTurnTransition, closeTurnReport,
     // AI
     aiAvailable, aiStatus,
     // NPC 文臣

@@ -27,7 +27,7 @@
 **音频**: add-audio, voice-audio-engineer
 **浏览器**: browser-use
 **代码审查**: review-game, game-qa, improve-game
-**其他**: illustrator, arize-ai-provider-integration, ai-product, llm-ops
+**其他**: illustrator, arize-ai-provider-integration, ai-product, llm-ops, hackathon-judge（腾讯云黑松客评委，手写创建）
 
 ## 已完成的核心系统
 - 回合引擎/结算/政令/经济/战斗/战争/外交/补给/城建/国策/武将/NPC/结局

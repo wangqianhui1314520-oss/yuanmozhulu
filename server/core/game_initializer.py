@@ -494,6 +494,18 @@ class GameInitializer:
                 supply_capacity = 200 if is_city else 100
                 is_supply_base = is_city
 
+            # 粮仓等级：确保储粮上限 ≥ 初始粮草，避免 cap 裁剪丢失粮草
+            if is_sea:
+                granary_val = 0
+            elif is_capital:
+                granary_val = 7
+            elif is_city:
+                granary_val = 6
+            elif faction_id:
+                granary_val = 3
+            else:
+                granary_val = 1
+
             # 邻居列表（map_final.json 中预计算）
             neighbors = t.get("neighbors", [])
             if isinstance(neighbors, list):
@@ -511,6 +523,7 @@ class GameInitializer:
                 morale=int(morale_val),
                 treasury=int(treasury_val),
                 fortification=int(fort_val),
+                granary=granary_val,
                 admin_level="county",
                 province_id=str(t.get("province_id", "")),
                 q=int(t.get("q", 0)),
@@ -623,6 +636,16 @@ class GameInitializer:
         elif tile_id in ("jiangzhe", "jiangxi", "huguang"):
             special_effect = "富庶之地·税收+15%"
 
+        # 粮仓等级：确保储粮上限 ≥ 初始粮草，避免 cap 裁剪丢失粮草
+        if is_capital:
+            granary_val = 7       # 皇都大仓，每回合产粮350石（夏季），储粮上限3500
+        elif is_city:
+            granary_val = 6       # 州府粮仓，每回合产粮300石（夏季），储粮上限3000
+        elif faction_id:
+            granary_val = 3       # 普通领地，每回合产粮150石（夏季），储粮上限1500
+        else:
+            granary_val = 1       # 无主之地，基础仓储
+
         return TileState(
             tile_id=tile_id,
             tile_name=name,
@@ -639,6 +662,7 @@ class GameInitializer:
             morale=morale_val,
             treasury=treasury_val,
             fortification=fort_val,
+            granary=granary_val,
             is_capital=is_capital,
             is_port=(tile_type == TileType.PORT),
             special_effect=special_effect,

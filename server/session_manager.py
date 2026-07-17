@@ -210,7 +210,7 @@ class SessionManager:
             }
             session.llm_available = True
             session.api_key = api_key
-            logger.info(f"[{session_id}] LLM客户端已用玩家Key重建 (key={api_key[:8]}...)")
+            logger.info(f"[{session_id}] LLM客户端已用玩家Key重建")
             return True
         except Exception as e:
             logger.error(f"[{session_id}] LLM客户端重建失败: {e}")

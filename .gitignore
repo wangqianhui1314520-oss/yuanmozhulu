@@ -19,9 +19,10 @@ frontend/.vite/
 *.swp
 *.swo
 
-# 环境变量
+# 环境变量 & 敏感配置
 .env
 .env.local
+server/config/llm_runtime.json
 
 # 日志
 logs/
@@ -32,6 +33,10 @@ saves/
 
 # IDE 内部数据
 .codebuddy/
+
+# 临时文件
+~$*
+temp_*
 
 # 系统文件
 .DS_Store

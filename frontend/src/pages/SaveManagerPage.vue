@@ -187,6 +187,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGameStore } from '@/stores/gameStore'
 import { useFullscreen } from '@/composables/useFullscreen'
+import SaveArchiveBg from '@/components/bg/SaveArchiveBg.vue'
 import {
   listSaves, loadGame, saveGame, deleteSave,
   quickSave, clearAllSaves as apiClearAll,
