@@ -258,6 +258,10 @@ deploy() {
     mkdir -p "$PROJECT_DIR/data/npc_relations"
     mkdir -p "$PROJECT_DIR/logs/nginx"
 
+    # 确保 logs 目录可写（Docker volume 挂载会保留宿主机权限，容器内 appuser 需要写权限）
+    log_info "设置日志目录权限..."
+    sudo chmod -R 777 "$PROJECT_DIR/logs"
+
     # 构建后端镜像
     log_info "构建 Docker 镜像（首次可能需要几分钟）..."
     docker compose build --no-cache backend

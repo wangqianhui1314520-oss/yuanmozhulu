@@ -25,18 +25,26 @@ from pathlib import Path
 # 确保日志目录存在
 _logs_dir = Path(__file__).parent.parent / "logs"
 _logs_dir.mkdir(parents=True, exist_ok=True)
+
+# 初始化 handlers：优先文件日志，权限不足时优雅降级为纯控制台
+_handlers: list = [logging.StreamHandler(sys.stdout)]
+try:
+    _fh = RotatingFileHandler(
+        _logs_dir / "api_server.log",
+        encoding='utf-8', mode='a',
+        maxBytes=10 * 1024 * 1024,  # 10MB 自动轮转
+        backupCount=5,               # 保留 5 个历史文件
+    )
+    _handlers.append(_fh)
+except PermissionError:
+    # Docker volume 挂载目录权限不足时，仅使用控制台日志
+    print("[yuanmo] WARNING: 日志目录无写权限，文件日志已禁用（仅输出到控制台）",
+          file=sys.stderr)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(name)s] %(levelname)s: %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        RotatingFileHandler(
-            _logs_dir / "api_server.log",
-            encoding='utf-8', mode='a',
-            maxBytes=10 * 1024 * 1024,  # 10MB 自动轮转
-            backupCount=5,               # 保留 5 个历史文件
-        ),
-    ]
+    handlers=_handlers,
 )
 logger = logging.getLogger("yuanmo.api")
 
