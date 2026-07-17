@@ -2876,9 +2876,15 @@ function getVassalLoyalty(factionId: string): string {
   return '谋叛'
 }
 
-// 藩镇：加载纳贡记录（TODO: 后端 /vassal/tributes 端点尚未实现，暂返回空）
+// 藩镇：加载纳贡记录
 async function loadVassalTributes() {
-  vassalTributes.value = []
+  try {
+    const result = await API.get(`/api/vassal/tributes/${store.playerFactionId}`)
+    const data = result?.data || result
+    vassalTributes.value = data?.tributes || []
+  } catch {
+    vassalTributes.value = []
+  }
 }
 
 // 藩镇：纳贡

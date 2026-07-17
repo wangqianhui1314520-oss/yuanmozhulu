@@ -299,8 +299,9 @@ class TestFamineCheck:
     def test_famine_detected(self, mock_world_state, mock_tile):
         """粮草不足触发饥荒"""
         engine = EconomyEngine(mock_world_state)
-        mock_tile.grain = 100  # 仅100粮
-        mock_tile.population = 5000  # 5000人口→ 人均0.02 << 150
+        # v4.5: 饥荒用绝对值判定 threshold=150, severe 条件 grain ≤ 75
+        mock_tile.grain = 50  # 严重饥荒（≤75）
+        mock_tile.population = 5000
         famines = engine.check_famine("faction_yuan")
         assert len(famines) >= 1
         assert famines[0]["severity"] == "severe"

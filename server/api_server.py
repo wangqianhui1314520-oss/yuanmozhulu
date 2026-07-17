@@ -7316,6 +7316,47 @@ async def check_vassal_rebellion(faction_id: str):
     })
 
 
+@app.get("/api/vassal/tributes/{faction_id}")
+async def get_vassal_tributes(faction_id: str):
+    """查询藩镇纳贡记录（从 events_log 中提取）"""
+    if not _sess().world_state:
+        return ApiResponse.forbidden("请先开局")
+    world = _sess().world_state
+    faction = world.factions.get(faction_id)
+    if not faction:
+        return ApiResponse.not_found(f"势力 {faction_id} 不存在")
+
+    tributes = []
+    for event in world.events_log:
+        if event.get("event_type") != "tribute":
+            continue
+        if event.get("round") is None:
+            continue
+        # 提取 vassal_name 和 amount
+        desc = event.get("description", "")
+        title = event.get("title", "")
+        # 从事件描述中提取：描述格式为 "缴纳银两{amount}两，以表臣服之意。"
+        import re
+        amount_match = re.search(r'银两(\d+)两', desc)
+        amount = int(amount_match.group(1)) if amount_match else 0
+        # 从事件中提取附庸名称（event_id 或 title 包含）
+        # title 格式: "【附庸纳贡】{vassal_name}向{suzerain_name}进贡"
+        title_match = re.search(r'】(.+?)向', title) if title else None
+        faction_name = title_match.group(1) if title_match else event.get("event_id", "").split("_")[-1] if "_" in event.get("event_id", "") else "未知"
+
+        tributes.append({
+            "faction_name": faction_name,
+            "amount": amount,
+            "round": event["round"],
+            "title": title,
+        })
+
+    return ApiResponse.success({
+        "faction_id": faction_id,
+        "tributes": tributes,
+    })
+
+
 # ============================================================
 # API 端点 - 工坊经济（系统6）
 # ============================================================

@@ -98,7 +98,7 @@ class A2WarlordAgent(BaseAgent):
                 detail = json.loads(json_match.group())
                 return self._normalize_military_detail(detail, world_snapshot)
             except json.JSONDecodeError:
-                pass
+                logger.debug(f"A2 军事细节JSON解析失败: {str(e)[:120]}")
 
         # 启发式提取
         return self._heuristic_military_detail(response, world_snapshot)
@@ -298,7 +298,7 @@ class A2WarlordAgent(BaseAgent):
                 plan = json.loads(json_match.group())
                 return self._normalize_plan(plan, faction_config, world_state)
             except json.JSONDecodeError:
-                pass
+                logger.debug(f"A2 战略计划JSON解析失败: {str(e)[:120]}")
 
         # 策略2：关键词启发式提取
         return self._heuristic_plan(response, faction_config, world_state)

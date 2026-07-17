@@ -419,7 +419,7 @@ class A6DiplomacyAgent(BaseAgent):
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
-            pass
+            logger.debug(f"A6 外交回复JSON直接解析失败: {str(e)[:120]}")
 
         # 提取JSON块
         json_match = re.search(r'\{[^{}]*"response"[^{}]*\}', raw, re.DOTALL)
@@ -427,7 +427,7 @@ class A6DiplomacyAgent(BaseAgent):
             try:
                 return json.loads(json_match.group())
             except json.JSONDecodeError:
-                pass
+                logger.debug(f"A6 外交回复JSON正则提取后仍失败: {str(e)[:120]}")
 
         # 完全降级：将全文作为回复
         return {

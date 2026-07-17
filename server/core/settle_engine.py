@@ -134,7 +134,10 @@ class SettleEngine:
                 "famine_alerts": econ_result.get("famine_alerts", []),
             }
         except Exception as e:
-            logger.warning(f"经济引擎初始化失败（降级到基础结算）: {e}")
+            logger.warning(
+                f"经济引擎初始化失败（降级到基础结算，经济运作暂停）: {type(e).__name__}: {e}",
+                extra={"module": "EconomyEngine", "fallback": "basic_settlement"}
+            )
             self._economy = None
 
         # ================================================================

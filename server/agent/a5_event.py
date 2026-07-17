@@ -392,7 +392,7 @@ class A5EventAgent(BaseAgent):
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
-            pass
+            logger.debug(f"A5 事件影响JSON直接解析失败: {str(e)[:120]}")
 
         json_match = re.search(
             r'\{"grain_loss".*\}', raw, re.DOTALL
@@ -401,7 +401,7 @@ class A5EventAgent(BaseAgent):
             try:
                 return json.loads(json_match.group())
             except json.JSONDecodeError:
-                pass
+                logger.debug(f"A5 事件影响JSON正则提取后仍失败: {str(e)[:120]}")
 
         return {}
 

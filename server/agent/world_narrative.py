@@ -27,13 +27,13 @@ def _extract_json(raw: str) -> Optional[dict]:
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
-        pass
+        logger.debug(f"JSON解析失败(首轮): {str(e)[:120]}")
     m = re.search(r'\{[\s\S]*\}', raw)
     if m:
         try:
             return json.loads(m.group())
         except json.JSONDecodeError:
-            pass
+            logger.debug(f"JSON解析失败(正则提取后仍失败): {str(e)[:120]}")
     return None
 
 

@@ -1,0 +1,140 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-9.1.1, pluggy-1.6.0 -- C:\Program Files\Python311\python.exe
+cachedir: .pytest_cache
+rootdir: d:\AI\元末逐鹿
+configfile: pyproject.toml
+plugins: anyio-4.14.0, langsmith-0.8.15
+collecting ... collected 244 items
+
+tests/test_combat_modifiers.py::TestCounterTable::test_all_4_rows PASSED [  0%]
+tests/test_combat_modifiers.py::TestCounterTable::test_each_row_has_4_targets PASSED [  0%]
+tests/test_combat_modifiers.py::TestCounterTable::test_diagonal_self_zero PASSED [  1%]
+tests/test_combat_modifiers.py::TestCounterTable::test_cavalry_beats_infantry PASSED [  1%]
+tests/test_combat_modifiers.py::TestCounterTable::test_naval_beats_cavalry PASSED [  2%]
+tests/test_combat_modifiers.py::TestCounterTable::test_archer_beats_naval PASSED [  2%]
+tests/test_combat_modifiers.py::TestCounterTable::test_infantry_beats_archer PASSED [  2%]
+tests/test_combat_modifiers.py::TestCounterTable::test_counter_matrix_antisymmetric PASSED [  3%]
+tests/test_combat_modifiers.py::TestGetCounterBonus::test_cav_vs_inf PASSED [  3%]
+tests/test_combat_modifiers.py::TestGetCounterBonus::test_inf_vs_cav PASSED [  4%]
+tests/test_combat_modifiers.py::TestGetCounterBonus::test_naval_vs_cav PASSED [  4%]
+tests/test_combat_modifiers.py::TestGetCounterBonus::test_archer_vs_naval PASSED [  4%]
+tests/test_combat_modifiers.py::TestGetCounterBonus::test_same_unit_zero PASSED [  5%]
+tests/test_combat_modifiers.py::TestGetCounterBonus::test_zero_for_all_same_type PASSED [  5%]
+tests/test_combat_modifiers.py::TestCalculateCombatModifiers::test_neutral_no_modifiers PASSED [  6%]
+tests/test_combat_modifiers.py::TestCalculateCombatModifiers::test_counter_only PASSED [  6%]
+tests/test_combat_modifiers.py::TestCalculateCombatModifiers::test_terrain_defense PASSED [  6%]
+tests/test_combat_modifiers.py::TestCalculateCombatModifiers::test_wall_defense PASSED [  7%]
+tests/test_combat_modifiers.py::TestCalculateCombatModifiers::test_faction_buffs PASSED [  7%]
+tests/test_combat_modifiers.py::TestCalculateCombatModifiers::test_water_map_naval_attacker PASSED [  8%]
+tests/test_combat_modifiers.py::TestCalculateCombatModifiers::test_water_map_naval_defender PASSED [  8%]
+tests/test_combat_modifiers.py::TestCalculateCombatModifiers::test_fire_attack_vs_naval PASSED [  9%]
+tests/test_combat_modifiers.py::TestCalculateCombatModifiers::test_defense_cap_applies PASSED [  9%]
+tests/test_combat_modifiers.py::TestCalculateCombatModifiers::test_attacker_mult_minimum PASSED [  9%]
+tests/test_combat_modifiers.py::TestCalculateCombatModifiers::test_defender_mult_minimum PASSED [ 10%]
+tests/test_combat_modifiers.py::TestCalculateCombatModifiers::test_breakdown_readable PASSED [ 10%]
+tests/test_combat_modifiers.py::TestUnitTypeBridge::test_map_4to6_cavalry PASSED [ 11%]
+tests/test_combat_modifiers.py::TestUnitTypeBridge::test_map_4to6_naval PASSED [ 11%]
+tests/test_combat_modifiers.py::TestUnitTypeBridge::test_map_6to4_spear_pike PASSED [ 11%]
+tests/test_combat_modifiers.py::TestUnitTypeBridge::test_map_6to4_siege PASSED [ 12%]
+tests/test_combat_modifiers.py::TestUnitTypeBridge::test_map_6to4_navy PASSED [ 12%]
+tests/test_combat_modifiers.py::TestUnitTypeBridge::test_map_6to4_unknown_defaults_infantry PASSED [ 13%]
+tests/test_combat_modifiers.py::TestUnitTypeBridge::test_map_6to4_roundtrip PASSED [ 13%]
+tests/test_combat_modifiers.py::TestUnitTypeBridge::test_expanded_table_has_all_4 PASSED [ 13%]
+tests/test_combat_modifiers.py::TestUnitTypeBridge::test_standard_table_has_6 PASSED [ 14%]
+tests/test_combat_utils.py::TestDefenseCap::test_below_cap_unchanged PASSED [ 14%]
+tests/test_combat_utils.py::TestDefenseCap::test_at_cap_boundary PASSED  [ 15%]
+tests/test_combat_utils.py::TestDefenseCap::test_above_cap_clamped PASSED [ 15%]
+tests/test_combat_utils.py::TestDefenseCap::test_custom_cap PASSED       [ 15%]
+tests/test_combat_utils.py::TestDefenseCap::test_no_reduction_below_1 PASSED [ 16%]
+tests/test_combat_utils.py::TestFactionBuffs::test_nine_factions PASSED  [ 16%]
+tests/test_combat_utils.py::TestFactionBuffs::test_yuan_cavalry_attack PASSED [ 17%]
+tests/test_combat_utils.py::TestFactionBuffs::test_mobei_highest_cavalry PASSED [ 17%]
+tests/test_combat_utils.py::TestFactionBuffs::test_zhuyuanzhang_fire_attack PASSED [ 18%]
+tests/test_combat_utils.py::TestFactionBuffs::test_fangguozhen_naval_and_defense PASSED [ 18%]
+tests/test_combat_utils.py::TestFactionBuffs::test_mingyuzhen_defense PASSED [ 18%]
+tests/test_combat_utils.py::TestFactionAttackBonus::test_yuan_cavalry PASSED [ 19%]
+tests/test_combat_utils.py::TestFactionAttackBonus::test_yuan_infantry_zero PASSED [ 19%]
+tests/test_combat_utils.py::TestFactionAttackBonus::test_yuan_naval_zero PASSED [ 20%]
+tests/test_combat_utils.py::TestFactionAttackBonus::test_chenyouliang_naval PASSED [ 20%]
+tests/test_combat_utils.py::TestFactionAttackBonus::test_fangguozhen_naval PASSED [ 20%]
+tests/test_combat_utils.py::TestFactionAttackBonus::test_zhuyuanzhang_no_cavalry PASSED [ 21%]
+tests/test_combat_utils.py::TestFactionAttackBonus::test_unknown_faction_zero PASSED [ 21%]
+tests/test_combat_utils.py::TestFactionAttackBonus::test_no_unit_type_zero PASSED [ 22%]
+tests/test_combat_utils.py::TestFactionDefenseBonus::test_yuan_no_defense PASSED [ 22%]
+tests/test_combat_utils.py::TestFactionDefenseBonus::test_mingyuzhen_defense PASSED [ 22%]
+tests/test_combat_utils.py::TestFactionDefenseBonus::test_fangguozhen_defense PASSED [ 23%]
+tests/test_combat_utils.py::TestFactionDefenseBonus::test_unknown_faction_zero PASSED [ 23%]
+tests/test_combat_utils.py::TestFireAttack::test_zhuyuanzhang_has_fire PASSED [ 24%]
+tests/test_combat_utils.py::TestFireAttack::test_yuan_no_fire PASSED     [ 24%]
+tests/test_combat_utils.py::TestFireAttack::test_chenyouliang_no_fire PASSED [ 25%]
+tests/test_combat_utils.py::TestFireAttack::test_unknown_faction_no_fire PASSED [ 25%]
+tests/test_combat_utils.py::TestEstimateUnitType::test_cavalry_factions PASSED [ 25%]
+tests/test_combat_utils.py::TestEstimateUnitType::test_naval_factions PASSED [ 26%]
+tests/test_combat_utils.py::TestEstimateUnitType::test_others_infantry PASSED [ 26%]
+tests/test_combat_utils.py::TestEstimateUnitType::test_water_terrain_always_naval PASSED [ 27%]
+tests/test_combat_utils.py::TestEstimateUnitType::test_grassland_no_override PASSED [ 27%]
+tests/test_combat_utils.py::TestUnitTypeEnum::test_four_types PASSED     [ 27%]
+tests/test_combat_utils.py::TestUnitTypeEnum::test_all_values_are_strings PASSED [ 28%]
+tests/test_combat_utils.py::TestUnitTypeEnum::test_unique_values PASSED  [ 28%]
+tests/test_economy_engine.py::TestTradeGoods::test_6_goods PASSED        [ 29%]
+tests/test_economy_engine.py::TestTradeGoods::test_all_prices_positive PASSED [ 29%]
+tests/test_economy_engine.py::TestTradeGoods::test_warhorses_most_expensive PASSED [ 29%]
+tests/test_economy_engine.py::TestFactionSpecialty::test_9_factions PASSED [ 30%]
+tests/test_economy_engine.py::TestFactionSpecialty::test_yuan_specialties PASSED [ 30%]
+tests/test_economy_engine.py::TestFactionSpecialty::test_chenyouliang_grain_salt PASSED [ 31%]
+tests/test_economy_engine.py::TestFactionSpecialty::test_mobei_only_warhorses PASSED [ 31%]
+tests/test_economy_engine.py::TestFactionSpecialty::test_fangguozhen_silk_tea PASSED [ 31%]
+tests/test_economy_engine.py::TestPopulationStructure::test_from_total_default_ratios PASSED [ 32%]
+tests/test_economy_engine.py::TestPopulationStructure::test_total_sums_correctly PASSED [ 32%]
+tests/test_economy_engine.py::TestPopulationStructure::test_empty_total_zero PASSED [ 33%]
+tests/test_economy_engine.py::TestPopulationStructure::test_to_dict PASSED [ 33%]
+tests/test_economy_engine.py::TestPopulationStructure::test_from_total_small_population PASSED [ 34%]
+tests/test_economy_engine.py::TestEconomyEngineStatics::test_tile_tax_mult_city PASSED [ 34%]
+tests/test_economy_engine.py::TestEconomyEngineStatics::test_tile_tax_mult_port PASSED [ 34%]
+tests/test_economy_engine.py::TestEconomyEngineStatics::test_tile_tax_mult_farmland PASSED [ 35%]
+tests/test_economy_engine.py::TestEconomyEngineStatics::test_tile_tax_mult_desert PASSED [ 35%]
+tests/test_economy_engine.py::TestEconomyEngineStatics::test_tile_tax_mult_unknown PASSED [ 36%]
+tests/test_economy_engine.py::TestEconomyEngineStatics::test_season_tax_mult_autumn_highest PASSED [ 36%]
+tests/test_economy_engine.py::TestEconomyEngineStatics::test_season_tax_mult_winter_lowest PASSED [ 36%]
+tests/test_economy_engine.py::TestEconomyEngineStatics::test_building_tax_bonus_no_buildings PASSED [ 37%]
+tests/test_economy_engine.py::TestEconomyEngineStatics::test_building_tax_bonus_none_buildings PASSED [ 37%]
+tests/test_economy_engine.py::TestGiniCoefficient::test_equal_distribution PASSED [ 38%]
+tests/test_economy_engine.py::TestGiniCoefficient::test_extreme_inequality PASSED [ 38%]
+tests/test_economy_engine.py::TestGiniCoefficient::test_one_element PASSED [ 38%]
+tests/test_economy_engine.py::TestGiniCoefficient::test_all_zero PASSED  [ 39%]
+tests/test_economy_engine.py::TestGiniCoefficient::test_monotone PASSED  [ 39%]
+tests/test_economy_engine.py::TestCalcTax::test_no_tile PASSED           [ 40%]
+tests/test_economy_engine.py::TestCalcTax::test_basic_city_tax PASSED    [ 40%]
+tests/test_economy_engine.py::TestCalcTax::test_high_morale_bonus PASSED [ 40%]
+tests/test_economy_engine.py::TestCalcTax::test_low_morale_penalty PASSED [ 41%]
+tests/test_economy_engine.py::TestCalcTax::test_development_bonus PASSED [ 41%]
+tests/test_economy_engine.py::TestCalcTax::test_breakdown_readable PASSED [ 42%]
+tests/test_economy_engine.py::TestGrainConsumption::test_basic_consumption PASSED [ 42%]
+tests/test_economy_engine.py::TestFamineCheck::test_abundant_grain_no_famine PASSED [ 43%]
+tests/test_economy_engine.py::TestFamineCheck::test_famine_detected FAILED [ 43%]
+
+================================== FAILURES ===================================
+____________________ TestFamineCheck.test_famine_detected _____________________
+
+self = <tests.test_economy_engine.TestFamineCheck object at 0x0000020BE56EB950>
+mock_world_state = <MagicMock id='2250118147792'>
+mock_tile = <MagicMock id='2250117989584'>
+
+    def test_famine_detected(self, mock_world_state, mock_tile):
+        """\u7cae\u8349\u4e0d\u8db3\u89e6\u53d1\u9965\u8352"""
+        engine = EconomyEngine(mock_world_state)
+        mock_tile.grain = 100  # \u4ec5100\u7cae
+        mock_tile.population = 5000  # 5000人口→ 人均0.02 << 150
+        famines = engine.check_famine("faction_yuan")
+        assert len(famines) >= 1
+>       assert famines[0]["severity"] == "severe"
+E       AssertionError: assert 'moderate' == 'severe'
+E         
+E         - severe
+E         + moderate
+
+tests\test_economy_engine.py:306: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_economy_engine.py::TestFamineCheck::test_famine_detected - ...
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+======================== 1 failed, 105 passed in 0.48s ========================

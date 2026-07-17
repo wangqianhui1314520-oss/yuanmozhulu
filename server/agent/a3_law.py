@@ -271,7 +271,7 @@ class A3LawAgent(BaseAgent):
                 try:
                     return json.loads(m.group())
                 except json.JSONDecodeError:
-                    pass
+                    logger.debug(f"A3 官员任免JSON正则提取后仍失败: {str(e)[:120]}")
             return {"promotions": [], "demotions": [], "dismissals": [], "new_appointments": [], "reasoning": "解析失败"}
 
     def _fallback_official_management(self, faction_id: str, world_state: dict) -> dict:
