@@ -27,5 +27,12 @@
     "skipped": true,
     "step_index": 8,
     "completed_steps": []
+  },
+  "faction_zhuyuanzhang": {
+    "current_step": "",
+    "completed": true,
+    "skipped": true,
+    "step_index": 8,
+    "completed_steps": []
   }
 }

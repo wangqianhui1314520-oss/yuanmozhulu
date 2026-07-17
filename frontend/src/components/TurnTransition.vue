@@ -388,10 +388,10 @@ onUnmounted(clearTimers)
 }
 
 .tt-seal-box {
-  width: 90px;
-  height: 90px;
+  width: 110px;
+  height: 110px;
   border: 3px solid #8a2010;
-  padding: 3px;
+  padding: 4px;
   transform: rotate(3deg);
   box-shadow: 0 4px 24px rgba(180, 30, 20, 0.3);
 }
@@ -403,20 +403,24 @@ onUnmounted(clearTimers)
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 6px;
+  padding: 4px;
 }
 .tt-seal-text {
   font-family: 'STKaiti', 'KaiTi', serif;
-  font-size: 20px;
+  font-size: 19px;
   color: #8a2010;
-  letter-spacing: 4px;
-  writing-mode: horizontal-tb;
+  letter-spacing: 3px;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 .tt-seal-sub {
   font-family: 'STKaiti', 'KaiTi', serif;
-  font-size: 16px;
+  font-size: 19px;
   color: #8a2010;
   letter-spacing: 3px;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
 /* ===== 底部提示 ===== */
@@ -452,8 +456,8 @@ onUnmounted(clearTimers)
   .tt-brush-char { font-size: 24px; }
   .tt-date-year, .tt-date-month { font-size: 20px; }
   .tt-new-season { font-size: 18px; }
-  .tt-seal-box { width: 70px; height: 70px; }
-  .tt-seal-text { font-size: 16px; }
-  .tt-seal-sub { font-size: 13px; }
+  .tt-seal-box { width: 90px; height: 90px; }
+  .tt-seal-text { font-size: 16px; letter-spacing: 2px; }
+  .tt-seal-sub { font-size: 16px; letter-spacing: 2px; }
 }
 </style>

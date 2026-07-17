@@ -1150,6 +1150,8 @@ async function clearAllSaves() {
 async function resetGame() {
   if (confirm('确认重置当前对局？未存档的进度将丢失。')) {
     await store.resetGame()
+    // 跳过 out-in 过渡：GamePage Konva 画布销毁会导致 transitionend 卡死 → 黑屏
+    sessionStorage.setItem('_skip_transition', '1')
     await router.push({ name: 'home' }).catch(() => {})
     emit('close')
   }
@@ -1163,7 +1165,8 @@ async function goHome() {
   }
   // 游戏中：提示进度丢失
   if (store.currentRound > 1 && !confirm('返回首页将丢失当前进度，是否继续？')) return
-  // 先导航到首页（等待完成），再关闭设置面板（否则组件销毁会中断导航）
+  // 跳过 out-in 过渡：GamePage Konva 画布销毁会导致 transitionend 卡死 → 黑屏
+  sessionStorage.setItem('_skip_transition', '1')
   try {
     await router.push({ name: 'home' })
   } catch (err: any) {
