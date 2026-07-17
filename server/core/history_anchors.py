@@ -339,7 +339,7 @@ class HistoryAnchorEngine:
             if len(player_tiles) < 20:
                 return False
             # 检查首都是否在南方（淮河以南，即地图 y 坐标 ≥ 淮河分界线）
-            capital_tile = self.world.tiles.get(player.capital_tile_id)
+            capital_tile = self.world.tiles.get(player.capital_tile)
             if capital_tile:
                 HUAIHE_Y_DIVIDE = 12  # 淮河大致在 y=12 附近
                 if capital_tile.y < HUAIHE_Y_DIVIDE:

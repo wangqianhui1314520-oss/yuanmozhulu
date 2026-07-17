@@ -958,10 +958,11 @@ class WarOrchestrator:
 
         # 溃散判定
         if winner == ctx.attacker_faction and dff_remaining < 50:
-            # 守方溃散，攻方占领
+            # 守方溃散，攻方占领（兵力从原地块移入新地块）
             old_faction = dff_tile.faction_id
             dff_tile.faction_id = ctx.attacker_faction
             dff_tile.troops = atk_remaining
+            atk_tile.troops = 0  # 原地块兵力清零，已移入被占领地块
 
             result["tile_captured"] = True
             result["captured_tile"] = dff_tile.tile_id
@@ -1337,15 +1338,11 @@ class WarOrchestrator:
         """结束战争，从活跃列表中移除"""
         for war_id, ctx in list(self._active_wars.items()):
             if ctx.attacker_faction == attacker and ctx.defender_faction == defender:
+                ctx.stage = WarfareStage.AFTERMATH
                 del self._active_wars[war_id]
                 logger.info(f"[征伐编排] 战争结束: {war_id}")
                 return True
         return False
-
-    def end_war(self, ctx: WarfareContext, outcome: str = "ongoing"):
-        """结束一场征伐"""
-        ctx.stage = WarfareStage.AFTERMATH
-        logger.info(f"[征伐编排] 战争结束: {ctx.war_id}, outcome={outcome}")
 
     # ================================================================
     # 3.0: 存档序列化 — 活跃战争持久化

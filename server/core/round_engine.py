@@ -111,7 +111,7 @@ class RoundEngine:
         执行完整一回合的8阶段流程（3.1 唯一结算入口）
         
         固化时序（对标文明6）:
-        「玩家决策完毕 → 八大AI有序推演 → 全域数值与局势统一更新」
+        「玩家决策完毕 → 十大AI有序推演 → 全域数值与局势统一更新」
         
         Args:
             player_edict: 玩家圣旨文本（player_turn模式）
@@ -1190,7 +1190,24 @@ class RoundEngine:
                 elif decree_type == "education":
                     return {"success": True, "message": f"已安排{prince_name}延师教导", "decree_type": decree_type}
                 elif decree_type == "spawn_prince":
-                    return {"success": True, "message": f"新皇子{prince_name}已入宗谱", "decree_type": decree_type}
+                    # 将新皇子实际添加到势力宗室
+                    custom_name = params.get("custom_name", False)  # 是否自定义名字
+                    new_heir = {
+                        "name": prince_name,
+                        "age": 0,
+                        "status": "新生",
+                        "martial": 5,
+                        "civil": 5,
+                        "charisma": 10,
+                        "talent": "尚待观察",
+                        "ambition": "低",
+                        "is_historical": not custom_name,
+                        "is_custom_name": bool(custom_name),
+                    }
+                    if not hasattr(player, 'heirs') or player.heirs is None:
+                        player.heirs = []
+                    player.heirs.append(new_heir)
+                    return {"success": True, "message": f"新皇子{prince_name}已入宗谱", "decree_type": decree_type, "prince": new_heir}
                 else:
                     return {"success": True, "message": f"圣意已下: {content[:50]}", "decree_type": decree_type}
             
@@ -1717,7 +1734,7 @@ class RoundEngine:
                     "is_alive": f.is_alive if hasattr(f, 'is_alive') else True,
                     "personality_tags": getattr(f, 'personality_tags', []),
                     "personality": getattr(f, 'personality', []),
-                    "capital_tile_id": getattr(f, 'capital_tile_id', ""),
+                    "capital_tile": getattr(f, 'capital_tile', ""),
                     "navy_power": getattr(f, 'navy_power', 0),
                     "ruler_name": f.ruler_name if hasattr(f, 'ruler_name') else fid,
                     "ruler_age": f.ruler_age if hasattr(f, 'ruler_age') else 40,
@@ -2331,6 +2348,13 @@ class RoundEngine:
         for event in self.world.events_log:
             if event.get("event_type") == "battle" and event.get("round", 0) >= current - 2:
                 participants = []
+                # 战斗事件中交战方在 effects.attacker / effects.defender
+                effects = event.get("effects", {})
+                if effects.get("attacker"):
+                    participants.append(effects["attacker"])
+                if effects.get("defender"):
+                    participants.append(effects["defender"])
+                # 兼容旧事件格式（attacker_faction 可能在根级别）
                 if event.get("attacker_faction"):
                     participants.append(event["attacker_faction"])
                 if event.get("defender_faction"):
@@ -2356,6 +2380,13 @@ class RoundEngine:
         for event in self.world.events_log:
             if event.get("event_type") == "battle":
                 participants = []
+                # 战斗事件中交战方在 effects.attacker / effects.defender
+                effects = event.get("effects", {})
+                if effects.get("attacker"):
+                    participants.append(effects["attacker"])
+                if effects.get("defender"):
+                    participants.append(effects["defender"])
+                # 兼容旧事件格式
                 if event.get("attacker_faction"):
                     participants.append(event["attacker_faction"])
                 if event.get("defender_faction"):

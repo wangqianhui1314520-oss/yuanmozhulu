@@ -173,6 +173,23 @@
 
           <!-- 圣旨AI模型配置 -->
           <div v-if="activeTab === 'edict'" class="settings-section">
+            <!-- 圣旨AI专用提供商选择 -->
+            <div class="config-card provider-card">
+              <h4>🔌 圣旨AI提供商</h4>
+              <p class="config-desc">选择圣旨解析的 API 服务商，模型和地址将自动同步。推荐 CodeBuddy（DeepSeek-V3）或 DeepSeek 官方（deepseek-chat）以获得最快响应。</p>
+              <div class="provider-row">
+                <button
+                  v-for="prov in providers"
+                  :key="prov.id"
+                  class="provider-btn"
+                  :class="{ active: edictProvider === prov.id }"
+                  @click="switchEdictProvider(prov.id)"
+                >
+                  <span class="prov-name">{{ prov.name }}</span>
+                  <span class="prov-speed">{{ prov.speed }}</span>
+                </button>
+              </div>
+            </div>
             <div class="config-card">
               <h4>📜 圣旨AI解析模型</h4>
               <p class="config-desc">自然语言圣旨的意图识别与指令拆解模型。支持白话文、文言文、长篇战略叙事的智能解析。</p>
@@ -184,13 +201,13 @@
                 <label>模型名称</label>
                 <div class="model-select-group">
                   <select v-model="edictLLM.modelName" class="config-select model-select">
-                    <option v-for="opt in getModelOptions('edict')" :key="opt.value" :value="opt.value">
+                    <option v-for="opt in getEdictModelOptions()" :key="opt.value" :value="opt.value">
                       {{ opt.label }}
                     </option>
                     <option value="__custom__">自定义...</option>
                   </select>
                   <input
-                    v-if="edictLLM.modelName === '__custom__' || !getModelOptions('edict').some(o => o.value === edictLLM.modelName)"
+                    v-if="edictLLM.modelName === '__custom__' || !getEdictModelOptions().some(o => o.value === edictLLM.modelName)"
                     type="text"
                     v-model="edictLLM.modelName"
                     class="config-input model-input"
@@ -468,6 +485,7 @@ const aiModels = reactive([
 // ========== 预设方案 ==========
 const activePreset = ref('standard')
 const speedPresets = [
+  { id: 'turbo', icon: '🚀', name: '超极速模式', speed: '~3-8秒/操作', desc: '所有模型最大 Token 降至最低，圣旨AI亦缩至极限。AI叙事极简，适合纯战略速推。' },
   { id: 'fast', icon: '⚡', name: '极速模式', speed: '~5-15秒/操作', desc: '回合推进最快，适合快速游玩。模型输出较短，AI叙事可能稍简。' },
   { id: 'standard', icon: '⚖', name: '标准模式', speed: '~10-35秒/操作', desc: '平衡速度与质量，推荐日常使用。' },
   { id: 'quality', icon: '🎨', name: '沉浸模式', speed: '~20-60秒/操作', desc: '最大化 AI 叙事质量和策略深度，回合最慢但体验最佳。' },
@@ -517,6 +535,11 @@ const MODEL_CATALOG: Record<string, Array<{ value: string; label: string; speed:
 
 // 各模型组在不同预设下的推荐参数
 const PRESET_CONFIGS: Record<string, Record<string, { modelName: string; maxTokens: number; temperature: number }>> = {
+  turbo: {
+    advisor: { modelName: 'deepseek-chat', maxTokens: 256, temperature: 0.3 },
+    law: { modelName: 'deepseek-chat', maxTokens: 256, temperature: 0.3 },
+    enemy: { modelName: 'deepseek-chat', maxTokens: 128, temperature: 0.3 },
+  },
   fast: {
     advisor: { modelName: 'deepseek-chat', maxTokens: 2048, temperature: 0.5 },
     law: { modelName: 'deepseek-chat', maxTokens: 2048, temperature: 0.4 },
@@ -566,6 +589,24 @@ function applyPreset(presetId: string) {
   if (presetId === 'fast' && activeProvider.value === 'codebuddy') {
     switchProvider('deepseek')
   }
+  // 超极速模式：圣旨AI同步降至最低 Token，选当前提供商最快模型
+  if (presetId === 'turbo') {
+    edictLLM.maxTokens = 256
+    edictLLM.temperature = 0.3
+    const fastestEdictModel: Record<string, string> = {
+      codebuddy: 'deepseek-v4-flash',
+      deepseek: 'deepseek-chat',
+      openai: 'gpt-4o-mini',
+    }
+    edictLLM.modelName = fastestEdictModel[edictProvider.value] || 'deepseek-chat'
+    // 超极速优先推荐 DeepSeek 官方直连（绕过代理延迟）
+    if (edictProvider.value === 'codebuddy') {
+      switchEdictProvider('deepseek')
+    }
+    if (activeProvider.value === 'codebuddy') {
+      switchProvider('deepseek')
+    }
+  }
 }
 
 function switchProvider(providerId: string) {
@@ -606,8 +647,8 @@ const saveSettings = reactive({
 
 // 圣旨AI专用模型配置
 const edictLLM = reactive({
-  apiBase: 'https://api.lkeap.cloud.tencent.com/v3',
-  modelName: 'hunyuan-role',
+  apiBase: 'https://copilot.tencent.com/v2',
+  modelName: 'deepseek-v3',
   temperature: 0.4,
   maxTokens: 4096,
   useAI: true,
@@ -615,6 +656,30 @@ const edictLLM = reactive({
   showKey: false,
 })
 const edictStatusMsg = ref('')
+const edictProvider = ref('codebuddy')  // 圣旨AI独立提供商
+
+/** 圣旨AI模型选项（独立于主AI的 activeProvider） */
+function getEdictModelOptions() {
+  const providerModels = MODEL_CATALOG[edictProvider.value] || MODEL_CATALOG['codebuddy']
+  const hasCurrent = providerModels.some(o => o.value === edictLLM.modelName)
+  if (edictLLM.modelName && !hasCurrent) {
+    return [...providerModels, { value: edictLLM.modelName, label: `${edictLLM.modelName} (当前)`, speed: '?' }]
+  }
+  return providerModels
+}
+
+/** 切换圣旨AI提供商 — 自动同步 API 地址和模型 */
+function switchEdictProvider(providerId: string) {
+  edictProvider.value = providerId
+  const prov = providers.find(p => p.id === providerId)
+  if (!prov) return
+  edictLLM.apiBase = prov.apiBase
+  const defaultModel = PROVIDER_DEFAULT_MODEL[providerId] || 'deepseek-v3'
+  const catalogModels = (MODEL_CATALOG[providerId] || []).map(o => o.value)
+  if (!catalogModels.includes(edictLLM.modelName)) {
+    edictLLM.modelName = defaultModel
+  }
+}
 
 // ========== TTS 语音提供商 & ElevenLabs Key ==========
 const ttsProvider = ref<'edge' | 'elevenlabs'>('edge')
@@ -801,9 +866,16 @@ onMounted(async () => {
     // 降级到本地存储
     const saved = localStorage.getItem('yuanmo_edict_llm')
     if (saved) {
-      try { Object.assign(edictLLM, JSON.parse(saved)) } catch { /* ignore */ }
+      try {
+        const parsed = JSON.parse(saved)
+        Object.assign(edictLLM, { apiBase: parsed.apiBase, modelName: parsed.modelName, temperature: parsed.temperature, maxTokens: parsed.maxTokens, useAI: parsed.useAI ?? true })
+        if (parsed.provider) edictProvider.value = parsed.provider
+      } catch { /* ignore */ }
     }
   }
+  // 根据 API base 自动匹配 provider（确保下拉高亮一致）
+  const matchedProv = providers.find(p => p.apiBase === edictLLM.apiBase)
+  if (matchedProv) edictProvider.value = matchedProv.id
 })
 
 // 持久化音频设置（统一使用 yuanmo_audio_panel，与 FloatPanels 兼容）
@@ -1064,24 +1136,25 @@ async function saveEdictConfig() {
     localStorage.setItem('yuanmo_edict_llm', JSON.stringify({
       apiBase: edictLLM.apiBase, modelName: edictLLM.modelName,
       temperature: edictLLM.temperature, maxTokens: edictLLM.maxTokens,
-      useAI: edictLLM.useAI,
+      useAI: edictLLM.useAI, provider: edictProvider.value,
     }))
   } catch {
     localStorage.setItem('yuanmo_edict_llm', JSON.stringify({
       apiBase: edictLLM.apiBase, modelName: edictLLM.modelName,
       temperature: edictLLM.temperature, maxTokens: edictLLM.maxTokens,
-      useAI: edictLLM.useAI,
+      useAI: edictLLM.useAI, provider: edictProvider.value,
     }))
     edictStatusMsg.value = '✓ 已保存到本地（后端不可用时降级，API Key 已本地存储）'
   }
 }
 
 function resetEdictConfig() {
-  edictLLM.apiBase = 'https://api.lkeap.cloud.tencent.com/v3'
-  edictLLM.modelName = 'hunyuan-role'
+  edictLLM.apiBase = 'https://copilot.tencent.com/v2'
+  edictLLM.modelName = 'deepseek-v3'
   edictLLM.temperature = 0.4
   edictLLM.maxTokens = 4096
   edictLLM.useAI = true
+  edictProvider.value = 'codebuddy'
   edictStatusMsg.value = '已恢复圣旨AI默认配置'
   saveEdictConfig()
 }
@@ -1269,7 +1342,7 @@ async function goHome() {
 
 .preset-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   margin-top: 8px;
 }

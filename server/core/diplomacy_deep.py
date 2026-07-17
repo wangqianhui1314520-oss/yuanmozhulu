@@ -232,7 +232,7 @@ class DeepDiplomacyEngine:
         # v3.3 冷却检查：6回合内对同一目标组合不能重复使用
         cooldown_key = (schemer_fid, fa, fb)
         last_used = self._discord_cooldowns.get(cooldown_key, -999)
-        current_round = getattr(self.world, 'current_round', 0)
+        current_round = getattr(self.world, 'current_round', 0) or 0
         rounds_since = current_round - last_used
         if rounds_since < self.DISCORD_COOLDOWN_ROUNDS:
             remaining = self.DISCORD_COOLDOWN_ROUNDS - rounds_since

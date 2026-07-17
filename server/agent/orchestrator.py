@@ -66,8 +66,8 @@ class AgentOrchestrator:
         # 单例Agent（无势力绑定）
         self._a5_agent = A5EventAgent()
         self._a8_agent = A8HistoryAgent()
-        self._a9_agent = A9BattleReportAgent()   # v3.5: AI战报生成器
-        self._a10_agent = A10TreasuryAgent()     # v4.0: AI度支司
+        self._a9_agent = get_a9_battle_report_agent()   # v3.5: AI战报生成器（使用全局单例）
+        self._a10_agent = get_a10_treasury_agent()     # v4.0: AI度支司（使用全局单例）
 
         # 事件总线
         self._event_bus: Optional[AgentEventBus] = None
@@ -1137,7 +1137,7 @@ class AgentOrchestrator:
                      list(self._a4_agents.values()) + \
                      list(self._a6_agents.values()) + \
                      list(self._a7_agents.values()) + \
-                     [self._a5_agent, self._a8_agent]
+                     [self._a5_agent, self._a8_agent, self._a9_agent, self._a10_agent]
 
         agent_stats = {}
         total_agent_tokens = 0
@@ -1186,7 +1186,7 @@ class AgentOrchestrator:
             return {}
 
     def get_agent_list(self) -> list[dict]:
-        """获取Agent列表（供前端展示）"""
+        """获取Agent列表（供前端展示）— 十大智能体 A1~A10"""
         return [
             {
                 "key": "A1",
@@ -1260,6 +1260,24 @@ class AgentOrchestrator:
                 "player_only": False,
                 "config": self._safe_get_agent_config("A8"),
             },
+            {
+                "key": "A9",
+                "name": "军机处",
+                "model_group": "enemy",
+                "trigger": "auto",
+                "description": "战斗后自动生成古风战报、军情分析（无玩家交互）",
+                "player_only": False,
+                "config": self._safe_get_agent_config("A9"),
+            },
+            {
+                "key": "A10",
+                "name": "度支司",
+                "model_group": "law",
+                "trigger": "auto",
+                "description": "税收粮储调配、国策经济影响评估（后台自动运行）",
+                "player_only": False,
+                "config": self._safe_get_agent_config("A10"),
+            },
         ]
 
     def reset_for_new_game(self):
@@ -1272,8 +1290,8 @@ class AgentOrchestrator:
         self._a7_agents.clear()
         self._a5_agent = A5EventAgent()
         self._a8_agent = A8HistoryAgent()
-        self._a9_agent = A9BattleReportAgent()
-        self._a10_agent = A10TreasuryAgent()
+        self._a9_agent = get_a9_battle_report_agent()
+        self._a10_agent = get_a10_treasury_agent()
         self._total_calls = 0
         self._total_latency = 0.0
         # 重置事件总线和客户端引用

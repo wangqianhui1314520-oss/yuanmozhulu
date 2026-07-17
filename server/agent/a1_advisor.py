@@ -642,7 +642,13 @@ class A1AdvisorAgent(BaseAgent):
                 "你乃元末乱世首席谋臣，精通兵法韬略、治国安邦之术。\n"
                 "你需审时度势，为君主分析天下大势，提出切实可行的策略建议。\n"
                 "回答需条理清晰，分点陈述，引经据典。\n"
-                "以古文白话皆可，口吻当恭敬而不失骨气。"
+                "以古文白话皆可，口吻当恭敬而不失骨气。\n\n"
+                "【铁律】所有策略建议必须严格基于沙盘数据中的owned_tiles（己方地块）和border_tiles（接壤前线）：\n"
+                "- 提及地名时，只可使用owned_tiles中的tile_name\n"
+                "- 建议进攻时，目标必须是border_tiles中的敌方势力\n"
+                "- 建议建造时，费用不可超过treasury，地点必须在owned_tiles中\n"
+                "- 建议征兵时，数量不可超过各地块population之和的60%\n"
+                "- 不得凭空捏造任何地名、数字或势力名"
             )
 
         faction_data = world_state.get("factions", {}).get(faction_id, {})
@@ -887,9 +893,11 @@ class A1AdvisorAgent(BaseAgent):
 
     @staticmethod
     def _build_faction_snapshot(world_state: dict, faction_id: str) -> str:
-        """构建势力视角的世界快照 JSON"""
+        """构建势力视角的世界快照 JSON（含地块详情，确保献策数据对齐）"""
         faction = world_state.get("factions", {}).get(faction_id, {})
         all_factions = world_state.get("factions", {})
+        all_tiles = world_state.get("tiles", {})
+        all_relations = world_state.get("relations", {})
 
         other_factions = []
         for fid, fdata in all_factions.items():
@@ -901,6 +909,57 @@ class A1AdvisorAgent(BaseAgent):
                     "reputation": fdata.get("reputation", 0),
                 })
 
+        # ── 己方地块详情 ──
+        owned_tiles = []
+        border_tiles = []
+        for tid, td in all_tiles.items():
+            if not isinstance(td, dict):
+                continue
+            if td.get("faction_id", "") != faction_id:
+                continue
+            tile_info = {
+                "tile_id": td.get("tile_id", tid),
+                "tile_name": td.get("tile_name", ""),
+                "tile_type": td.get("tile_type", ""),
+                "population": td.get("population", 0),
+                "troops": td.get("troops", 0),
+                "grain": td.get("grain", 0),
+                "treasury": td.get("treasury", 0),
+                "fortification": td.get("fortification", 0),
+                "granary": td.get("granary", 0),
+                "armory": td.get("armory", 0),
+                "stable": td.get("stable", 0),
+                "water_works": td.get("water_works", 0),
+                "clinic": td.get("clinic", 0),
+                "is_capital": td.get("is_capital", False),
+                "is_port": td.get("is_port", False),
+            }
+            owned_tiles.append(tile_info)
+
+        # ── 接壤关系 ──
+        for td in owned_tiles:
+            tid = td["tile_id"]
+            # 通过 relations 中的邻接关系判断是否前线
+            for rel_key, rel_data in all_relations.items():
+                if not isinstance(rel_data, dict):
+                    continue
+                parts = rel_key.split("|")
+                if len(parts) != 2:
+                    continue
+                # 检查该关系是否涉及本地块
+                if tid in parts:
+                    other_part = parts[1] if parts[0] == tid else parts[0]
+                    # 如果对方是地块ID且有势力归属
+                    other_tile = all_tiles.get(other_part, {})
+                    if isinstance(other_tile, dict):
+                        other_fid = other_tile.get("faction_id", "")
+                        if other_fid and other_fid != faction_id:
+                            other_name = all_factions.get(other_fid, {}).get("name", other_fid)
+                            border_entry = f"{td['tile_name']}↔{other_name}"
+                            if border_entry not in border_tiles:
+                                border_tiles.append(border_entry)
+                    break
+
         snapshot = {
             "faction_id": faction_id,
             "faction_name": faction.get("name", faction_id),
@@ -910,12 +969,17 @@ class A1AdvisorAgent(BaseAgent):
             "troops": faction.get("troops", 0),
             "treasury": faction.get("treasury", 0),
             "grain": faction.get("grain", 0),
+            "arms": faction.get("arms", 0),
+            "horses": faction.get("horses", 0),
             "reputation": faction.get("reputation", 0),
-            "tile_count": faction.get("tile_count", 0),
+            "tile_count": faction.get("tile_count", len(owned_tiles)),
             "population": faction.get("population", 0),
+            "owned_tiles": owned_tiles,
+            "border_tiles": border_tiles,
             "neighbors": faction.get("neighbors", []),
             "other_factions": other_factions,
-            "relations": world_state.get("relations", {}),
+            "relations": {k: v for k, v in all_relations.items() 
+                          if isinstance(v, dict) and faction_id in k},
             "active_battles": world_state.get("active_battles", []),
             "events_log": world_state.get("events_log", [])[-5:],
         }

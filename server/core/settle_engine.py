@@ -137,6 +137,12 @@ class SettleEngine:
             logger.warning(f"经济引擎初始化失败（降级到基础结算）: {e}")
             self._economy = None
 
+        # ================================================================
+        # v4.5 新增：细作被动检测（每回合自然暴露风险）
+        # ================================================================
+        spy_engine = SpyEngine(self.world, self.const)
+        result["passive_spy_detection"] = spy_engine.run_passive_detection()
+
         for tile in self.world.tiles.values():
             if not tile.faction_id:
                 continue
@@ -1135,13 +1141,21 @@ class MarchEngine:
                         battle_result="victory",
                     )
     
-                    # 首都战利品
+                    # 首都战利品（从被攻方扣除，杜绝凭空产银）
                     if to_t.is_capital:
                         faction = self.world.get_faction(attacker_faction)
-                        if faction:
-                            faction.treasury += self.const["capital_loot_treasury"]
-                            faction.grain += self.const["capital_loot_grain"]
-                            result["message"] = f"攻占都城{to_t.tile_name}！缴获银{self.const['capital_loot_treasury']}两、粮{self.const['capital_loot_grain']}石"
+                        old_f = self.world.get_faction(old_faction)
+                        if faction and old_f:
+                            loot_t = self.const["capital_loot_treasury"]
+                            loot_g = self.const["capital_loot_grain"]
+                            # 从被攻方扣除（不会扣成负数）
+                            deducted_t = min(old_f.treasury, loot_t)
+                            deducted_g = min(old_f.grain, loot_g)
+                            old_f.treasury -= deducted_t
+                            old_f.grain -= deducted_g
+                            faction.treasury += deducted_t
+                            faction.grain += deducted_g
+                            result["message"] = f"攻占都城{to_t.tile_name}！缴获银{deducted_t}两、粮{deducted_g}石"
     
                     # 俘虏捕获
                     prisoners = self._capture_prisoners(old_faction, attacker_faction)
@@ -1537,17 +1551,22 @@ class MarchEngine:
                 tile.tile_type.value if hasattr(tile.tile_type, 'value') else str(tile.tile_type),
                 is_siege=True,
             )
-            # 破城战利品：任意城池破城有基础奖励，首都翻倍
+            # 破城战利品：任意城池破城有基础奖励，首都翻倍（从被攻方扣除）
             attacker_f = self.world.get_faction(siege.attacker_faction)
-            if attacker_f:
+            old_f = self.world.get_faction(old_faction)
+            if attacker_f and old_f:
                 loot_t = self.const["capital_loot_treasury"]
                 loot_g = self.const["capital_loot_grain"]
                 if tile.is_capital:
-                    attacker_f.treasury += loot_t
-                    attacker_f.grain += loot_g
+                    mult = 1
                 else:
-                    attacker_f.treasury += loot_t // 2
-                    attacker_f.grain += loot_g // 2
+                    mult = 0.5
+                deducted_t = int(min(old_f.treasury, loot_t * mult))
+                deducted_g = int(min(old_f.grain, loot_g * mult))
+                old_f.treasury -= deducted_t
+                old_f.grain -= deducted_g
+                attacker_f.treasury += deducted_t
+                attacker_f.grain += deducted_g
             return {"success": True, "message": f"围城{ siege.siege_rounds}回合，{tile.tile_name}投降！",
                     "surrendered": True, "tile_captured": True, "tile_name": tile.tile_name,
                     "old_faction": old_faction_name, "new_faction": new_faction_name}
@@ -1593,17 +1612,22 @@ class MarchEngine:
                     tile.tile_type.value if hasattr(tile.tile_type, 'value') else str(tile.tile_type),
                     is_siege=False,
                 )
-                # 强攻破城战利品
+                # 强攻破城战利品（从被攻方扣除）
                 attacker_f = self.world.get_faction(siege.attacker_faction)
-                if attacker_f:
+                defender_f = self.world.get_faction(old_faction)
+                if attacker_f and defender_f:
                     loot_t = self.const["capital_loot_treasury"]
                     loot_g = self.const["capital_loot_grain"]
                     if tile.is_capital:
-                        attacker_f.treasury += loot_t
-                        attacker_f.grain += loot_g
+                        mult = 1
                     else:
-                        attacker_f.treasury += loot_t // 2
-                        attacker_f.grain += loot_g // 2
+                        mult = 0.5
+                    deducted_t = int(min(defender_f.treasury, loot_t * mult))
+                    deducted_g = int(min(defender_f.grain, loot_g * mult))
+                    defender_f.treasury -= deducted_t
+                    defender_f.grain -= deducted_g
+                    attacker_f.treasury += deducted_t
+                    attacker_f.grain += deducted_g
                 return {"success": True, "message": f"城墙破损，强攻成功，占领{tile.tile_name}！",
                         "tile_captured": True, "tile_name": tile.tile_name,
                         "old_faction": old_faction_name, "new_faction": new_faction_name}
@@ -2083,6 +2107,7 @@ class SpyEngine:
                 owner_faction=owner_faction,
                 target_faction=target_faction,
                 infiltration=init_infiltration,
+                created_round=self.world.current_round,  # 记录安插回合
             )
         self.world.spy_networks[key].spies_count += 1
 
@@ -2102,6 +2127,8 @@ class SpyEngine:
         target_public_order = getattr(target_faction_obj, 'public_order', 50) if target_faction_obj else 50
         order_factor = max(0.5, target_public_order / 100.0)  # 治安100→1.0x, 治安0→0.5x
         expose_risk = max(0.03, (0.25 - network.infiltration * 0.05) * order_factor)
+        # 存储行动暴露风险供前端展示
+        network.active_risk = round(expose_risk, 4)
 
         if action_type == "intel":
             # 刺探情报
@@ -2161,7 +2188,16 @@ class SpyEngine:
                 return {"success": True, "action": "assassinate", "message": "刺杀成功！"}
             else:
                 network.discovered = True
-                return {"success": False, "action": "assassinate", "message": "刺杀失败，细作暴露！"}
+                # 细作暴露身亡：清除该网络产出的所有情报
+                self.world.invalidate_spy_intel(owner_faction, target_faction)
+                self.world.events_log.append({
+                    "event_id": f"spy_killed_{owner_faction}_{target_faction}_{self.world.current_round}",
+                    "event_type": "espionage", "severity": "major",
+                    "round": self.world.current_round,
+                    "title": f"【谍报】{owner_faction}细作在{target_faction}暴露身亡",
+                    "description": f"{owner_faction}派遣至{target_faction}的细作在刺杀行动中暴露，被处决。{owner_faction}失去了对{target_faction}朝堂的情报来源。",
+                })
+                return {"success": False, "action": "assassinate", "message": "刺杀失败，细作暴露身亡！"}
 
         elif action_type == "sabotage":
             # 纵火毁产
@@ -2187,14 +2223,32 @@ class SpyEngine:
                 if random.random() < expose_risk:
                     network.discovered = True
                     network.spies_count = max(0, network.spies_count - 1)
+                    # 细作暴露：清除情报
+                    self.world.invalidate_spy_intel(owner_faction, target_faction)
+                    self.world.events_log.append({
+                        "event_id": f"spy_exposed_{owner_faction}_{target_faction}_{self.world.current_round}",
+                        "event_type": "espionage", "severity": "major",
+                        "round": self.world.current_round,
+                        "title": f"【谍报】{owner_faction}细作在{target_faction}暴露",
+                        "description": f"{owner_faction}散布流言后被{target_faction}反间发现，细作暴露。{owner_faction}失去了对{target_faction}朝堂的情报来源。",
+                    })
                     return {"success": False, "action": "rumor", "message": "流言散布后被敌方反间发现，细作暴露！"}
                 return {"success": True, "action": "rumor", "message": "流言四起，民心动荡，朝堂不稳"}
 
-        # 暴露检查
+        # 暴露检查（所有行动通用）
         if random.random() < expose_risk:
             network.discovered = True
             network.spies_count = max(0, network.spies_count - 1)  # Bug #11修复: 暴露后减少细作数
-            return {"success": False, "action": action_type, "message": "行动失败，细作暴露！"}
+            # 细作暴露：清除该网络产出的所有情报
+            self.world.invalidate_spy_intel(owner_faction, target_faction)
+            self.world.events_log.append({
+                "event_id": f"spy_exposed_{owner_faction}_{target_faction}_{self.world.current_round}",
+                "event_type": "espionage", "severity": "major",
+                "round": self.world.current_round,
+                "title": f"【谍报】{owner_faction}细作在{target_faction}暴露",
+                "description": f"{owner_faction}派遣至{target_faction}的细作在行动中暴露，情报来源中断。{owner_faction}失去了对{target_faction}朝堂的一切情报。",
+            })
+            return {"success": False, "action": action_type, "message": "行动失败，细作暴露！情报来源中断！"}
 
         return {"success": False, "action": action_type, "message": "行动失败"}
 
@@ -2338,6 +2392,96 @@ class SpyEngine:
             "description": f"{faction.name}开展了反间谍行动，清除{target_faction}细作{cleared}人。",
         })
         return {"success": True, "message": f"反间谍行动完成，清除{target_faction}细作{cleared}人"}
+
+    def run_passive_detection(self) -> list[dict]:
+        """回合被动细作检测：每回合对所有活跃细作网络进行低概率暴露检查。
+        
+        模拟日常反间谍活动——巡逻、盘查、谣言核查等自然方式察觉异常。
+        不影响现有行动暴露机制，仅为"潜伏期"增加自然暴露风险。
+        
+        Returns:
+            本回合被检测出的细作事件列表
+        """
+        events = []
+        for key, network in list(self.world.spy_networks.items()):
+            if network.discovered or network.spies_count <= 0:
+                continue
+            
+            target = self.world.get_faction(network.target_faction)
+            if not target:
+                continue
+            
+            # ── 被动暴露概率计算 ──
+            public_order = getattr(target, 'public_order', 50)
+            court_stability = getattr(target, 'court_stability', 50)
+            
+            # 1. 基础概率 1.5%/回合（全年约 18%，半年约 9%）
+            base_risk = 0.015
+            
+            # 2. 治安修正：高治安社会更容易察觉异常（50→1.0x, 100→2.0x, 0→0.3x）
+            order_factor = max(0.3, public_order / 50.0)
+            
+            # 3. 渗透度修正：渗透越高行动越多越易露马脚（0%→0.5x, 100%→1.5x）
+            infil_factor = 0.5 + network.infiltration / 200.0
+            
+            # 4. 时效修正：潜伏越久越易露出破绽（每 10 回合 +20% 风险）
+            rounds_active = max(0, self.world.current_round - network.created_round)
+            age_factor = 0.8 + min(0.6, rounds_active / 100.0)  # 上限+60%
+            
+            passive_risk = base_risk * order_factor * infil_factor * age_factor
+            # 上限 8%/回合
+            passive_risk = min(0.08, passive_risk)
+            
+            # 存储当前风险值供前端展示
+            network.passive_risk = round(passive_risk, 4)
+            
+            if random.random() >= passive_risk:
+                continue
+            
+            # ── 暴露判定 ──
+            # 80% 概率是"部分暴露"（渗透降低），20% 概率"完全暴露"
+            owner = self.world.get_faction(network.owner_faction)
+            owner_name = owner.name if owner else network.owner_faction
+            target_name = target.name
+            
+            if random.random() < 0.8:
+                # 部分暴露：巡逻发现可疑活动，渗透度降低
+                loss = random.randint(5, 20)
+                old_inf = network.infiltration
+                network.infiltration = max(0, network.infiltration - loss)
+                event = {
+                    "event_id": f"spy_partial_{network.owner_faction}_{network.target_faction}_{self.world.current_round}",
+                    "event_type": "espionage", "severity": "minor",
+                    "round": self.world.current_round,
+                    "title": f"【谍报】{owner_name}细作在{target_name}被察觉",
+                    "description": (
+                        f"{target_name}巡查发现可疑活动。{owner_name}的细作网络受到干扰，"
+                        f"渗透度从 {old_inf}% 降至 {network.infiltration}%（-{loss}%）。"
+                        f"细作暂未暴露，但需警惕。"
+                    ),
+                    "effects": {"exposure": "partial", "infiltration_loss": loss},
+                }
+            else:
+                # 完全暴露：细作落网
+                network.discovered = True
+                network.spies_count = max(0, network.spies_count - 1)
+                self.world.invalidate_spy_intel(network.owner_faction, network.target_faction)
+                event = {
+                    "event_id": f"spy_passive_exposed_{network.owner_faction}_{network.target_faction}_{self.world.current_round}",
+                    "event_type": "espionage", "severity": "major",
+                    "round": self.world.current_round,
+                    "title": f"【谍报】{owner_name}细作在{target_name}落网",
+                    "description": (
+                        f"{target_name}巡查捕获了{owner_name}的细作。{owner_name}失去了对"
+                        f"{target_name}朝堂的一切情报来源，需重新派遣细作。"
+                    ),
+                    "effects": {"exposure": "full"},
+                }
+            
+            self.world.events_log.append(event)
+            events.append(event)
+        
+        return events
 
 
 

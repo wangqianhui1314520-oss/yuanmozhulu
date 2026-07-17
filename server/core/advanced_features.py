@@ -961,11 +961,15 @@ class AdvancedSpyEngine:
             removed = enemy_spy.spies_count
             enemy_spy.spies_count = 0
             enemy_spy.discovered = True
+            # 清除细作产出的情报：target_fid（细作派遣方）对 owner_fid（被刺探方）的情报失效
+            self.world.invalidate_spy_intel(target_fid, owner_fid)
 
             self.world.events_log.append({
                 "round": self.world.current_round,
                 "event_type": "counter_spy",
-                "narrative": f"{owner.name}反间成功，清除{target_fid}细作{removed}人。",
+                "severity": "major",
+                "title": f"【谍报】{owner.name}反间清除{target_fid}细作",
+                "narrative": f"{owner.name}反间成功，清除{target_fid}细作{removed}人。{target_fid}失去了对{owner.name}朝堂的情报来源。",
             })
 
             return {"success": True, "spies_removed": removed,
@@ -1144,7 +1148,7 @@ class RoyalAdvancedEngine:
                     break
         if not old_capital:
             # 完全没有旧都：用第一个城池兜底
-            faction_tiles = [t for t in self.world.get_faction_tiles(faction_id) if t.tile_type in (TileType.CITY, TileType.CAPITAL)]
+            faction_tiles = [t for t in self.world.get_faction_tiles(faction_id) if t.tile_type == TileType.CITY]
             if faction_tiles:
                 old_capital = faction_tiles[0].tile_id
 

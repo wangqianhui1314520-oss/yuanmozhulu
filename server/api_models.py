@@ -71,6 +71,7 @@ class EdictProcessRequest(BaseModel):
     use_ai: bool = True
     use_simulation: bool = True
     direct_execute: bool = False
+    source: Optional[str] = None  # 'advisor' 表示来自幕僚，后端跳过谋略问询路由
 
 
 class EdictExecuteRequest(BaseModel):

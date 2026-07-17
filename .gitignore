@@ -34,6 +34,15 @@ saves/
 # IDE 内部数据
 .codebuddy/
 
+# 视频宣传素材（非游戏代码）
+videos/
+
+# 测试缓存
+.pytest_cache/
+
+# 评审文档
+HACKATHON_JUDGE_REPORT.*
+
 # 临时文件
 ~$*
 temp_*

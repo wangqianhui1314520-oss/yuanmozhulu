@@ -9,6 +9,38 @@
     </div>
   </div>
 
+  <!-- AI 额度耗尽提醒横幅 -->
+  <div v-if="showQuotaBanner && quotaSolution" class="quota-banner">
+    <div class="quota-banner-inner">
+      <span class="quota-icon">⚠</span>
+      <div class="quota-body">
+        <p class="quota-title">{{ quotaSolution.title }}</p>
+        <p class="quota-msg">{{ quotaSolution.message }}</p>
+        <div class="quota-actions">
+          <template v-for="(act, i) in quotaSolution.actions" :key="i">
+            <a v-if="act.type === 'external' && act.url"
+               :href="act.url" target="_blank" rel="noopener"
+               class="quota-btn quota-btn-primary"
+               @click="showQuotaBanner = false">
+              {{ act.label }}
+            </a>
+            <button v-else-if="act.type === 'settings'"
+                    class="quota-btn quota-btn-secondary"
+                    @click="openAISettings">
+              {{ act.label }}
+            </button>
+            <button v-else-if="act.type === 'dismiss'"
+                    class="quota-btn quota-btn-ghost"
+                    @click="dismissQuotaBanner">
+              {{ act.label }}
+            </button>
+          </template>
+        </div>
+      </div>
+      <button class="quota-close" @click="dismissQuotaBanner" title="关闭">✕</button>
+    </div>
+  </div>
+
   <!-- 主游戏界面 -->
   <div v-else class="game-container">
 
@@ -109,8 +141,8 @@
           <button v-audio class="top-btn" @click="openAdvisorPopupFn(); panelSide = 'right'" title="谋臣献策">谋</button>
           <button v-audio class="top-btn" @click="closeAllPanels(); store.togglePanel('factions'); panelSide = 'right'" title="大势">势</button>
           <button v-audio class="top-btn" @click="closeAllPanels(); showMuseum = true; panelSide = 'right'" title="史馆札记">史</button>
-          <button v-audio class="top-btn" @click="quickSaveHandler" title="快速存档" :disabled="quickSaving">存</button>
-          <button v-audio class="top-btn" @click="navigateToSaveManager" title="存档管理">档</button>
+          <button v-audio class="top-btn" @click="quickSaveHandler(); panelSide = 'right'" title="快速存档" :disabled="quickSaving">存</button>
+          <button v-audio class="top-btn" @click="navigateToSaveManager(); panelSide = 'right'" title="存档管理">档</button>
           <button v-audio class="top-btn" @click="closeAllPanels(); showSettings = true; panelSide = 'right'" title="设置">⚙</button>
           <button v-audio class="top-btn" @click="closeAllPanels(); showSecurity = true; panelSide = 'right'" title="EdgeOne安全态势">🛡</button>
           <span class="top-btn-divider"></span>
@@ -123,20 +155,38 @@
 
     <!-- ============ 中层：舆图主体 + 右侧工具栏 ============ -->
     <div class="map-section">
-      <!-- 左侧工具栏：军政大事 -->
+      <!-- 左侧工具栏：军政大事（弹出式子菜单） -->
       <div class="left-toolbar">
         <div class="toolbar-scroll">
-          <button
-            v-for="tool in leftToolbarItems" :key="tool.id"
-            v-audio
-            class="tool-btn"
-            :class="{ active: isToolActive(tool.id) }"
-            @click="onLeftToolClick(tool)"
-            :title="tool.label"
+          <div
+            v-for="group in leftToolbarGroups" :key="group.id"
+            class="tool-group-wrapper"
           >
-            <span class="tool-icon">{{ tool.icon }}</span>
-            <span class="tool-label">{{ tool.label }}</span>
-          </button>
+            <button
+              class="tool-group-header"
+              :class="{ active: activeFlyout === group.id }"
+              @click.stop="toggleFlyout(group.id)"
+              :title="group.label"
+            >
+              <span class="group-icon">{{ group.icon }}</span>
+              <span class="group-label">{{ group.label }}</span>
+            </button>
+            <Transition name="flyout-fade">
+              <div v-if="activeFlyout === group.id" class="flyout-menu flyout-right" @click.stop>
+                <button
+                  v-for="tool in group.items" :key="tool.id"
+                  v-audio
+                  class="flyout-item"
+                  :class="{ active: isToolActive(tool.id) }"
+                  @click="onSubToolClick(tool, 'left')"
+                  :title="tool.label"
+                >
+                  <span class="tool-icon">{{ tool.icon }}</span>
+                  <span class="tool-label">{{ tool.label }}</span>
+                </button>
+              </div>
+            </Transition>
+          </div>
         </div>
       </div>
 
@@ -305,19 +355,37 @@
         </div>
       </div>
 
-      <!-- 右侧工具栏：内政谋略 -->
+      <!-- 右侧工具栏：内政谋略（弹出式子菜单） -->
       <div class="right-toolbar">
         <div class="toolbar-scroll">
-          <button
-            v-for="tool in rightToolbarItems" :key="tool.id"
-            class="tool-btn"
-            :class="{ active: isToolActive(tool.id) }"
-            @click="onRightToolClick(tool)"
-            :title="tool.label"
+          <div
+            v-for="group in rightToolbarGroups" :key="group.id"
+            class="tool-group-wrapper"
           >
-            <span class="tool-icon">{{ tool.icon }}</span>
-            <span class="tool-label">{{ tool.label }}</span>
-          </button>
+            <button
+              class="tool-group-header"
+              :class="{ active: activeFlyout === group.id }"
+              @click.stop="toggleFlyout(group.id)"
+              :title="group.label"
+            >
+              <span class="group-icon">{{ group.icon }}</span>
+              <span class="group-label">{{ group.label }}</span>
+            </button>
+            <Transition name="flyout-fade">
+              <div v-if="activeFlyout === group.id" class="flyout-menu flyout-left" @click.stop>
+                <button
+                  v-for="tool in group.items" :key="tool.id"
+                  class="flyout-item"
+                  :class="{ active: isToolActive(tool.id) }"
+                  @click="onSubToolClick(tool, 'right')"
+                  :title="tool.label"
+                >
+                  <span class="tool-icon">{{ tool.icon }}</span>
+                  <span class="tool-label">{{ tool.label }}</span>
+                </button>
+              </div>
+            </Transition>
+          </div>
         </div>
       </div>
     </div>
@@ -329,6 +397,9 @@
           <div class="edict-drawer-header">
             <span class="edict-drawer-title">📜 本回圣旨</span>
             <div class="edict-drawer-header-right">
+              <button v-if="store.pendingEdictCommands.length || pendingDecisions.length" class="edict-drawer-clear" @click="clearAllEdicts" title="一键清除所有指令">
+                🗑 清空
+              </button>
               <span class="edict-drawer-count" :class="{ 'pulse-count': pendingCmdAdded }">{{ store.pendingEdictCommands.length + pendingDecisions.length }} 道</span>
               <button class="edict-drawer-close" @click="edictDrawerOpen = false" title="收起圣旨台">&times;</button>
             </div>
@@ -356,10 +427,12 @@
             :key="i"
             class="edict-item"
             :class="{ 'new-item': pendingCmdAdded && i === store.pendingEdictCommands.length - 1 }"
+            @click="fillEdictFromCmd(cmd)"
+            title="点击填入圣旨"
           >
             <span class="edict-item-num">{{ i + 1 }}</span>
             <span class="edict-item-text">{{ cmd.label }}</span>
-            <button class="edict-item-remove" @click="removeEdict(i)" title="撤销此旨">✕</button>
+            <button class="edict-item-remove" @click.stop="removeEdict(i)" title="撤销此旨">✕</button>
           </div>
         </div>
       </div>
@@ -452,26 +525,7 @@
           <button v-if="edictText.trim()" class="edict-btn cancel-btn" @click="cancelEdictInput" title="清空圣旨">
             清空
           </button>
-          <div class="pending-commands" v-if="store.pendingEdictCommands.length">
-            <span
-              v-for="(cmd, i) in store.pendingEdictCommands.slice(0, 3)" :key="i"
-              class="pending-tag"
-              @click="edictText += '；' + cmd.label"
-            >{{ cmd.label }}</span>
-          </div>
-          <!-- 待定决策标签 -->
-          <div class="pending-decisions" v-if="pendingDecisions.length">
-            <span
-              v-for="d in pendingDecisions" :key="d.id"
-              class="decision-tag"
-              @click="applyDecision(d)"
-              :title="'点击填入圣旨：' + d.content"
-            >
-              <span class="decision-tag-icon">{{ decisionTypeIcon(d.type) }}</span>
-              {{ d.label }}
-              <button class="decision-tag-remove" @click.stop="removeDecision(d.id)" title="移除">✕</button>
-            </span>
-          </div>
+
         </div>
       </div>
 
@@ -752,7 +806,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useGameStore } from '@/stores/gameStore'
-import { loadFactionsConfig, getStaticMap, quickSave, nlValidateEdict, nlProcessEdict, nlCancelCommands } from '@/services/api'
+import { loadFactionsConfig, getStaticMap, quickSave, nlValidateEdict, nlProcessEdict, nlCancelCommands, getLLMQuotaStatus } from '@/services/api'
 import { generateRegionTiles } from '@/utils/regionTileGenerator'
 import { useFullscreen } from '@/composables/useFullscreen'
 import type { GameEvent, FactionState, TileState } from '@/types'
@@ -873,6 +927,40 @@ function hideLoading() {
 const eventDetail = ref<GameEvent | null>(null)
 const gameError = ref('')
 const edictText = ref('')
+const edictFromAdvisor = ref(false)
+
+
+// ============================================================
+// AI 额度/降级提醒
+// ============================================================
+const showQuotaBanner = ref(false)
+const quotaSolution = ref<any>(null)
+const quotaDismissed = ref(false)
+
+async function checkLLMQuota() {
+  if (quotaDismissed.value) return
+  try {
+    const status = await getLLMQuotaStatus()
+    if (status.quota_exhausted || !status.ai_available) {
+      showQuotaBanner.value = true
+      quotaSolution.value = status.solution
+    }
+  } catch {
+    // 静默失败，不影响游戏
+  }
+}
+
+function dismissQuotaBanner() {
+  showQuotaBanner.value = false
+  quotaDismissed.value = true
+}
+
+function openAISettings() {
+  // 触发打开设置面板的 AI 模型页
+  const event = new CustomEvent('open-settings-ai')
+  window.dispatchEvent(event)
+  showQuotaBanner.value = false
+}
 const edictResult = ref<any>(null)
 const isMajorEdict = ref(false)
 const showExecDetail = ref(false)
@@ -964,6 +1052,22 @@ function toggleEdictDrawer() {
 }
 function removeEdict(index: number) {
   store.pendingEdictCommands.splice(index, 1)
+}
+
+/** 点击指令 → 填入圣旨文本 */
+function fillEdictFromCmd(cmd: { label: string }) {
+  const prefix = edictText.value ? '；' : ''
+  edictText.value = edictText.value + prefix + cmd.label
+  nextTick(() => {
+    const el = document.querySelector('.edict-input') as HTMLTextAreaElement
+    if (el) el.focus()
+  })
+}
+
+/** 一键清除所有待办指令和决策 */
+function clearAllEdicts() {
+  store.pendingEdictCommands.splice(0, store.pendingEdictCommands.length)
+  pendingDecisions.value.splice(0, pendingDecisions.value.length)
 }
 
 // ===== 快捷命令面板 =====
@@ -1672,52 +1776,146 @@ const toolbarItems = [
   { id: 'ai-control', icon: '🤖', label: 'AI中控' },
 ] as const
 
-/** 左侧工具栏：军国大事 */
-const leftToolbarItems = [
-  { id: 'military', icon: '⚔️', label: '军事' },
-  { id: 'ambush', icon: '🌲', label: '伏击' },
-  { id: 'plunder', icon: '🏴', label: '劫掠' },
-  { id: 'diplomacy', icon: '🤝', label: '外交' },
-  { id: 'treasury', icon: '💰', label: '国库' },
-  { id: 'court', icon: '🏯', label: '朝堂' },
-  { id: 'moveCapital', icon: '🏛', label: '迁都' },
-  { id: 'construction', icon: '🏗️', label: '营造' },
-  { id: 'recruit', icon: '🏇', label: '招兵' },
-  { id: 'personnel', icon: '👤', label: '人事' },
-  { id: 'general', icon: '🏯', label: '武将' },
-  { id: 'talent-market', icon: '🏛', label: '人才' },
-  { id: 'rebel', icon: '🔥', label: '叛军' },
-  { id: 'vassal', icon: '🏰', label: '藩镇' },
-  { id: 'disaster', icon: '🌪️', label: '灾异' },
-  { id: 'events', icon: '📋', label: '邸报' },
-  { id: 'ai-control', icon: '🤖', label: 'AI中控' },
-] as const
+/** 工具栏分组定义 */
+interface ToolItem { id: string; icon: string; label: string }
+interface ToolGroup { id: string; icon: string; label: string; items: ToolItem[] }
 
-/** 右侧工具栏：内政谋略 */
-const rightToolbarItems = [
-  { id: 'diplomacy-deep', icon: '🕊️', label: '权谋' },
-  { id: 'spy', icon: '🕵️', label: '谍报' },
-  { id: 'culture', icon: '📜', label: '民俗' },
-  { id: 'law', icon: '⚖️', label: '律法' },
-  { id: 'law-interrogate', icon: '🔍', label: '刑讯' },
-  { id: 'royal', icon: '👑', label: '宗室' },
-  { id: 'territory', icon: '🗺️', label: '领土' },
-  { id: 'faction_network', icon: '🕸️', label: '势力图' },
-  { id: 'prisoner', icon: '⛓️', label: '俘虏' },
-  { id: 'medical', icon: '🏥', label: '疾医' },
-  { id: 'sea', icon: '⛵', label: '海策' },
-  { id: 'workshop', icon: '🔧', label: '工坊' },
-  { id: 'agent', icon: '🧠', label: 'AI中枢' },
-  { id: 'ai-strategy', icon: '📊', label: 'AI推演' },
-  { id: 'batch-build', icon: '🔄', label: '批量建' },
-  { id: 'batch-recruit', icon: '🔄', label: '批量征' },
-  { id: 'history', icon: '📜', label: '青史' },
-  { id: 'audio', icon: '🔊', label: '音效' },
-  { id: 'replay', icon: '⏪', label: '回放' },
-  { id: 'achievement', icon: '🏆', label: '功勋' },
-  { id: 'techTree', icon: '🌳', label: '国策' },
-  { id: 'museum', icon: '🏛', label: '史馆' },
-] as const
+/** 左侧工具栏：军政大事 — 按功能分组合并 */
+const leftToolbarGroups: ToolGroup[] = [
+  {
+    id: 'group-military', icon: '📯', label: '军务',
+    items: [
+      { id: 'military', icon: '⚔️', label: '军事' },
+      { id: 'ambush', icon: '🌲', label: '伏击' },
+      { id: 'plunder', icon: '🏴', label: '劫掠' },
+      { id: 'recruit', icon: '🏇', label: '招兵' },
+      { id: 'rebel', icon: '🔥', label: '叛军' },
+    ],
+  },
+  {
+    id: 'group-govern', icon: '🏛', label: '政务',
+    items: [
+      { id: 'court', icon: '🏯', label: '朝堂' },
+      { id: 'treasury', icon: '💰', label: '国库' },
+      { id: 'construction', icon: '🏗️', label: '营造' },
+      { id: 'moveCapital', icon: '🏛', label: '迁都' },
+    ],
+  },
+  {
+    id: 'group-personnel', icon: '👥', label: '人事',
+    items: [
+      { id: 'personnel', icon: '👤', label: '人事' },
+      { id: 'general', icon: '🏯', label: '武将' },
+      { id: 'talent-market', icon: '🏛', label: '人才' },
+    ],
+  },
+  {
+    id: 'group-diplomacy', icon: '🤝', label: '外交',
+    items: [
+      { id: 'diplomacy', icon: '🤝', label: '外交' },
+      { id: 'vassal', icon: '🏰', label: '藩镇' },
+    ],
+  },
+  {
+    id: 'group-intel', icon: '📜', label: '情报',
+    items: [
+      { id: 'events', icon: '📋', label: '邸报' },
+      { id: 'disaster', icon: '🌪️', label: '灾异' },
+    ],
+  },
+  {
+    id: 'group-system', icon: '⚙️', label: '系统',
+    items: [
+      { id: 'ai-control', icon: '🤖', label: 'AI中控' },
+    ],
+  },
+]
+
+/** 右侧工具栏：内政谋略 — 按功能分组合并 */
+const rightToolbarGroups: ToolGroup[] = [
+  {
+    id: 'group-intrigue', icon: '🕊️', label: '权谋',
+    items: [
+      { id: 'diplomacy-deep', icon: '🕊️', label: '权谋' },
+      { id: 'spy', icon: '🕵️', label: '谍报' },
+    ],
+  },
+  {
+    id: 'group-law', icon: '⚖️', label: '律法',
+    items: [
+      { id: 'law', icon: '⚖️', label: '律法' },
+      { id: 'law-interrogate', icon: '🔍', label: '刑讯' },
+    ],
+  },
+  {
+    id: 'group-internal', icon: '🏘', label: '内政',
+    items: [
+      { id: 'culture', icon: '📜', label: '民俗' },
+      { id: 'royal', icon: '👑', label: '宗室' },
+      { id: 'prisoner', icon: '⛓️', label: '俘虏' },
+      { id: 'medical', icon: '🏥', label: '疾医' },
+      { id: 'workshop', icon: '🔧', label: '工坊' },
+    ],
+  },
+  {
+    id: 'group-map', icon: '🗺️', label: '舆图',
+    items: [
+      { id: 'territory', icon: '🗺️', label: '领土' },
+      { id: 'faction_network', icon: '🕸️', label: '势力图' },
+      { id: 'sea', icon: '⛵', label: '海策' },
+    ],
+  },
+  {
+    id: 'group-batch', icon: '🏗️', label: '批量',
+    items: [
+      { id: 'batch-build', icon: '🔄', label: '批量建' },
+      { id: 'batch-recruit', icon: '🔄', label: '批量征' },
+    ],
+  },
+  {
+    id: 'group-ai', icon: '🧠', label: 'AI幕府',
+    items: [
+      { id: 'agent', icon: '🧠', label: 'AI中枢' },
+      { id: 'ai-strategy', icon: '📊', label: 'AI推演' },
+    ],
+  },
+  {
+    id: 'group-history', icon: '📚', label: '史录',
+    items: [
+      { id: 'history', icon: '📜', label: '青史' },
+      { id: 'achievement', icon: '🏆', label: '功勋' },
+      { id: 'museum', icon: '🏛', label: '史馆' },
+      { id: 'techTree', icon: '🌳', label: '国策' },
+    ],
+  },
+  {
+    id: 'group-tools', icon: '🔧', label: '工具',
+    items: [
+      { id: 'audio', icon: '🔊', label: '音效' },
+      { id: 'replay', icon: '⏪', label: '回放' },
+    ],
+  },
+]
+
+/** 当前展开的弹出式子菜单（空字符串=无弹出） */
+const activeFlyout = ref('')
+
+/** 切换弹出式子菜单（再点同一组则关闭） */
+function toggleFlyout(groupId: string) {
+  activeFlyout.value = activeFlyout.value === groupId ? '' : groupId
+}
+
+/** 子工具点击 → 触发面板 + 关闭弹出菜单 */
+function onSubToolClick(tool: ToolItem, side: 'left' | 'right') {
+  activeFlyout.value = ''
+  if (side === 'left') onLeftToolClick(tool)
+  else onRightToolClick(tool)
+}
+
+/** 点击地图/空白区域关闭弹出菜单 */
+function handleDocClickCloseFlyout() {
+  if (activeFlyout.value) activeFlyout.value = ''
+}
 
 /** 当前弹出面板所在侧 */
 const panelSide = ref<'left'|'right'|''>('')
@@ -1766,6 +1964,8 @@ function closeAllPanels() {
   store.showWarPanel = false
   store.showPeacePanel = false
   store.showEnding = false
+  store.showTurnTransition = false
+  store.showTurnReport = false
   // 关闭事件详情 / 圣旨结果 / 圣旨抽屉
   eventDetail.value = null
   edictResult.value = null
@@ -1789,6 +1989,10 @@ async function quickSaveHandler() {
   quickSaving.value = true
   try {
     const result = await quickSave()
+    if (!result || typeof result.slot !== 'number') {
+      console.warn('快速存档返回异常:', result)
+      return
+    }
     // 轻提示（不阻塞操作）
     const toast = document.createElement('div')
     toast.className = 'quick-save-toast'
@@ -1865,7 +2069,11 @@ async function executeEdict() {
       direct_execute: true,
       use_ai: true,
       use_simulation: true,
+      source: edictFromAdvisor.value ? 'advisor' : undefined,
     })
+    // 无论是否执行成功，本次来源标记已消费完毕
+    edictFromAdvisor.value = false
+
 
     // 处理撤回指令
     if (result.is_cancel) {
@@ -1885,11 +2093,18 @@ async function executeEdict() {
       return
     }
 
-    // 处理谋略问询 → 路由到谋臣面板
+    // 处理谋略问询 → 展示结果，不再弹出幕僚奏报
     if (result.route_to_advisor) {
       edictText.value = ''
       edictValidationHint.value = ''
-      showAdvisorPopup.value = true
+      edictResult.value = {
+        ai_analysis: {
+          edict_language: result.edict_language || '',
+          narrative: result.summary || '已将圣意转呈谋臣。',
+          summary: result.summary || '',
+        },
+        execution: { total_executed: 0, total_failed: 0, executed: [], failed: [] },
+      }
       return
     }
 
@@ -2294,8 +2509,12 @@ onMounted(async () => {
   audioManager.playBgm('gameplay', 2.0)
 
   await doInit(factionId)
+  // 检测 AI 额度状态（异步，不阻塞游戏）
+  checkLLMQuota()
   // 全屏事件由 useFullscreen composable 内部管理，不再重复注册
+  document.addEventListener('click', handleDocClickCloseFlyout)
   window.addEventListener('add-edict-decision', onAddEdictDecision)
+  window.addEventListener('open-court-debate', openAdvisor)
 
   // 新手教程：等待 OnboardingOverlay 关闭后再启动，避免两个浮层叠加
   const ONBOARDING_KEY = 'yuanmo_onboarding_seen'
@@ -2310,7 +2529,9 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  document.removeEventListener('click', handleDocClickCloseFlyout)
   window.removeEventListener('add-edict-decision', onAddEdictDecision)
+  window.removeEventListener('open-court-debate', openAdvisor)
   // 离开游玩界面时，停止游戏对局音频
   audioManager.stopAll()
   gameAudio.destroy()
@@ -2408,6 +2629,7 @@ function openAdvisorPopupFn() {
 }
 function onAdvisorApproveEdict(text: string) {
   edictText.value = text
+  edictFromAdvisor.value = true
   showAdvisorPopup.value = false
 }
 function onBatchEdictFill(text: string) {
@@ -2689,7 +2911,7 @@ function severityName(s: string): string {
   display: flex;
   min-height: 0;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 .map-surface {
   flex: 1;
@@ -2922,7 +3144,9 @@ function severityName(s: string): string {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
+  z-index: 10;
   order: -1; /* 确保在地图左侧 */
 }
 
@@ -2951,13 +3175,15 @@ function severityName(s: string): string {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
+  z-index: 10;
   order: 1;
 }
 
 .toolbar-scroll {
   flex: 1;
-  overflow-y: auto;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   padding: 4px 0;
@@ -2997,6 +3223,118 @@ function severityName(s: string): string {
 
 .tool-icon { font-size: 16px; line-height: 1; }
 .tool-label { letter-spacing: 1px; }
+
+/* ---- 工具栏分组弹出式子菜单 ---- */
+.tool-group-wrapper {
+  position: relative;
+}
+
+.tool-group-header {
+  width: 100%;
+  padding: 6px 3px;
+  background: rgba(184, 150, 62, 0.04);
+  border: none;
+  border-top: 1px solid rgba(184, 150, 62, 0.08);
+  border-bottom: 1px solid rgba(184, 150, 62, 0.06);
+  color: #6a5a4a;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 9px;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  transition: all 0.15s;
+}
+
+.tool-group-header:first-child { border-top: none; }
+
+.tool-group-header:hover {
+  background: rgba(184, 150, 62, 0.12);
+  color: #b89b68;
+}
+
+.tool-group-header.active {
+  background: rgba(184, 150, 62, 0.16);
+  color: #b89b68;
+  border-color: rgba(184, 150, 62, 0.2);
+}
+
+.group-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.group-label {
+  font-size: 9px;
+  letter-spacing: 2px;
+}
+
+/* 弹出式子菜单浮层 */
+.flyout-menu {
+  position: absolute;
+  top: 0;
+  z-index: 200;
+  background: linear-gradient(135deg, #1e1a14, #181410);
+  border: 1px solid #3a3020;
+  border-radius: 4px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 68px;
+  box-shadow: 4px 4px 20px rgba(0,0,0,0.6), 0 0 8px rgba(184,150,62,0.08);
+}
+
+.flyout-right {
+  left: 100%;
+  margin-left: 6px;
+}
+
+.flyout-left {
+  right: 100%;
+  margin-right: 6px;
+}
+
+.flyout-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  color: #5a4a3a;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: 'STKaiti', 'KaiTi', serif;
+  white-space: nowrap;
+  transition: all 0.12s;
+}
+
+.flyout-item:hover {
+  background: rgba(184,150,62,0.12);
+  color: #b89b68;
+}
+
+.flyout-item.active {
+  background: rgba(184,150,62,0.16);
+  color: #b89b68;
+}
+
+.flyout-item .tool-icon { font-size: 14px; }
+.flyout-item .tool-label { letter-spacing: 1px; }
+
+/* 弹出过渡动画 */
+.flyout-fade-enter-active,
+.flyout-fade-leave-active {
+  transition: all 0.15s ease;
+}
+.flyout-fade-enter-from,
+.flyout-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.92);
+}
 
 /* ===== 圣旨台面板（页面中下方居中弹出） ===== */
 .edict-drawer {
@@ -3073,6 +3411,24 @@ function severityName(s: string): string {
   color: #c4a85a;
 }
 
+.edict-drawer-clear {
+  background: rgba(180, 60, 60, 0.12);
+  border: 1px solid rgba(180, 60, 60, 0.3);
+  color: #c08070;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.edict-drawer-clear:hover {
+  background: rgba(180, 60, 60, 0.25);
+  color: #e0a090;
+  border-color: rgba(200, 80, 60, 0.5);
+}
+
 /* 新命令加入时计数脉动 */
 .edict-drawer-count.pulse-count {
   animation: countPulse 0.5s ease;
@@ -3135,6 +3491,7 @@ function severityName(s: string): string {
   background: rgba(184, 150, 62, 0.05);
   border: 1px solid rgba(184, 150, 62, 0.1);
   border-radius: 4px;
+  cursor: pointer;
   transition: all 0.15s;
 }
 
@@ -3546,29 +3903,7 @@ function severityName(s: string): string {
   cursor: not-allowed;
 }
 
-.pending-commands {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
 
-.pending-tag {
-  font-size: 10px;
-  padding: 2px 6px;
-  background: rgba(102,102,153,0.2);
-  border: 1px solid rgba(102,102,153,0.3);
-  color: #8877aa;
-  border-radius: 3px;
-  cursor: pointer;
-  letter-spacing: 1px;
-  white-space: nowrap;
-  transition: all 0.15s;
-}
-
-.pending-tag:hover {
-  background: rgba(102,102,153,0.35);
-  color: #aa99cc;
-}
 
 /* ---- 快捷命令面板 ---- */
 .quick-cmd-panel {
@@ -3672,62 +4007,7 @@ function severityName(s: string): string {
   white-space: nowrap;
 }
 
-/* 待定决策标签（金色，区别于指令标签） */
-.pending-decisions {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  max-width: 320px;
-}
 
-.decision-tag {
-  font-size: 10px;
-  padding: 2px 6px;
-  background: rgba(184, 150, 62, 0.15);
-  border: 1px solid rgba(184, 150, 62, 0.35);
-  color: #c4a85a;
-  border-radius: 3px;
-  cursor: pointer;
-  letter-spacing: 1px;
-  white-space: nowrap;
-  transition: all 0.15s;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.decision-tag:hover {
-  background: rgba(184, 150, 62, 0.28);
-  border-color: rgba(200, 168, 74, 0.55);
-  color: #d4c080;
-}
-
-.decision-tag-icon {
-  font-size: 11px;
-  flex-shrink: 0;
-}
-
-.decision-tag-remove {
-  width: 14px;
-  height: 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  color: rgba(160, 100, 60, 0.6);
-  font-size: 9px;
-  cursor: pointer;
-  border-radius: 50%;
-  padding: 0;
-  margin-left: 2px;
-  transition: all 0.15s;
-}
-
-.decision-tag-remove:hover {
-  color: #c04040;
-  background: rgba(192, 64, 64, 0.15);
-}
 
 /* ---- 圣旨结果弹窗（卷轴展开，中下方显示） ---- */
 .edict-result-overlay {
@@ -4218,6 +4498,79 @@ function severityName(s: string): string {
 }
 
 .btn-back:hover { border-color: #6a5a3a; color: #8a7a5a; }
+
+/* ============================================================
+   AI 额度耗尽提醒横幅
+   ============================================================ */
+.quota-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+  background: linear-gradient(135deg, #3a1808 0%, #2a1008 100%);
+  border-bottom: 2px solid #d4a030;
+  box-shadow: 0 2px 16px rgba(212, 160, 48, 0.3);
+  animation: quota-slide-down 0.4s ease-out;
+}
+@keyframes quota-slide-down {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+.quota-banner-inner {
+  max-width: 900px; margin: 0 auto;
+  padding: 14px 20px;
+  display: flex; align-items: flex-start; gap: 14px;
+}
+.quota-icon {
+  font-size: 24px; flex-shrink: 0; line-height: 1.4;
+}
+.quota-body {
+  flex: 1; min-width: 0;
+}
+.quota-title {
+  font-family: 'STKaiti','KaiTi',serif;
+  font-size: 17px; letter-spacing: 3px;
+  color: #d4a030; margin: 0 0 6px 0;
+}
+.quota-msg {
+  font-size: 13px; color: #b89860;
+  line-height: 1.7; margin: 0 0 10px 0;
+}
+.quota-actions {
+  display: flex; gap: 10px; flex-wrap: wrap;
+}
+.quota-btn {
+  padding: 7px 18px; border-radius: 4px;
+  font-family: 'STKaiti','KaiTi',serif;
+  font-size: 13px; letter-spacing: 2px;
+  cursor: pointer; text-decoration: none;
+  display: inline-block; text-align: center;
+  transition: all 0.2s;
+}
+.quota-btn-primary {
+  background: rgba(212, 160, 48, 0.2);
+  border: 1px solid #d4a030; color: #d4a030;
+}
+.quota-btn-primary:hover {
+  background: rgba(212, 160, 48, 0.35); border-color: #e0b840; color: #e0b840;
+}
+.quota-btn-secondary {
+  background: rgba(160, 140, 90, 0.15);
+  border: 1px solid #8a7a4a; color: #b89860;
+}
+.quota-btn-secondary:hover {
+  background: rgba(160, 140, 90, 0.3); border-color: #a09060; color: #c8a870;
+}
+.quota-btn-ghost {
+  background: none; border: 1px solid #4a3a2a; color: #6a5a4a;
+}
+.quota-btn-ghost:hover {
+  border-color: #6a5a4a; color: #8a7a5a;
+}
+.quota-close {
+  flex-shrink: 0; background: none; border: none;
+  color: #6a5a4a; font-size: 18px; cursor: pointer;
+  padding: 4px 8px; line-height: 1;
+  margin-top: 2px;
+}
+.quota-close:hover { color: #b89860; }
 
 /* ---- 事件详情弹窗（保留） ---- */
 .event-detail-overlay {

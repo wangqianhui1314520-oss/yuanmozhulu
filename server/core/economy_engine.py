@@ -23,6 +23,7 @@ from server.models.world_state import (
     WorldState, FactionState, TileState, TileType,
     DiplomaticStance, Season, BuildingType, PolicyType,
 )
+from server.core.building_config import BUILDING_CONFIG
 
 logger = logging.getLogger("yuanmo.economy")
 
@@ -399,18 +400,8 @@ class EconomyEngine:
     def calc_building_upkeep(self, faction_id: str) -> dict:
         """计算建筑维护费（Sink）
 
-        各建筑维护费：工坊30/级、港口40/级、寺庙20/级、城墙50/级
+        使用 BUILDING_CONFIG 权威 upkeep 值，与 settle_engine 保持一致。
         """
-        building_upkeep_rates = {
-            BuildingType.WORKSHOP.value: 30,
-            BuildingType.DOCK.value: 40,
-            BuildingType.TEMPLE.value: 20,
-            BuildingType.WALL.value: 50,
-            BuildingType.BEACON.value: 15,
-            BuildingType.BARRACKS.value: 25,
-            BuildingType.ARMORY.value: 35,
-            BuildingType.STABLE.value: 35,
-        }
         total = 0
         details = []
         for tile in self.world.tiles.values():
@@ -418,7 +409,8 @@ class EconomyEngine:
                 continue
             buildings = getattr(tile, 'buildings', {}) or {}
             for bld_type, level in buildings.items():
-                rate = building_upkeep_rates.get(bld_type, 20)
+                bld_cfg = BUILDING_CONFIG.get(bld_type, {})
+                rate = bld_cfg.get("upkeep", 20) if isinstance(bld_cfg, dict) else 20
                 cost = level * rate
                 total += cost
                 details.append({
@@ -506,11 +498,10 @@ class EconomyEngine:
             dev_level = getattr(tile, 'development_level', 1)
             dev_bonus = (dev_level - 1) * 0.002
 
-            # 饥荒惩罚
+            # 饥荒惩罚（绝对值判定，与 settle_engine 一致）
             famine_penalty = 0.0
-            grain_per_pop = tile.grain / max(1, tile.population)
             famine_threshold = self.const.get("famine_threshold_grain", 150)
-            if grain_per_pop < famine_threshold:
+            if tile.grain <= famine_threshold:
                 famine_penalty = -0.03  # 饥荒大幅减少人口
 
             total_rate = base_rate + bld_bonus + season_bonus + tile_bonus + dev_bonus + famine_penalty
@@ -539,22 +530,21 @@ class EconomyEngine:
     def check_famine(self, faction_id: str) -> list[dict]:
         """检查势力内的饥荒地块
 
-        饥荒判定: 人均粮草 < famine_threshold_grain
+        饥荒判定: 地块粮草 ≤ famine_threshold_grain（与 SettleEngine 一致，用绝对值）
         """
         threshold = self.const.get("famine_threshold_grain", 150)
         famine_tiles = []
         for tile in self.world.tiles.values():
             if tile.faction_id != faction_id or tile.population <= 0:
                 continue
-            grain_per_pop = tile.grain / tile.population
-            if grain_per_pop < threshold:
+            if tile.grain <= threshold:
                 famine_tiles.append({
                     "tile_id": tile.tile_id,
                     "tile_name": tile.tile_name,
                     "population": tile.population,
                     "grain": tile.grain,
-                    "grain_per_pop": round(grain_per_pop, 1),
-                    "severity": "severe" if grain_per_pop < threshold * 0.5 else "moderate",
+                    "grain_per_pop": round(tile.grain / max(1, tile.population), 1),
+                    "severity": "severe" if tile.grain <= threshold * 0.5 else "moderate",
                 })
         return famine_tiles
 

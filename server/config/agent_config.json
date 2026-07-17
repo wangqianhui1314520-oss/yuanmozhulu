@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "description": "八大智能体模型配置 - 修改后服务自动热更新",
+  "description": "十大智能体模型配置 - 修改后服务自动热更新",
   "A1": {
     "agent_name": "谋策阁",
     "model_group": "advisor",
@@ -63,6 +63,22 @@
     "model_name": "",
     "temperature": 0.5,
     "max_tokens": 8192,
+    "enabled": true
+  },
+  "A9": {
+    "agent_name": "军机处",
+    "model_group": "enemy",
+    "model_name": "",
+    "temperature": 0.6,
+    "max_tokens": 2048,
+    "enabled": true
+  },
+  "A10": {
+    "agent_name": "度支司",
+    "model_group": "law",
+    "model_name": "",
+    "temperature": 0.4,
+    "max_tokens": 2048,
     "enabled": true
   }
 }

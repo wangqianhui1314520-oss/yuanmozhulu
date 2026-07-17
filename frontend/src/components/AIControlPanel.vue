@@ -19,7 +19,7 @@
               <span>模型: {{ aiStatus.model || '--' }}</span>
             </div>
             <div class="status-item">
-              <span>活跃: {{ dashboardStats?.active_agents ?? aiStatus.activeAgents ?? 0 }}/8</span>
+              <span>活跃: {{ dashboardStats?.active_agents ?? aiStatus.activeAgents ?? 0 }}/10</span>
             </div>
             <div class="status-item" v-if="dashboardStats">
               <span>总调用: {{ dashboardStats.total_calls || 0 }}</span>
@@ -70,6 +70,7 @@
             </div>
 
             <div v-if="delegationSaved" class="delegation-saved-hint">✓ 委任配置已保存（本地存储，随圣旨系统生效）</div>
+            <div v-if="delegationError" class="delegation-error-hint">{{ delegationError }}</div>
           </div>
 
           <!-- Tab: 内政AI -->
@@ -111,7 +112,10 @@
             </div>
 
             <button class="btn-action" @click="refreshCivil" :disabled="loading">
-              {{ loading ? '分析中...' : '刷新内政分析' }}
+              {{ loading ? (civilPhase || '分析中...') : '刷新内政分析' }}
+            </button>
+            <button class="btn-action secondary" @click="resourcePlanCivil" :disabled="loading">
+              {{ loading && civilPhase ? civilPhase : '资源调配方案' }}
             </button>
             <button class="btn-action secondary" @click="executeCivilPlan" :disabled="loading">
               {{ loading ? '执行中...' : '执行城建计划' }}
@@ -132,15 +136,70 @@
                 <input v-model="tactical.to" placeholder="输入地块ID" />
               </div>
             </div>
-
-            <div class="btn-row">
-              <button class="btn-action" @click="findPath" :disabled="loading">🗺️ 最优路径</button>
-              <button class="btn-action" @click="predictBattle" :disabled="loading">⚔️ 战损推演</button>
-              <button class="btn-action" @click="planTactics" :disabled="loading">🎯 战术规划</button>
+            <div class="section-row">
+              <div class="input-group">
+                <label>出征兵力</label>
+                <input type="number" v-model.number="tactical.troops" min="100" max="10000" step="100" />
+              </div>
             </div>
 
+            <!-- 战术查询历史 -->
+            <div v-if="tacticalHistory.length" class="tactical-history">
+              <span class="history-label">最近查询:</span>
+              <button v-for="(h, i) in tacticalHistory" :key="i" class="history-chip"
+                @click="loadTacticalHistory(h)" :title="`${h.from} → ${h.to} (${h.troops}兵)`">
+                {{ h.from }}→{{ h.to }}
+              </button>
+            </div>
+
+            <div class="btn-row">
+              <button class="btn-action" @click="findPath" :disabled="loading">🗺️ 路径</button>
+              <button class="btn-action" @click="predictBattle" :disabled="loading">⚔️ 推演</button>
+              <button class="btn-action" @click="planTactics" :disabled="loading">🎯 规划</button>
+              <button class="btn-action secondary" @click="garrisonPriorities" :disabled="loading">🛡️ 驻防</button>
+            </div>
+
+            <div v-if="loading && activeTab === 'tactical'" class="tactical-loading">🔮 天机推演中…</div>
+
             <div v-if="tacticalResult" class="result-section">
-              <pre class="result-json">{{ JSON.stringify(tacticalResult, null, 2) }}</pre>
+              <!-- 路径结果 -->
+              <div v-if="tacticalResult.path || tacticalResult.steps !== undefined" class="tactical-card">
+                <div class="tactical-card-title">🗺️ 最优路径</div>
+                <div class="tactical-card-body">
+                  <span class="tactical-stat">步数: {{ tacticalResult.path?.length || tacticalResult.steps }}</span>
+                  <span class="tactical-stat" v-if="tacticalResult.cost !== undefined">耗粮: {{ tacticalResult.cost }}</span>
+                  <span class="tactical-stat" v-if="tacticalResult.time !== undefined">耗时: {{ tacticalResult.time }}天</span>
+                </div>
+              </div>
+              <!-- 战损推演 -->
+              <div v-if="tacticalResult.win_probability !== undefined || tacticalResult.win_rate !== undefined" class="tactical-card">
+                <div class="tactical-card-title">⚔️ 战损推演</div>
+                <div class="tactical-card-body">
+                  <span class="tactical-stat">胜率: {{ ((tacticalResult.win_probability ?? tacticalResult.win_rate) * 100).toFixed(0) }}%</span>
+                  <span class="tactical-stat" v-if="tacticalResult.expected_losses !== undefined">预计伤亡: {{ tacticalResult.expected_losses }}</span>
+                  <span class="tactical-stat" v-if="tacticalResult.advantage">优势: {{ tacticalResult.advantage }}</span>
+                </div>
+              </div>
+              <!-- 驻防 -->
+              <div v-if="tacticalResult.priorities?.length" class="tactical-card">
+                <div class="tactical-card-title">🛡️ 驻防优先级</div>
+                <div class="tactical-card-body">
+                  <div v-for="(p, i) in tacticalResult.priorities.slice(0, 5)" :key="i" class="tactical-priority-row">
+                    <span>{{ i + 1 }}. {{ p.tile || p.tile_id || (typeof p === 'string' ? p : '') }}</span>
+                    <span v-if="p.score" class="rec-score">威胁 {{ p.score }}</span>
+                  </div>
+                </div>
+              </div>
+              <!-- 战术规划 -->
+              <div v-if="tacticalResult.plan || tacticalResult.strategy" class="tactical-card">
+                <div class="tactical-card-title">🎯 战术规划</div>
+                <div class="tactical-card-body">{{ tacticalResult.plan || tacticalResult.strategy }}</div>
+              </div>
+              <!-- 兜底：无法识别的结构→折叠原始数据 -->
+              <details v-if="isRawResult()" class="result-raw-details">
+                <summary class="result-raw-toggle">📄 查看原始数据</summary>
+                <pre class="result-json">{{ JSON.stringify(tacticalResult, null, 2) }}</pre>
+              </details>
             </div>
           </div>
 
@@ -151,7 +210,20 @@
               <button class="btn-action secondary" @click="refreshDecisionLogs" :disabled="dashboardLoading">
                 {{ dashboardLoading ? '加载中...' : '🔄 刷新日志' }}
               </button>
+              <button class="btn-action secondary" @click="exportLogsCSV" :disabled="!decisionLogs.length">📥 导出CSV</button>
               <button class="btn-action secondary" @click="decisionLogs = []" :disabled="!decisionLogs.length">清空</button>
+            </div>
+
+            <!-- 日志筛选行 -->
+            <div class="log-filter-row" v-if="decisionLogs.length > 3">
+              <input v-model="logFilterAgent" placeholder="筛选Agent…" class="log-filter-input" />
+              <select v-model="logFilterRisk" class="log-filter-select">
+                <option value="">全部风险</option>
+                <option value="low">🟢 低</option>
+                <option value="medium">🟡 中</option>
+                <option value="high">🔴 高</option>
+              </select>
+              <span class="log-filter-count">{{ filteredLogs.length }}/{{ decisionLogs.length }}</span>
             </div>
 
             <div v-if="dashboardData?.event_bus" class="aicp-event-bus-info">
@@ -161,20 +233,22 @@
             </div>
 
             <div class="log-list">
-              <div v-for="(log, i) in decisionLogs" :key="i" class="log-item">
+              <div v-for="(log, i) in filteredLogs" :key="i" class="log-item">
                 <span class="log-time">回合{{ log.turn }}</span>
                 <span class="log-agent">[{{ log.agent }}]</span>
                 <span class="log-faction">{{ log.faction }}</span>
                 <span class="log-summary">{{ log.summary }}</span>
                 <span class="log-risk" :class="log.risk">{{ log.risk }}</span>
               </div>
-              <div v-if="!decisionLogs.length" class="empty-state">暂无决策日志，点击"刷新日志"从后端同步</div>
+              <div v-if="!filteredLogs.length" class="empty-state">
+                {{ decisionLogs.length ? '无匹配的日志记录' : '暂无决策日志，点击"刷新日志"从后端同步' }}
+              </div>
             </div>
           </div>
 
           <!-- Tab: 智能体状态 -->
           <div v-if="activeTab === 'agents'" class="aicp-content">
-            <h3>🧠 AI智能体集群</h3>
+            <h3>🧠 AI智能体集群 <span v-if="_pollActive" class="polling-badge">⟳ 自动刷新</span></h3>
 
             <!-- 全局统计摘要 -->
             <div v-if="dashboardStats" class="dashboard-summary">
@@ -188,7 +262,7 @@
               </div>
               <div class="ds-card">
                 <div class="ds-value" :class="{ warn: dashboardStats.degraded_agents > 0 }">{{ dashboardStats.active_agents || 0 }}</div>
-                <div class="ds-label">活跃/{{ dashboardStats.total_agents || 8 }}智能体</div>
+                <div class="ds-label">活跃/{{ dashboardStats.total_agents || 10 }}智能体</div>
               </div>
               <div class="ds-card">
                 <div class="ds-value">{{ dashboardData?.event_bus?.pending_events ?? 0 }}</div>
@@ -213,7 +287,8 @@
             </div>
 
             <div class="agent-grid">
-              <div v-for="agent in liveAgents" :key="agent.key" class="agent-card" :class="agentCardClass(agent)">
+              <div v-for="agent in liveAgents" :key="agent.key" class="agent-card" :class="agentCardClass(agent)"
+                @click="toggleAgentExpand(agent.key)">
                 <div class="agent-header">
                   <span class="agent-icon">{{ agentIcon(agent.key) }}</span>
                   <strong>{{ agent.name }}</strong>
@@ -232,6 +307,24 @@
                 <div v-if="agent.memories" class="agent-memories">
                   记忆: 短{{ agent.memories.short_term || 0 }} / 中{{ agent.memories.mid_term || 0 }} / 长{{ agent.memories.long_term || 0 }}
                 </div>
+                <!-- 展开详情 -->
+                <div v-if="expandedAgent === agent.key" class="agent-expand">
+                  <div v-if="agent.config" class="agent-expand-section">
+                    <div class="expand-label">配置</div>
+                    <div class="expand-json">{{ JSON.stringify(agent.config, null, 1) }}</div>
+                  </div>
+                  <div v-if="agent.recent_outputs?.length" class="agent-expand-section">
+                    <div class="expand-label">最近产出 ({{ agent.recent_outputs.length }})</div>
+                    <div v-for="(ro, ri) in agent.recent_outputs.slice(0, 3)" :key="ri" class="expand-item">{{ ro }}</div>
+                  </div>
+                  <div v-if="agent.circuit_history?.length" class="agent-expand-section">
+                    <div class="expand-label">熔断历史</div>
+                    <div v-for="(ch, ci) in agent.circuit_history.slice(0, 3)" :key="ci" class="expand-item circuit-item">
+                      {{ ch.time || '?' }} — {{ ch.state || ch }}
+                    </div>
+                  </div>
+                  <div v-if="!agent.config && !agent.recent_outputs?.length" class="expand-hint">点击刷新获取详情…</div>
+                </div>
               </div>
             </div>
 
@@ -240,6 +333,12 @@
               ⚠️ {{ dashboardStats.degraded_agents }}个智能体已降级（熔断/回退模式）
             </div>
           </div>
+
+          <!-- 快捷键提示 -->
+          <div class="aicp-shortcut-bar">
+            <span>Ctrl+1~5 切换Tab</span>
+            <span>Esc 关闭面板</span>
+          </div>
         </div>
       </div>
     </Transition>
@@ -247,7 +346,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, reactive, computed } from 'vue'
+import { ref, watch, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useGameStore } from '@/stores/gameStore'
 import api, {
   agentDashboard,
@@ -261,6 +360,7 @@ const store = useGameStore()
 const activeTab = ref('delegation')
 const loading = ref(false)
 const delegationSaved = ref(false)  // 委任保存提示
+const delegationError = ref('')     // 委任保存错误提示
 
 const tabs = [
   { id: 'delegation', label: '🏛️ 委任' },
@@ -299,9 +399,24 @@ const aiStatus = reactive({
 
 // 内政分析
 const civilAnalysis = ref<any>(null)
-const tactical = reactive({ from: '', to: '' })
+const civilPhase = ref('')  // 分析阶段提示: analyzing / generating / validating
+const tactical = reactive({ from: '', to: '', troops: 500 })
 const tacticalResult = ref<any>(null)
+// 决策日志
 const decisionLogs = ref<any[]>([])
+const logFilterAgent = ref('')
+const logFilterRisk = ref('')
+const filteredLogs = computed(() => {
+  let logs = decisionLogs.value
+  if (logFilterAgent.value) {
+    const kw = logFilterAgent.value.toLowerCase()
+    logs = logs.filter(l => l.agent?.toLowerCase().includes(kw))
+  }
+  if (logFilterRisk.value) {
+    logs = logs.filter(l => l.risk === logFilterRisk.value)
+  }
+  return logs
+})
 
 // ===== Dashboard 数据 =====
 const dashboardData = ref<any>(null)
@@ -314,16 +429,18 @@ const liveAgents = computed(() => {
   if (dashboardData.value?.agents?.length) {
     return dashboardData.value.agents
   }
-  // 降级：使用硬编码列表（从后端未获取数据时）
+  // 降级：使用硬编码列表（从后端未获取数据时）— 十大智能体 A1~A10
   return [
     { key: 'A1', name: '谋策阁', model_group: 'advisor', trigger: 'both', description: '谋臣献策、廷议辩论、战略分析（每回合自动为玩家献策）', player_only: true },
     { key: 'A2', name: '群雄殿', model_group: 'advisor', trigger: 'auto', description: '君主NPC自主推演、势力决策（玩家势力强制休眠）', player_only: false },
     { key: 'A3', name: '律法堂', model_group: 'advisor', trigger: 'manual', description: '案件审理、律法判决、朝堂审讯（仅玩家手动触发）', player_only: true },
-    { key: 'A4', name: '谍报司', model_group: 'enemy', trigger: 'auto', description: '细作网络、情报搜集、渗透破坏', player_only: false },
+    { key: 'A4', name: '谍报司', model_group: 'enemy', trigger: 'both', description: '细作网络、情报搜集、渗透破坏（玩家势力仅手动触发）', player_only: false },
     { key: 'A5', name: '司天台', model_group: 'enemy', trigger: 'both', description: '天灾人祸、祥瑞异象、随机事件生成', player_only: false },
-    { key: 'A6', name: '外交署', model_group: 'law', trigger: 'auto', description: '合纵连横、盟约谈判、贸易联姻', player_only: false },
+    { key: 'A6', name: '外交署', model_group: 'law', trigger: 'both', description: '合纵连横、盟约谈判、贸易联姻', player_only: false },
     { key: 'A7', name: '宗室府', model_group: 'advisor', trigger: 'auto', description: '继承顺位、宗室管理、皇子培养', player_only: false },
     { key: 'A8', name: '国史馆', model_group: 'law', trigger: 'auto', description: '史书修撰、结局传记、事件归档', player_only: false },
+    { key: 'A9', name: '军机处', model_group: 'enemy', trigger: 'auto', description: '战斗后自动生成古风战报、军情分析（无玩家交互）', player_only: false },
+    { key: 'A10', name: '度支司', model_group: 'law', trigger: 'auto', description: '税收粮储调配、国策经济影响评估（后台自动运行）', player_only: false },
   ]
 })
 
@@ -332,6 +449,7 @@ function agentIcon(key: string): string {
   const icons: Record<string, string> = {
     'A1': '🎓', 'A2': '👑', 'A3': '⚖️', 'A4': '🕵️',
     'A5': '🌤️', 'A6': '🤝', 'A7': '🏰', 'A8': '📜',
+    'A9': '⚔️', 'A10': '🪙',
   }
   return icons[key] || '🤖'
 }
@@ -382,19 +500,28 @@ function formatNum(n: number) {
   return String(n)
 }
 
+function isRawResult(): boolean {
+  const r = tacticalResult.value
+  if (!r) return false
+  return !(r.path || r.steps !== undefined || r.win_probability !== undefined || r.win_rate !== undefined || r.priorities?.length || r.plan || r.strategy)
+}
+
 function setAll(level: string) {
   Object.keys(delegationLevels).forEach(k => { delegationLevels[k] = level })
   updateDelegation('all')
 }
 
-function updateDelegation(domain: string) {
+function updateDelegation(_domain: string) {
   // 保存到 localStorage（前端本地存储，影响前端 AI 控制面板行为）
+  delegationError.value = ''
   try {
     localStorage.setItem('yuanmo_delegation_config', JSON.stringify({ ...delegationLevels }))
     delegationSaved.value = true
     setTimeout(() => { delegationSaved.value = false }, 3000)
   } catch (e) {
     console.warn('委任配置保存失败:', e)
+    delegationError.value = '保存失败，请检查浏览器存储空间'
+    setTimeout(() => { delegationError.value = '' }, 5000)
   }
 }
 
@@ -438,9 +565,29 @@ async function executeCivilPlan() {
   }
 }
 
+async function resourcePlanCivil() {
+  if (!store.playerFactionId) return
+  loading.value = true
+  civilPhase.value = 'analyzing'
+  try {
+    const resp = await api.post('/ai/civil/resource-plan', {
+      faction_id: store.playerFactionId,
+    })
+    if (resp.data?.data) {
+      civilAnalysis.value = { ...civilAnalysis.value, ...resp.data.data }
+    }
+  } catch (e) {
+    console.error('资源调配分析失败:', e)
+  } finally {
+    loading.value = false
+    civilPhase.value = ''
+  }
+}
+
 // 战术AI
 async function findPath() {
   if (!tactical.from || !tactical.to || !store.playerFactionId) return
+  recordTacticalQuery()
   loading.value = true
   try {
     const resp = await api.post('/ai/tactical/path', {
@@ -455,12 +602,14 @@ async function findPath() {
 
 async function predictBattle() {
   if (!tactical.to || !store.playerFactionId) return
+  recordTacticalQuery()
   loading.value = true
   try {
     const resp = await api.post('/ai/tactical/battle-predict', {
       tile_id: tactical.to,
       faction_id: store.playerFactionId,
-      troops: 500,
+      troops: tactical.troops,
+      from_tile: tactical.from || undefined,
     })
     tacticalResult.value = resp.data?.data || resp.data
   } catch (e) { console.error(e) }
@@ -469,10 +618,23 @@ async function predictBattle() {
 
 async function planTactics() {
   if (!tactical.to || !store.playerFactionId) return
+  recordTacticalQuery()
   loading.value = true
   try {
     const resp = await api.post('/ai/tactical/plan', {
       tile_id: tactical.to,
+      faction_id: store.playerFactionId,
+    })
+    tacticalResult.value = resp.data?.data || resp.data
+  } catch (e) { console.error(e) }
+  finally { loading.value = false }
+}
+
+async function garrisonPriorities() {
+  if (!store.playerFactionId) return
+  loading.value = true
+  try {
+    const resp = await api.post('/ai/tactical/garrison', {
       faction_id: store.playerFactionId,
     })
     tacticalResult.value = resp.data?.data || resp.data
@@ -580,22 +742,112 @@ async function triggerAutoStep() {
   }
 }
 
-// 健康检查 + Dashboard
-watch(() => props.visible, async (v) => {
+// 连接状态检查（使用 /api/agent/status 获取AI在线状态和模型信息）
+// + 集群Tab自动轮询（带防抖）
+let _pollTimer: ReturnType<typeof setInterval> | null = null
+const _pollActive = ref(false)
+let _lastPollTime = 0
+
+function safePollDashboard() {
+  const now = Date.now()
+  if (dashboardLoading.value || now - _lastPollTime < 3000) return
+  _lastPollTime = now
+  refreshDashboard()
+}
+
+function startPolling() {
+  stopPolling()
+  _pollActive.value = true
+  _pollTimer = setInterval(safePollDashboard, 5000)
+}
+function stopPolling() {
+  _pollActive.value = false
+  if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null }
+}
+
+watch([() => props.visible, () => activeTab.value], ([v, tab]) => {
   if (v) {
-    // 并行请求健康和 dashboard
+    // 并行请求状态和 dashboard
     try {
-      const resp = await api.get('/health')
-      const d = resp.data?.data || resp.data
-      aiStatus.connected = d?.ai_available || false
-      aiStatus.model = d?.llm_models?.advisor?.model_name || '--'
-      aiStatus.activeAgents = d?.agent_count || 8
-    } catch (e) { console.warn('获取AI仪表盘失败:', e); aiStatus.connected = false }
+      api.get('/api/agent/status').then(resp => {
+        const d = resp.data?.data || resp.data
+        aiStatus.connected = d?.ai_available || false
+        aiStatus.model = d?.models?.advisor || '--'
+        aiStatus.activeAgents = d?.agents?.length || 10
+      }).catch(e => { console.warn('获取AI状态失败:', e); aiStatus.connected = false })
+    } catch (_) {}
 
     // 非阻塞加载 dashboard
     refreshDashboard()
+
+    // 集群Tab自动轮询
+    if (tab === 'agents') startPolling()
+    else stopPolling()
+  } else {
+    stopPolling()
   }
 })
+
+// ===== 以下为新增工具函数 =====
+
+// Agent 卡片展开/折叠
+const expandedAgent = ref('')  // 当前展开的 Agent key
+
+function toggleAgentExpand(key: string) {
+  expandedAgent.value = expandedAgent.value === key ? '' : key
+}
+
+// 战术查询历史（最近5次）
+const tacticalHistory = ref<Array<{ from: string; to: string; troops: number }>>([])
+
+function recordTacticalQuery() {
+  if (!tactical.from || !tactical.to) return
+  const entry = { from: tactical.from, to: tactical.to, troops: tactical.troops }
+  tacticalHistory.value.unshift(entry)
+  if (tacticalHistory.value.length > 5) tacticalHistory.value.pop()
+  // 去重
+  tacticalHistory.value = tacticalHistory.value.filter(
+    (h, i, arr) => arr.findIndex(x => x.from === h.from && x.to === h.to) === i
+  )
+}
+
+function loadTacticalHistory(entry: { from: string; to: string; troops: number }) {
+  tactical.from = entry.from
+  tactical.to = entry.to
+  tactical.troops = entry.troops
+}
+
+// 日志导出 CSV
+function exportLogsCSV() {
+  if (!decisionLogs.value.length) return
+  const header = '回合,Agent,势力,摘要,风险\n'
+  const rows = decisionLogs.value.map(l =>
+    `${l.turn || ''},${(l.agent || '').replace(/,/g, ' ')},${l.faction || ''},${(l.summary || '').replace(/,/g, ' ')},${l.risk || ''}`
+  ).join('\n')
+  const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `AI决策日志_回合${store.currentRound}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+// 键盘快捷键 Ctrl+1~5 切换Tab | Escape 关闭
+function handleKeydown(e: KeyboardEvent) {
+  if (!props.visible) return
+  if (e.ctrlKey && e.key >= '1' && e.key <= '5') {
+    e.preventDefault()
+    activeTab.value = tabs[parseInt(e.key) - 1].id
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    emit('close')
+  }
+}
+
+onMounted(() => { window.addEventListener('keydown', handleKeydown) })
+onUnmounted(() => { window.removeEventListener('keydown', handleKeydown); stopPolling() })
 </script>
 
 <style scoped>
@@ -717,4 +969,54 @@ watch(() => props.visible, async (v) => {
 
 /* ===== 委任保存提示 ===== */
 .delegation-saved-hint { margin-top: 12px; font-size: 11px; color: #4caf50; text-align: center; }
+.delegation-error-hint { margin-top: 12px; font-size: 11px; color: #f44336; text-align: center; }
+
+/* ===== 战术卡片 ===== */
+.tactical-loading { text-align: center; color: #c9a45c; padding: 12px; font-size: 13px; animation: pulse-text 1.5s ease-in-out infinite; }
+.tactical-card { background: #16213e; border-radius: 6px; padding: 10px 14px; margin-bottom: 8px; border-left: 3px solid #c9a45c; }
+.tactical-card-title { font-size: 13px; color: #c9a45c; font-weight: bold; margin-bottom: 6px; }
+.tactical-card-body { display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; color: #e0d5c1; }
+.tactical-stat { background: rgba(201,164,92,0.1); padding: 2px 8px; border-radius: 3px; font-size: 11px; }
+.tactical-priority-row { display: flex; gap: 8px; padding: 2px 0; width: 100%; font-size: 12px; border-bottom: 1px solid #222; }
+.result-raw-details { margin-top: 4px; }
+.result-raw-toggle { font-size: 11px; color: #888; cursor: pointer; user-select: none; }
+
+/* ===== 日志筛选 ===== */
+.log-filter-row { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; }
+.log-filter-input { flex: 1; background: #16213e; color: #e0d5c1; border: 1px solid #333; padding: 4px 8px; border-radius: 4px; font-family: inherit; font-size: 11px; }
+.log-filter-select { background: #16213e; color: #c9a45c; border: 1px solid #333; padding: 4px 6px; border-radius: 4px; font-family: inherit; font-size: 11px; }
+.log-filter-count { font-size: 10px; color: #666; white-space: nowrap; }
+
+/* ===== 集群轮询标记 ===== */
+.polling-badge { font-size: 10px; color: #4caf50; font-weight: normal; margin-left: 6px; opacity: 0.8; animation: pulse-text 2s ease-in-out infinite; }
+
+/* ===== Agent 展开详情 ===== */
+.agent-card { cursor: pointer; transition: all 0.2s; }
+.agent-card:hover { filter: brightness(1.05); }
+.agent-expand { margin-top: 8px; padding-top: 8px; border-top: 1px solid #333; }
+.agent-expand-section { margin-bottom: 6px; }
+.expand-label { font-size: 10px; color: #5a7a9a; text-transform: uppercase; margin-bottom: 2px; }
+.expand-json { font-size: 10px; color: #777; white-space: pre-wrap; font-family: monospace; max-height: 80px; overflow-y: auto; }
+.expand-item { font-size: 10px; color: #94a3b8; padding: 1px 0; }
+.circuit-item { color: #ff9800; }
+.expand-hint { font-size: 10px; color: #555; font-style: italic; }
+
+/* ===== 战术历史 ===== */
+.tactical-history { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 8px; }
+.history-label { font-size: 10px; color: #666; }
+.history-chip {
+  background: rgba(201,164,92,0.1); color: #c9a45c; border: 1px solid rgba(201,164,92,0.2);
+  padding: 2px 8px; border-radius: 3px; font-size: 10px; cursor: pointer; font-family: monospace;
+  transition: background 0.15s;
+}
+.history-chip:hover { background: rgba(201,164,92,0.2); }
+
+/* ===== 快捷键栏 ===== */
+.aicp-shortcut-bar {
+  display: flex; gap: 16px; justify-content: center; padding: 6px 12px;
+  background: #0d1b2a; border-top: 1px solid #1a1a2e; font-size: 10px; color: #555;
+}
+
+/* ===== 通用动画 ===== */
+@keyframes pulse-text { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 </style>

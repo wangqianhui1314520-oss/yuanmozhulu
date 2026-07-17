@@ -58,7 +58,7 @@ export function useFloatPanels() {
 
   // ===== 外交面板 =====
   const diploFeedback = ref<{ text: string; type: string }>({ text: '', type: '' })
-  const diploTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+  const diploTimer = ref<number | null>(null)
   const diploRecommendations = ref<any[]>([])
   const diploRecLoading = ref(false)
 
@@ -305,7 +305,8 @@ export function useFloatPanels() {
   }
 
   function openCourtDebate() {
-    store.togglePanel('ai-strategy')
+    const event = new CustomEvent('open-court-debate', { detail: {} })
+    window.dispatchEvent(event)
   }
 
   function issueDecree() {

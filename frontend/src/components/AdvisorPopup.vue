@@ -60,8 +60,8 @@
                 <button class="ap-btn consider" @click="considerSuggestion" :disabled="isExecuting">
                   <span>💬</span> 追问
                 </button>
-                <button class="ap-btn approve" @click="approveSuggestion" :disabled="isExecuting">
-                  <span>✓</span> {{ isExecuting ? '执行中...' : '采纳并执行' }}
+                <button class="ap-btn approve" @click="approveSuggestion">
+                  <span>✓</span> 采纳
                 </button>
               </div>
 
@@ -186,9 +186,9 @@ async function generateSuggestions() {
   isGenerating.value = true
   isLoading.value = true
   try {
-    // 使用 existing strategic_advice API
+    // 使用 strategic_advice API，skipEnrich=true 避免重复包装（buildContextPrompt 已含完整游戏数据）
     const prompt = buildContextPrompt()
-    const result = await store.chatWithMinister(prompt)
+    const result = await store.chatWithMinister(prompt, undefined, true)
 
     if (result?.response) {
       // 解析AI回复为结构化建议
@@ -213,45 +213,172 @@ function buildContextPrompt(): string {
   const pf = store.playerFaction
   if (!pf) return '请分析当前局势并给出建议'
 
-  // 分析敌对和盟友关系
-  const wars: Array<{ name: string }> = []
-  const alliances: Array<{ name: string }> = []
-  for (const [k, r] of Object.entries(store.relations as Record<string, any>)) {
+  const ownedTiles = getOwnedTiles()
+  const thisFactionId = store.playerFactionId
+  const thisFactionName = pf.name || '我方'
+  const factionsMap = store.factions as Record<string, any>
+  const relationsData = store.relations as Record<string, any>
+  const neighborsData = store.tileNeighbors as Record<string, string[]>
+
+  // ── 外交关系（含态度和信任） ──
+  interface RelationInfo { id: string; name: string; stance: string; attitude: number; trust: number; trade: boolean }
+  const allRelations: RelationInfo[] = []
+  for (const [k, r] of Object.entries(relationsData)) {
     const parts = k.split('|')
-    if (!parts.includes(store.playerFactionId)) continue
-    const otherId = parts[0] === store.playerFactionId ? parts[1] : parts[0]
-    const otherFaction = (store.factions as Record<string, any>)[otherId]
+    if (!parts.includes(thisFactionId)) continue
+    const otherId = parts[0] === thisFactionId ? parts[1] : parts[0]
+    const otherFaction = factionsMap[otherId]
     const otherName = otherFaction?.name || otherId
-    if (r.stance === 'war') wars.push({ name: otherName })
-    else if (r.stance === 'alliance') alliances.push({ name: otherName })
+    allRelations.push({
+      id: otherId, name: otherName,
+      stance: r.stance || 'neutral',
+      attitude: r.attitude ?? 0,
+      trust: r.trust ?? 0,
+      trade: !!r.trade_active,
+    })
+  }
+  const wars = allRelations.filter(r => r.stance === 'war')
+  const alliances = allRelations.filter(r => r.stance === 'alliance')
+  const neutral = allRelations.filter(r => r.stance !== 'war' && r.stance !== 'alliance')
+
+  // ── 己方地块清单 ──
+  const tileTypeLabel: Record<string, string> = {
+    farmland:'农田', mountain:'山地', water:'水域', coast:'海岸',
+    city:'城池', pass:'关隘', port:'港口', desert:'漠地', grassland:'草原', sea:'海域',
+  }
+  function tileBuildings(t: any): string {
+    const bld: string[] = []
+    if (t.fortification > 0) bld.push(`城防Lv${t.fortification}`)
+    if (t.granary > 0) bld.push(`粮仓Lv${t.granary}`)
+    if (t.stable > 0) bld.push(`马场Lv${t.stable}`)
+    if (t.armory > 0) bld.push(`军械Lv${t.armory}`)
+    if (t.water_works > 0) bld.push(`水利Lv${t.water_works}`)
+    if (t.clinic > 0) bld.push(`医馆Lv${t.clinic}`)
+    if (t.is_port) bld.push('港口')
+    return bld.join('/') || '无建筑'
+  }
+  const tileLines: string[] = []
+  const borderTiles: string[] = []
+  for (const t of ownedTiles) {
+    const typeName = tileTypeLabel[t.tile_type] || t.tile_type
+    const tileName = t.tile_name || t.tile_id
+    const cap = t.is_capital ? '【都】' : ''
+    const buildings = tileBuildings(t)
+    tileLines.push(`${cap}${tileName}(${typeName}) 人口${t.population || 0} 兵${t.troops || 0} 粮${t.grain || 0} 银${t.treasury || 0} [${buildings}]`)
+    // 检查是否前线（邻接地块中有敌方土地）
+    const adj = neighborsData[t.tile_id] || []
+    for (const nid of adj) {
+      const nt = store.tiles[nid]
+      if (nt && nt.faction_id && nt.faction_id !== thisFactionId && !alliances.some(a => a.id === nt.faction_id)) {
+        borderTiles.push(`${tileName}↔${factionsMap[nt.faction_id]?.name || nt.faction_id}(敌方)`)
+        break
+      }
+    }
   }
 
-  return `请以元末首席谋臣的身份，基于以下游戏状态，献上3条最重要的策略建议：
+  // ── 灾害信息 ──
+  const disasters = store.activeDisasters as any[]
+  const disasterLines: string[] = []
+  if (disasters?.length) {
+    for (const d of disasters) {
+      const locName = d.tile_id ? (store.tiles[d.tile_id]?.tile_name || d.tile_id) : d.region || '全域'
+      disasterLines.push(`${d.type || d.name}(严重${d.severity ?? '?'}) @${locName}`)
+    }
+  }
 
-【当前局势】
-- 回合：第${store.currentRound}回合 / 至正${store.currentYear}年${store.currentSeason}季
-- 势力：${pf.name || '我方'}，占据${getOwnedTiles().length}块领地
-- 兵力：${store.totalTroops}人，粮草${pf.grain || 0}，银两${pf.treasury || 0}
-- 民心：${store.realmStability}/100，朝纲：${store.courtStability}/100，声望：${store.reputation}/100
-${wars.length > 0 ? `- ⚔️ 敌对势力：${wars.map(w => w.name).join('、')}` : ''}
-${alliances.length > 0 ? `- 🤝 盟友：${alliances.map(a => a.name).join('、')}` : '- 当前无盟友，外交孤立'}
-${store.activeDisasters?.length ? `- ⚠️ 灾害：${store.activeDisasters.length}处需要赈济` : ''}
+  // ── 官员信息 ──
+  const officials = store.officials as any[]
+  const officialLines: string[] = []
+  if (officials?.length) {
+    for (const o of officials.slice(0, 5)) {
+      officialLines.push(`${o.name || o.id}(${o.role || o.position || '文臣'}) 忠诚${o.loyalty ?? '?'}`)
+    }
+  }
 
-【献策要求】
-请分别就军事、内政、外交3个方向各献一策，每策格式如下：
-1. （军事）[具体行动建议]，目标是[具体地名/对象]，预计消耗[资源量]
-2. （内政）[具体建造/发展建议]，在[具体地名]建造[具体设施]
-3. （外交）[具体外交行动]，向[目标势力]进行[行动类型]
+  // ── 组装 Prompt ──
+  const parts: string[] = [
+    `请以元末首席谋臣的身份，基于以下游戏状态，献上3条最重要的策略建议。`,
+    ``,
+    `注意：`,
+    `- 回答必须直接、务实，不要出现"臣谨奏"、"臣献"、"臣闻"、"臣等"、"微臣"等任何客套话或自称。`,
+    `- 不要出现"建议"、"献策"、"求策"、"问策"、"分析"等会被系统误判为谋略问询的词汇。`,
+    `- 每条策略必须是皇上可以直接当作圣旨颁布执行的命令，而不是请示或建议。`,
+    `- 【重要】所有地名、数字、目标必须严格基于下方提供的实际游戏数据，不可凭空捏造。`,
+    `- 若建议征兵，征召数量不能超过地块人口×60%。`,
+    `- 若建议建造，费用不可超过国库银两${pf.treasury || 0}两。`,
+    `- 若建议进攻，目标必须是在接壤边境上实际存在的敌方地块。`,
+    ``,
+    `═══ 真实游戏数据（据此献策，不可偏离） ═══`,
+    ``,
+    `【基本信息】`,
+    `- 回合：第${store.currentRound}回合 / 至正${store.currentYear}年${store.currentSeason}季`,
+    `- 势力名称：${thisFactionName}`,
+    `- 银两：${pf.treasury || 0} | 粮草：${pf.grain || 0} | 军械：${pf.arms || 0} | 战马：${pf.horses || 0}`,
+    `- 总兵力：${store.totalTroops} | 总人口：${store.totalPopulation}`,
+    `- 民心：${store.realmStability}/100 | 朝纲：${store.courtStability}/100 | 声望：${store.reputation}/100`,
+    `- 已解锁国策：${(pf.unlocked_policies as any[])?.join?.('、') || '无'}`,
+    ``,
+    `【己方${ownedTiles.length}块领地详情】`,
+    ...tileLines,
+    '',
+  ]
 
-每条建议50-80字，需包含具体的地名、数字和目标。
-请确保建议基于以上实际游戏数据，不要假设玩家拥有未列出的资源。`
+  if (borderTiles.length > 0) {
+    parts.push(`【接壤前线（敌军邻接）】`, ...borderTiles.slice(0, 8), '')
+  }
+
+  parts.push(`【建筑造价参考】`,
+    `- 水利：500银 | 粮仓：800银 | 医馆：600银`,
+    `- 城防：300银/级 | 军械所：800银 | 马场：800银 | 港口：1200银`,
+    ''
+  )
+
+  if (wars.length > 0) {
+    parts.push(`【交战势力】`, ...wars.map(r => `- ${r.name} 态度${r.attitude} 信任${r.trust}`), '')
+  }
+  if (alliances.length > 0) {
+    parts.push(`【盟友势力】`, ...alliances.map(r => `- ${r.name} 态度${r.attitude} 信任${r.trust}${r.trade ? ' 有贸易' : ''}`), '')
+  } else {
+    parts.push(`【盟友】当前无盟友，外交孤立`, '')
+  }
+  if (neutral.length > 0) {
+    parts.push(`【中立势力】`, ...neutral.map(r => `- ${r.name} 态度${r.attitude}`), '')
+  }
+
+  if (disasterLines.length > 0) {
+    parts.push('', `【当前灾害】`, ...disasterLines, '')
+  }
+  if (officialLines.length > 0) {
+    parts.push(`【麾下文臣】`, ...officialLines, '')
+  }
+
+  parts.push(
+    '',
+    `【献策要求】`,
+    `请分别就军事、内政、外交3个方向各献一策，每策格式如下：`,
+    `1. （军事）[具体行动]，目标[地块名]，预计消耗[资源量]`,
+    `2. （内政）[具体建造]，在[地块名]建造[设施名]，耗费[银两]`,
+    `3. （外交）[具体行动]，向[势力名]进行[行动类型]`,
+    '',
+    `每条50-80字，必须使用上方列出的真实地名和数字。`
+  )
+
+  return parts.join('\n')
 }
 
 function parseAISuggestions(text: string, rawResult: any): Suggestion[] {
   const result: Suggestion[] = []
 
+  // 去 AI 开场白（"臣献三策如下""臣谨奏""臣闻"等）
+  const cleanText = text
+    .replace(/^.{0,30}(献|进|奏)(策|言|议|上).{0,20}[:：\s]*\n?/, '')
+    .replace(/^.{0,20}(臣|微臣|臣等)(谨|伏|顿首|昧死|诚惶诚恐)(奏|启|陈|闻|上言).{0,20}[:：\s]*\n?/, '')
+    .replace(/^.{0,20}(臣闻|臣窃闻|臣窃惟|臣愚以为|臣等闻).{0,30}[:：\s]*\n?/, '')
+    .replace(/^[^1-3一二三\n]{2,60}[：:][\s]*\n?/, '')
+    .trim()
+
   // 尝试按段落/编号分割
-  const lines = text.split('\n').filter(l => l.trim())
+  const lines = cleanText.split('\n').filter(l => l.trim())
   let current: Suggestion | null = null
   let currentContent = ''
 
@@ -265,16 +392,18 @@ function parseAISuggestions(text: string, rawResult: any): Suggestion[] {
         current.content = currentContent.trim()
         result.push(current)
       }
+      // 去掉类别标签（如"（军事）"）
+      const cleanContent = numMatch[2].replace(/^[（(]\s*(军事|内政|外交|经济|综合|赈灾|人事)\s*[)）]\s*/, '')
       current = {
-        content: numMatch[2],
+        content: cleanContent,
         category: detectCategory(numMatch[2]),
         priority: result.length === 0 ? 'critical' : 'major',
-        edictText: numMatch[2],
+        edictText: cleanContent,
       }
-      currentContent = numMatch[2]
+      currentContent = cleanContent
     } else if (current) {
       currentContent += '\n' + trimmed
-      if (!current.edictText || current.edictText.length < 50) {
+      if (!current.edictText || current.edictText.length < 300) {
         current.edictText = currentContent.trim()
       }
     }
@@ -285,14 +414,14 @@ function parseAISuggestions(text: string, rawResult: any): Suggestion[] {
     result.push(current)
   }
 
-  // 如果解析失败，整体作为一条
-  if (result.length === 0 && text.trim()) {
+  // 如果解析失败，整体作为一条（也去掉开场白）
+  if (result.length === 0 && cleanText.trim()) {
     result.push({
-      content: text.slice(0, 200),
+      content: cleanText.slice(0, 400),
       category: '综合建议',
       priority: 'major',
       analysis: '幕僚综合分析了当前局势',
-      edictText: text.slice(0, 200),
+      edictText: cleanText.slice(0, 400),
     })
   }
 
@@ -404,33 +533,10 @@ function generateFallbackSuggestions(): Suggestion[] {
   return result.slice(0, 3)
 }
 
-async function approveSuggestion() {
-  if (!currentSuggestion.value || isExecuting.value) return
-  isExecuting.value = true
-
-  try {
-    const text = currentSuggestion.value.edictText || currentSuggestion.value.content
-    const result = await store.executeEdictAI(text)
-
-    executionResult.value = {
-      success: result && (result.execution?.total_executed || 0) > 0,
-      narrative: result?.ai_analysis?.narrative || '',
-      executed: result?.execution?.executed || [],
-      failed: result?.execution?.failed || [],
-    }
-
-    if (result) {
-      emit('approveEdict', text)
-    }
-  } catch (e: any) {
-    executionResult.value = {
-      success: false,
-      narrative: '奏报执行受阻，请重试',
-      failed: [{ action: '执行', reason: e?.message || '未知错误' }],
-    }
-  } finally {
-    isExecuting.value = false
-  }
+function approveSuggestion() {
+  if (!currentSuggestion.value) return
+  const text = currentSuggestion.value.edictText || currentSuggestion.value.content
+  emit('approveEdict', text)
 }
 
 function rejectSuggestion() {

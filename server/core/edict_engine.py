@@ -705,7 +705,7 @@ async def call_ai_edict(
             llm_client.chat_role(
                 prompt=user_prompt,
                 system_prompt=system_prompt,
-                temperature=0.4,
+                # temperature 由客户端配置决定（llm_runtime.json → edict.temperature）
             ),
             timeout=120.0,  # 120秒超时，足够AI生成但不会让用户无限等待
         )
@@ -1359,7 +1359,7 @@ def _execute_command_direct(action: str, params: dict, world_state_obj, round_en
                     t.is_capital = False
             tile.is_capital = True
             player.realm_stability = max(0, player.realm_stability - 10)
-            player.capital_tile_id = tile_id
+            player.capital_tile = tile_id
             return {
                 "success": True,
                 "message": f"迁都至{tile.tile_name or tile_id}（耗费银{cost_silver}两、粮{cost_grain}石，民心暂时动荡）",

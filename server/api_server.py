@@ -536,6 +536,86 @@ async def get_api_key_status():
     })
 
 
+@app.get("/api/config/llm-quota-status")
+async def get_llm_quota_status():
+    """
+    检查 LLM 额度/可用性状态。
+    返回 fallback_mode 详情和解决方案指引，
+    供前端展示 AI 不可用提醒。
+    """
+    ss = _sess()
+    clients = ss.llm_clients or {}
+    result = {
+        "ai_available": ss.llm_available,
+        "clients": {},
+        "all_fallback": False,
+        "quota_exhausted": False,
+        "solution": None,
+    }
+
+    for key, client in clients.items():
+        fb = getattr(client, "fallback_mode", False)
+        fb_since = getattr(client, "_fallback_since", 0.0)
+        result["clients"][key] = {
+            "fallback_mode": fb,
+            "fallback_since": fb_since if fb else None,
+            "model": getattr(client, "model_name", "?"),
+        }
+
+    fallback_count = sum(1 for c in result["clients"].values() if c["fallback_mode"])
+    total_clients = len(result["clients"])
+
+    if total_clients > 0 and fallback_count == total_clients:
+        result["all_fallback"] = True
+        # 猜测原因：若 auth 配置了 key + 全部降级 → 极可能是额度耗尽
+        result["quota_exhausted"] = True
+
+    # 解决方案指引
+    if result["quota_exhausted"]:
+        result["solution"] = {
+            "title": "AI 额度已耗尽",
+            "message": (
+                "CodeBuddy API 免费额度已用尽，所有 AI 智能体（朝堂辩论/天下大势/战局分析/国策推演等）"
+                "已进入降级模式，当前返回固定兜底文本，非真实 AI 生成内容。"
+            ),
+            "actions": [
+                {
+                    "label": "购买加量包（推荐）",
+                    "url": "https://www.codebuddy.cn/profile/usage",
+                    "type": "external",
+                },
+                {
+                    "label": "更换 API Key",
+                    "url": None,
+                    "type": "settings",
+                    "hint": "在「设置 → AI模型」中填入新 Key，或修改 server/config/llm_runtime.json",
+                },
+                {
+                    "label": "降级模式继续游戏（AI 不可用）",
+                    "url": None,
+                    "type": "dismiss",
+                },
+            ],
+        }
+    elif not ss.llm_available:
+        result["solution"] = {
+            "title": "AI 未配置",
+            "message": (
+                "未检测到有效的 API Key。请设置环境变量 TENCENT_API_KEY，"
+                "或在前端「设置 → AI模型」中填入您的 API Key。"
+            ),
+            "actions": [
+                {
+                    "label": "前往设置",
+                    "url": None,
+                    "type": "settings",
+                },
+            ],
+        }
+
+    return ApiResponse.success(result)
+
+
 @app.get("/api/cost/report")
 async def get_cost_report():
     """获取 LLM 成本报告"""
@@ -2117,24 +2197,32 @@ async def advance_turn(request: dict = None):
             else:
                 _sess().pending_commands = []
             engine_snapshot = round_summary.pop("_snapshot", None)
-            snapshot = engine_snapshot or {
-                "round": _sess().world_state.current_round,
-                "year": _sess().world_state.current_year,
-                "month": _sess().world_state.current_month,
-                "season": _sess().world_state.current_season,
-                "factions": {
-                    fid: {
-                        "name": f.name,
-                        "treasury": f.treasury,
-                        "grain": f.grain,
-                        "total_troops": f.total_troops,
-                        "total_population": f.total_population,
-                        "tile_count": len(_sess().world_state.get_faction_tiles(fid)),
-                        "is_alive": f.is_alive,
-                    }
-                    for fid, f in _sess().world_state.factions.items()
-                },
-            }
+            if engine_snapshot:
+                snapshot = engine_snapshot
+            else:
+                # 情报掩码：根据细作网络控制玩家对其他势力政务数据的可见性
+                player_fid = _sess().world_state.player_faction_id
+                intel_map = _sess().world_state.get_intel_for_player(player_fid) if player_fid else {}
+                snapshot = {
+                    "round": _sess().world_state.current_round,
+                    "year": _sess().world_state.current_year,
+                    "month": _sess().world_state.current_month,
+                    "season": str(_sess().world_state.current_season),
+                    "factions": {
+                        fid: {
+                            "name": f.name,
+                            "treasury": f.treasury if intel_map.get(fid, {}).get("visible", False) or fid == player_fid else -1,
+                            "grain": f.grain if intel_map.get(fid, {}).get("visible", False) or fid == player_fid else -1,
+                            "total_troops": f.total_troops if intel_map.get(fid, {}).get("visible", False) or fid == player_fid else -1,
+                            "total_population": f.total_population if intel_map.get(fid, {}).get("visible", False) or fid == player_fid else -1,
+                            "tile_count": len(_sess().world_state.get_faction_tiles(fid)),
+                            "is_alive": f.is_alive,
+                            "_intel_visible": intel_map.get(fid, {}).get("visible", False) or fid == player_fid,
+                            "_intel_source": intel_map.get(fid, {}).get("source", "self" if fid == player_fid else "none"),
+                        }
+                        for fid, f in _sess().world_state.factions.items()
+                    },
+                }
             _sess().round_snapshots.append(snapshot)
 
             # P2: 防止事件日志和快照无限增长 → OOM
@@ -2220,7 +2308,7 @@ async def advance_turn(request: dict = None):
             "current_round": _sess().world_state.current_round,
             "current_year": _sess().world_state.current_year,
             "current_month": _sess().world_state.current_month,
-            "current_season": _sess().world_state.current_season,
+            "current_season": str(_sess().world_state.current_season),
             "phase": round_summary.get("current_phase", "settlement"),  # 2026-07-15: 修复 → 返回当前阶段名
             "round_summary": round_summary,
             "world_state": world_dict,
@@ -2939,6 +3027,7 @@ async def nl_process_edict(body: EdictProcessRequest):
     direct_execute = request.get("direct_execute", True)
     use_ai = request.get("use_ai", _sess().llm_available)
     use_simulation = request.get("use_simulation", True)  # 4.0 新增：AI战略推演
+    source = request.get("source")  # 'advisor' 表示幕僚建议，跳过谋略问询路由
 
     # 构建世界状态字典
     world_dict = _sess().world_state.model_dump()
@@ -2981,6 +3070,7 @@ async def nl_process_edict(body: EdictProcessRequest):
                 llm_client=llm_client,
                 pending_commands=_sess().pending_commands,
                 use_ai=use_ai,
+                source=source,
             )
         else:
             # 单条处理
@@ -2993,6 +3083,7 @@ async def nl_process_edict(body: EdictProcessRequest):
                 pending_commands=_sess().pending_commands,
                 edict_history=edict_history,
                 use_ai=use_ai,
+                source=source,
             )
     finally:
         _ue.USE_AI_SIMULATION = _prev_simulation
@@ -3905,7 +3996,7 @@ def _get_orchestrator():
 
 
 # ============================================================
-# API 端点 - AI 智能体对话（八大智能体架构）
+# API 端点 - AI 智能体对话（十大智能体架构 A1~A10）
 # ============================================================
 
 @app.post("/api/agent/chat")
@@ -4283,7 +4374,7 @@ async def agent_auto_step(request: dict):
 
 @app.get("/api/agent/status")
 async def agent_status():
-    """Agent/LLM运行状态（八大智能体架构）"""
+    """Agent/LLM运行状态（十大智能体架构 A1~A10）"""
     orch = _get_orchestrator()
     agent_list = orch.get_agent_list()
     stats = orch.get_stats()
@@ -4383,6 +4474,48 @@ async def agent_dashboard():
 # ============================================================
 # API 端点 - 存档/读档/回放（链路5）
 # ============================================================
+
+
+def _check_court_intel_access(target_faction_id: str) -> str | None:
+    """检查玩家是否有权查看目标势力的朝堂政务。
+    
+    规则：
+    - 玩家查看己方朝堂：始终允许
+    - 玩家查看其他势力：需要对该势力有有效细作网络（渗透度>=10且未被发现）
+    - 已灭亡势力：历史公开，允许查看
+    
+    Returns:
+        若有权访问返回 None（无错误），否则返回 HTTPException。
+    """
+    if not _sess().world_state:
+        return HTTPException(503, "游戏未初始化")
+    player_fid = _sess().world_state.player_faction_id
+    if not player_fid:
+        return HTTPException(403, "尚未选择势力")
+    
+    # 己方势力：完全可见
+    if target_faction_id == player_fid:
+        return None
+    
+    # 目标势力不存在或已灭亡：公开
+    target = _sess().world_state.factions.get(target_faction_id)
+    if not target:
+        return HTTPException(404, f"势力 {target_faction_id} 不存在")
+    if not target.is_alive:
+        return None
+    
+    # 检查情报可见性
+    intel_map = _sess().world_state.get_intel_for_player(player_fid)
+    intel_info = intel_map.get(target_faction_id, {})
+    if intel_info.get("visible", False):
+        return None
+    
+    # 情报不可见：返回 403，提示需要派遣细作
+    target_name = target.name
+    return HTTPException(
+        403,
+        f"需要向「{target_name}」派遣细作刺探，方可查看该国朝堂政务。"
+    )
 
 
 def _require_player_faction(faction_id: str, allow_none: bool = False) -> str:
@@ -5416,13 +5549,14 @@ async def map_render_status():
 
 @app.post("/api/spy/deploy")
 async def deploy_spy(request: dict):
-    """派遣细作"""
+    """派遣细作（只能为自己的势力派遣）"""
     if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import SpyEngine
     engine = SpyEngine(_sess().world_state)
+    owner_faction = _require_player_faction(request.get("owner_faction", ""))
     result = engine.deploy_spy(
-        owner_faction=request.get("owner_faction", ""),
+        owner_faction=owner_faction,
         target_faction=request.get("target_faction", ""),
     )
     return ApiResponse.success(result) if result["success"] else ApiResponse.bad_request(result["message"])
@@ -5430,13 +5564,14 @@ async def deploy_spy(request: dict):
 
 @app.post("/api/spy/action")
 async def spy_action(request: dict):
-    """执行谍报行动"""
+    """执行谍报行动（只能操作自己的细作）"""
     if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     from server.core.settle_engine import SpyEngine
     engine = SpyEngine(_sess().world_state)
+    owner_faction = _require_player_faction(request.get("owner_faction", ""))
     result = engine.spy_action(
-        owner_faction=request.get("owner_faction", ""),
+        owner_faction=owner_faction,
         target_faction=request.get("target_faction", ""),
         action_type=request.get("action_type", "intel"),
     )
@@ -5445,9 +5580,10 @@ async def spy_action(request: dict):
 
 @app.get("/api/spy/networks/{faction_id}")
 async def get_spy_networks(faction_id: str):
-    """获取势力谍报网络"""
+    """获取势力谍报网络（只能查看己方的细作网络）"""
     if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
+    faction_id = _require_player_faction(faction_id)
     networks = [
         v.model_dump() for k, v in _sess().world_state.spy_networks.items()
         if v.owner_faction == faction_id or v.target_faction == faction_id
@@ -5777,9 +5913,13 @@ async def handle_prisoner(request: dict):
 
 @app.get("/api/court/officials/{faction_id}")
 async def get_faction_officials(faction_id: str):
-    """获取势力官员列表"""
+    """获取势力官员列表（需细作情报方可查看他国朝堂）"""
     if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
+    # 情报检查：查看他国朝堂需细作刺探
+    intel_error = _check_court_intel_access(faction_id)
+    if intel_error:
+        raise intel_error
     try:
         officials = [
             off.model_dump() for oid, off in _sess().world_state.officials.items()
@@ -5816,9 +5956,13 @@ async def get_policies():
 
 @app.get("/api/court/overview/{faction_id}")
 async def get_court_overview(faction_id: str):
-    """获取朝堂总览数据"""
+    """获取朝堂总览数据（需细作情报方可查看他国朝堂）"""
     if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
+    # 情报检查：查看他国朝堂需细作刺探
+    intel_error = _check_court_intel_access(faction_id)
+    if intel_error:
+        raise intel_error
     faction = _sess().world_state.factions.get(faction_id)
     if not faction:
         return ApiResponse.not_found(f"势力 {faction_id} 不存在")
@@ -6050,9 +6194,13 @@ async def unlock_policy_endpoint(body: UnlockPolicyRequest):
 
 @app.get("/api/court/prisoners/{faction_id}")
 async def get_faction_prisoners(faction_id: str):
-    """获取势力俘虏列表"""
+    """获取势力俘虏列表（需细作情报方可查看他国朝堂）"""
     if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
+    # 情报检查：查看他国朝堂需细作刺探
+    intel_error = _check_court_intel_access(faction_id)
+    if intel_error:
+        raise intel_error
     prisoners = [
         p.model_dump() for pid, p in _sess().world_state.prisoners.items()
         if p.held_by == faction_id
@@ -6066,9 +6214,14 @@ async def get_policy_overview(faction_id: str):
     
     替代前端多处分散查询，一次返回 PolicyPanel 所需的全部数据。
     所有数据以当前 world_state 为唯一来源，保证全局一致性。
+    需细作情报方可查看他国朝堂。
     """
     if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
+    # 情报检查：查看他国朝堂需细作刺探
+    intel_error = _check_court_intel_access(faction_id)
+    if intel_error:
+        raise intel_error
     faction = _sess().world_state.factions.get(faction_id)
     if not faction:
         return ApiResponse.not_found(f"势力 {faction_id} 不存在")
@@ -7448,6 +7601,52 @@ async def get_royal_panel(faction_id: str):
     })
 
 
+@app.get("/api/panel/royal/historical-children/{faction_id}")
+async def get_historical_children(faction_id: str):
+    """获取势力可用的历史子嗣列表（尚未诞生的）"""
+    import json, os
+    if not _sess().world_state:
+        return ApiResponse.forbidden("请先开局")
+    faction = _sess().world_state.factions.get(faction_id)
+    if not faction:
+        return ApiResponse.not_found(f"势力 {faction_id} 不存在")
+
+    # 加载历史数据
+    hist_path = os.path.join(os.path.dirname(__file__), "data", "historical_children.json")
+    try:
+        with open(hist_path, "r", encoding="utf-8") as fh:
+            hist_data = json.load(fh)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return ApiResponse.success({"faction_id": faction_id, "available": [], "note": "历史子嗣数据未找到"})
+
+    faction_hist = hist_data.get("factions", {}).get(faction_id)
+    if not faction_hist:
+        return ApiResponse.success({"faction_id": faction_id, "available": [], "note": "该势力无历史子嗣记载"})
+
+    # 筛选尚未诞生的子嗣
+    existing_names = {h.get("name", "") for h in (getattr(faction, 'heirs', []) or [])}
+    current_year = 1355 + (_sess().world_state.current_round or 0) // 12  # 游戏起始年1355
+    available = []
+    for child in faction_hist.get("children", []):
+        if child["name"] not in existing_names and child.get("birth_year", 9999) <= current_year + 5:
+            available.append({
+                "name": child["name"],
+                "birth_year": child.get("birth_year", 0),
+                "talent": child.get("talent", "中人之资"),
+                "note": child.get("note", ""),
+                "available_now": child.get("birth_year", 9999) <= current_year,
+            })
+
+    return ApiResponse.success({
+        "faction_id": faction_id,
+        "ruler": faction_hist.get("ruler", ""),
+        "note": faction_hist.get("note", ""),
+        "available": available,
+        "already_born": [h.get("name", "") for h in (getattr(faction, 'heirs', []) or [])],
+        "current_year": current_year,
+    })
+
+
 @app.get("/api/panel/medical/{faction_id}")
 async def get_medical_panel(faction_id: str):
     """疲病伤病面板数据"""
@@ -7795,11 +7994,11 @@ async def check_vassal_independence(suzerain_id: str, vassal_id: str):
 
 @app.post("/api/spy/double_agent")
 async def turn_double_agent(req: Request):
-    """策反双面间谍"""
+    """策反双面间谍（只能为自己的势力策反）"""
     if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     data = await req.json()
-    owner = data.get("owner_faction", "")
+    owner = _require_player_faction(data.get("owner_faction", ""))
     target = data.get("target_faction", "")
 
     from server.core.advanced_features import AdvancedSpyEngine
@@ -7810,11 +8009,11 @@ async def turn_double_agent(req: Request):
 
 @app.post("/api/spy/false_intel")
 async def plant_false_intel(req: Request):
-    """植入假情报"""
+    """植入假情报（只能为自己的势力操作）"""
     if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     data = await req.json()
-    planter = data.get("planter_faction", "")
+    planter = _require_player_faction(data.get("planter_faction", ""))
     target = data.get("target_faction", "")
     intel_type = data.get("intel_type", "军事")
     fake_data = data.get("fake_data", {})
@@ -7827,11 +8026,11 @@ async def plant_false_intel(req: Request):
 
 @app.post("/api/spy/counter")
 async def counter_spy(req: Request):
-    """反间行动"""
+    """反间行动（只能清除自己势力内的敌方细作）"""
     if not _sess().world_state:
         return ApiResponse.forbidden("请先开局")
     data = await req.json()
-    owner = data.get("owner_faction", "")
+    owner = _require_player_faction(data.get("owner_faction", ""))
     target = data.get("target_faction", "")
 
     from server.core.advanced_features import AdvancedSpyEngine

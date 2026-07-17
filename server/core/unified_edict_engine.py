@@ -266,7 +266,7 @@ def extract_edict_entities(text: str, world_state: dict) -> EdictEntity:
 # 意图分类器（加权关键词 + 结构特征）
 # ============================================================
 
-def classify_edict_intent(text: str, entity: EdictEntity) -> dict:
+def classify_edict_intent(text: str, entity: EdictEntity, source: str = None) -> dict:
     """
     增强版圣旨意图分类。
 
@@ -287,18 +287,22 @@ def classify_edict_intent(text: str, entity: EdictEntity) -> dict:
             "all_scores": {EdictIntentCategory.CANCEL: 1.0},
         }
 
-    # 检查是否问句（谋略问询）
-    if any(kw in text for kw in ["如何", "怎么", "请教", "献策", "求策", "问策", "分析形势"]):
-        return {
-            "primary": EdictIntentCategory.STRATEGIC_CONSULT,
-            "sub_intents": [EdictSubIntent.ASK_STRATEGY],
-            "confidence": 0.85,
-            "all_scores": {EdictIntentCategory.STRATEGIC_CONSULT: 1.0},
-        }
+    # 检查是否问句（谋略问询）。来自幕僚的建议已被确认为可执行指令，不再路由到谋臣。
+    if source != 'advisor':
+        if any(kw in text for kw in ["如何", "怎么", "请教", "献策", "求策", "问策", "分析形势"]):
+            return {
+                "primary": EdictIntentCategory.STRATEGIC_CONSULT,
+                "sub_intents": [EdictSubIntent.ASK_STRATEGY],
+                "confidence": 0.85,
+                "all_scores": {EdictIntentCategory.STRATEGIC_CONSULT: 1.0},
+            }
 
     # 加权计分
     scores: dict[EdictIntentCategory, float] = {}
     for category, keywords in CATEGORY_KEYWORDS.items():
+        # 幕僚来源已确认为执行指令，不再参与谋略问询计分
+        if source == 'advisor' and category == EdictIntentCategory.STRATEGIC_CONSULT:
+            continue
         total = 0.0
         matched = 0
         for kw in keywords:
@@ -768,6 +772,7 @@ async def process_unified_edict(
     pending_commands: list = None,
     edict_history: list = None,
     use_ai: bool = True,
+    source: str = None,
 ) -> dict:
     """
     统一圣旨处理管道（3.2 重构版）。
@@ -829,7 +834,7 @@ async def process_unified_edict(
     }
 
     # 2. 意图分类
-    classification = classify_edict_intent(edict_text, entity)
+    classification = classify_edict_intent(edict_text, entity, source=source)
     result["classification"] = {
         "primary": classification["primary"].value if hasattr(classification["primary"], 'value') else str(classification["primary"]),
         "sub_intents": [si.value for si in classification.get("sub_intents", [])],
@@ -899,8 +904,8 @@ async def process_unified_edict(
         try:
             from server.core.strategic_simulation import (
                 simulate_strategic_consequences,
-                SIMULATION_MIN_CONFIDENCE as _SIM_MIN_CONF,
             )
+            _SIM_MIN_CONF = SIMULATION_MIN_CONFIDENCE  # 本模块定义（L40）
 
             logger.info(f"启用AI战略推演管道: {edict_text[:50]}...")
             strategic_plan = await simulate_strategic_consequences(
@@ -1135,6 +1140,7 @@ async def batch_process_edicts(
     llm_client=None,
     pending_commands: list = None,
     use_ai: bool = True,
+    source: str = None,
 ) -> dict:
     """
     批量处理多条圣旨。
@@ -1162,6 +1168,7 @@ async def batch_process_edicts(
             llm_client=llm_client,
             pending_commands=_pending,
             use_ai=use_ai,
+            source=source,
         )
         results.append(r)
         cmds = r.get("commands", [])

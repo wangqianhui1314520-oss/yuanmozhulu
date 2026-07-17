@@ -193,7 +193,7 @@ class _ModelClientProxy:
 
 class BaseAgent(ABC):
     """
-    八大智能体基类
+    十大智能体基类
 
     每个Agent实例代表一个自主决策单元，通过LLM客户端与游戏世界交互。
     统一包含：重试机制、熔断降级、日志记录、配置热更新。

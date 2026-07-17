@@ -400,7 +400,7 @@ export const useGameStore = defineStore('game', () => {
       }
 
       // v4.4: 存储上回合数据供总结报告使用
-      if (currentRound.value > 1 && !result.ending) {
+      if (currentRound.value >= 1 && !result.ending) {
         const currentSnap = result.snapshot?.factions || {}
         lastSnapshot.value = currentSnap
         lastTileChanges.value = result.tile_changes || []
@@ -1225,10 +1225,11 @@ export const useGameStore = defineStore('game', () => {
   }
 
   /** 谋臣对话（AdvisorPanel）- 支持指定 NPC，自动附加游戏上下文 */
-  async function chatWithMinister(message: string, npcId?: string): Promise<any> {
+  async function chatWithMinister(message: string, npcId?: string, skipEnrich?: boolean): Promise<any> {
     try {
       // 构建增强的提问：融入游戏上下文
-      const enhancedQuestion = _buildAdvisorQuestion(message)
+      // skipEnrich=true 时（AdvisorPopup已自带完整上下文），跳过冗余包装
+      const enhancedQuestion = skipEnrich ? message : _buildAdvisorQuestion(message)
 
       const result = await API.strategicAdvice({
         faction_id: playerFactionId.value,

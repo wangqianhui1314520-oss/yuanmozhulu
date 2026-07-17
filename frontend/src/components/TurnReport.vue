@@ -34,13 +34,14 @@
                   v-for="f in factionSummary"
                   :key="f.id"
                   class="tr-faction-card"
-                  :class="{ 'is-player': f.isPlayer }"
+                  :class="{ 'is-player': f.isPlayer, 'intel-hidden': !f.intelVisible && !f.isPlayer }"
                 >
                   <div class="tr-faction-name" :style="{ color: f.color || '#c8a84a' }">
                     {{ f.name }}
                     <span v-if="f.isPlayer" class="tr-faction-tag">御</span>
+                    <span v-else-if="!f.intelVisible" class="tr-faction-intel-tag">🕵 细作未至</span>
                   </div>
-                  <div class="tr-faction-stats">
+                  <div class="tr-faction-stats" v-if="f.intelVisible || f.isPlayer">
                     <div class="tr-stat-row">
                       <span class="tr-stat-label">库银</span>
                       <span class="tr-stat-value gold">{{ fmtNum(f.treasury) }}</span>
@@ -56,6 +57,28 @@
                     <div class="tr-stat-row">
                       <span class="tr-stat-label">人口</span>
                       <span class="tr-stat-value pop">{{ fmtNum(f.population) }}</span>
+                    </div>
+                    <div class="tr-stat-row">
+                      <span class="tr-stat-label">城池</span>
+                      <span class="tr-stat-value">{{ f.tileCount }}</span>
+                    </div>
+                  </div>
+                  <div class="tr-faction-stats tr-faction-stats-unknown" v-else>
+                    <div class="tr-stat-row">
+                      <span class="tr-stat-label">库银</span>
+                      <span class="tr-stat-value unknown">?</span>
+                    </div>
+                    <div class="tr-stat-row">
+                      <span class="tr-stat-label">粮草</span>
+                      <span class="tr-stat-value unknown">?</span>
+                    </div>
+                    <div class="tr-stat-row">
+                      <span class="tr-stat-label">兵力</span>
+                      <span class="tr-stat-value unknown">?</span>
+                    </div>
+                    <div class="tr-stat-row">
+                      <span class="tr-stat-label">人口</span>
+                      <span class="tr-stat-value unknown">?</span>
                     </div>
                     <div class="tr-stat-row">
                       <span class="tr-stat-label">城池</span>
@@ -230,7 +253,7 @@ const seasonName = computed(() => {
 
 const hasNarrative = computed(() => !!props.narrative)
 
-/** 势力摘要（按 tile_count 降序排列） */
+/** 势力摘要（按 tile_count 降序排列，情报不可见时隐藏敏感数据） */
 const factionSummary = computed(() => {
   if (!props.snapshot) return []
   return Object.entries(props.snapshot)
@@ -245,6 +268,7 @@ const factionSummary = computed(() => {
       tileCount: f.tile_count || 0,
       isPlayer: id === props.playerFactionId,
       color: props.factionConfigs?.[id]?.color || '#c8a84a',
+      intelVisible: (f as any)._intel_visible === true,
     }))
     .sort((a, b) => b.tileCount - a.tileCount)
 })
@@ -476,6 +500,25 @@ function onClose() {
   border-color: rgba(200, 168, 74, 0.3);
   background: rgba(40, 28, 14, 0.6);
   box-shadow: 0 0 12px rgba(200, 168, 74, 0.06);
+}
+.tr-faction-card.intel-hidden {
+  opacity: 0.7;
+  border-style: dashed;
+}
+.tr-faction-intel-tag {
+  font-size: 10px;
+  color: rgba(180, 150, 100, 0.6);
+  padding: 1px 6px;
+  border: 1px dashed rgba(180, 150, 100, 0.3);
+  border-radius: 2px;
+  font-style: italic;
+}
+.tr-faction-stats-unknown .tr-stat-value {
+  color: rgba(160, 140, 100, 0.4) !important;
+  font-style: italic;
+}
+.tr-faction-stats-unknown .tr-stat-label {
+  color: rgba(160, 140, 100, 0.4);
 }
 .tr-faction-name {
   font-family: 'STKaiti', 'KaiTi', serif;

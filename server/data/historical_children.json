@@ -1,0 +1,98 @@
+{
+  "version": "1.0",
+  "description": "元末各势力君主的历史子嗣数据。用于纳妃求嗣系统，按出生顺序排布。",
+  "factions": {
+    "faction_zhuyuanzhang": {
+      "ruler": "朱元璋",
+      "note": "明太祖朱元璋共有26子。游戏初始(1355年)时仅朱标已出生(或即将出生)，其余按历史时间推移逐步可用。",
+      "children": [
+        {"name": "朱标", "birth_year": 1355, "talent": "仁厚", "note": "懿文太子，早逝"},
+        {"name": "朱樉", "birth_year": 1356, "talent": "平庸", "note": "秦王"},
+        {"name": "朱棡", "birth_year": 1358, "talent": "骁勇", "note": "晋王"},
+        {"name": "朱棣", "birth_year": 1360, "talent": "文武双全", "note": "燕王，后为永乐帝"},
+        {"name": "朱橚", "birth_year": 1361, "talent": "博学", "note": "周王，精医药植物"},
+        {"name": "朱桢", "birth_year": 1364, "talent": "中人之资", "note": "楚王"},
+        {"name": "朱榑", "birth_year": 1364, "talent": "平庸", "note": "齐王"},
+        {"name": "朱梓", "birth_year": 1369, "talent": "中人之资", "note": "潭王"},
+        {"name": "朱杞", "birth_year": 1369, "talent": "平庸", "note": "赵王，早夭"},
+        {"name": "朱檀", "birth_year": 1370, "talent": "中人之资", "note": "鲁王"},
+        {"name": "朱椿", "birth_year": 1372, "talent": "博学", "note": "蜀王，好文学"},
+        {"name": "朱柏", "birth_year": 1371, "talent": "骁勇", "note": "湘王"},
+        {"name": "朱桂", "birth_year": 1374, "talent": "平庸", "note": "代王"},
+        {"name": "朱柍", "birth_year": 1375, "talent": "中人之资", "note": "肃王"},
+        {"name": "朱植", "birth_year": 1377, "talent": "中人之资", "note": "辽王"},
+        {"name": "朱栴", "birth_year": 1378, "talent": "博学", "note": "庆王"},
+        {"name": "朱权", "birth_year": 1378, "talent": "文武双全", "note": "宁王，善谋略"},
+        {"name": "朱楩", "birth_year": 1379, "talent": "平庸", "note": "岷王"},
+        {"name": "朱橞", "birth_year": 1379, "talent": "中人之资", "note": "谷王"},
+        {"name": "朱松", "birth_year": 1380, "talent": "中人之资", "note": "韩王"},
+        {"name": "朱模", "birth_year": 1380, "talent": "平庸", "note": "沈王"},
+        {"name": "朱楹", "birth_year": 1383, "talent": "中人之资", "note": "安王"},
+        {"name": "朱桱", "birth_year": 1388, "talent": "平庸", "note": "唐王"},
+        {"name": "朱栋", "birth_year": 1388, "talent": "中人之资", "note": "郢王"},
+        {"name": "朱楠", "birth_year": 1394, "talent": "平庸", "note": "幼殇"}
+      ]
+    },
+    "faction_chenyouliang": {
+      "ruler": "陈友谅",
+      "note": "陈友谅仅有一子陈理确载于史册。陈理于1364年武昌投降时仅12岁。",
+      "children": [
+        {"name": "陈理", "birth_year": 1352, "talent": "中人之资", "note": "陈友谅独子，后降明封归德侯"}
+      ]
+    },
+    "faction_zhangshicheng": {
+      "ruler": "张士诚",
+      "note": "张士诚子嗣记载较少。《明史》提及有子，但姓名不详。以下为推测名。",
+      "children": [
+        {"name": "张龙", "birth_year": 1345, "talent": "中人之资", "note": "张士诚长子，史载不详"},
+        {"name": "张虎", "birth_year": 1348, "talent": "骁勇", "note": "张士诚次子，史载不详"}
+      ]
+    },
+    "faction_fangguozhen": {
+      "ruler": "方国珍",
+      "note": "方国珍子嗣记载极少。《明史·方国珍传》提及其子方鸣谦曾出使。",
+      "children": [
+        {"name": "方鸣谦", "birth_year": 1340, "talent": "中人之资", "note": "方国珍子，后降明授官"},
+        {"name": "方礼", "birth_year": 1343, "talent": "平庸", "note": "方国珍子，史载不详"}
+      ]
+    },
+    "faction_mingyuzhen": {
+      "ruler": "明玉珍",
+      "note": "明玉珍仅有一子明升确载于史册。明升继位时仅10岁，1372年降明。",
+      "children": [
+        {"name": "明升", "birth_year": 1356, "talent": "平庸", "note": "明玉珍独子，继大夏帝位，后降明"}
+      ]
+    },
+    "faction_yuan": {
+      "ruler": "元顺帝（妥懽帖睦尔）",
+      "note": "元顺帝子嗣以蒙古名为主。长子爱猷识理达腊为北元昭宗。",
+      "children": [
+        {"name": "爱猷识理达腊", "birth_year": 1340, "talent": "中人之资", "note": "皇太子，后继位为北元昭宗"},
+        {"name": "脱古思帖木儿", "birth_year": 1342, "talent": "平庸", "note": "后为北元天元帝"},
+        {"name": "真金", "birth_year": 1344, "talent": "中人之资", "note": "皇子，史载不详"}
+      ]
+    },
+    "faction_xushouhui": {
+      "ruler": "徐寿辉",
+      "note": "徐寿辉子嗣史载极少。天完政权短命，子嗣多散佚。",
+      "children": [
+        {"name": "徐义", "birth_year": 1345, "talent": "中人之资", "note": "徐寿辉子，记载不详，推测名"}
+      ]
+    },
+    "faction_wangbaobao": {
+      "ruler": "王保保（扩廓帖木儿）",
+      "note": "王保保子嗣记载极少，或归入明籍。",
+      "children": [
+        {"name": "扩廓帖木儿·巴图", "birth_year": 1355, "talent": "骁勇", "note": "王保保子，推测名"}
+      ]
+    },
+    "faction_mobei": {
+      "ruler": "漠北诸部可汗",
+      "note": "漠北草原部落联盟，子嗣沿袭草原命名传统。",
+      "children": [
+        {"name": "也速迭儿", "birth_year": 1345, "talent": "骁勇", "note": "漠北可汗之子"},
+        {"name": "月鲁帖木儿", "birth_year": 1350, "talent": "中人之资", "note": "漠北可汗之子"}
+      ]
+    }
+  }
+}

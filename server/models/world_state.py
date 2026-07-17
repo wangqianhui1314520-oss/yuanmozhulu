@@ -151,6 +151,9 @@ class FactionState(BaseModel):
     # 税收政策标记（normal / heavy），存档/读档保持
     tax_policy: str = "normal"
 
+    # 外交姿态映射（faction_id → DiplomaticStance），由回合结算时从 WorldState.relations 填充
+    diplomatic_stances: dict[str, DiplomaticStance] = Field(default_factory=dict)
+
 
 class TileState(BaseModel):
     """地块状态 - CK3风格自由多边形领地（替代原六边形网格）
@@ -246,6 +249,9 @@ class SpyNetwork(BaseModel):
     infiltration: int = 0
     action_points: int = 0  # 每回合可用行动点数
     discovered: bool = False
+    created_round: int = 0   # 首次安插回合（用于时效追踪）
+    passive_risk: float = 0.0  # 当前被动暴露概率（用于前端展示）
+    active_risk: float = 0.0   # 上次行动暴露概率（用于前端展示）
 
 
 class SiegeRecord(BaseModel):
@@ -522,7 +528,7 @@ class WorldState(BaseModel):
                     "is_player": f.is_player,
                     "is_alive": f.is_alive,
                     "personality_tags": getattr(f, 'personality_tags', []),
-                    "capital_tile_id": getattr(f, 'capital_tile_id', ""),
+                    "capital_tile": f.capital_tile,
                     "navy_power": getattr(f, 'navy_power', 0),
                 }
                 for fid, f in self.factions.items()
@@ -632,7 +638,29 @@ class WorldState(BaseModel):
                 "infiltration": network.infiltration if network else 0,
             }
 
+
         return intel_map
+
+    def invalidate_spy_intel(self, owner_faction: str, target_faction: str):
+        """细作被发现/身亡时，立即清除该细作网络产出的所有情报记录。
+        
+        确保细作死亡后，该势力对目标势力的朝堂政务立即不可见。
+        
+        Args:
+            owner_faction: 细作派遣方（情报拥有者）
+            target_faction: 目标势力（被刺探方）
+        """
+        self.spy_intel = [
+            entry for entry in self.spy_intel
+            if not (entry.get("owner_faction") == owner_faction 
+                    and entry.get("target_faction") == target_faction)
+        ]
+        
+        # 同时标记细作网络为被发现（如果还没标记）
+        spy_key = f"{owner_faction}|{target_faction}"
+        network = self.spy_networks.get(spy_key)
+        if network:
+            network.discovered = True
 
     def mask_factions_for_player(self, player_faction_id: str) -> dict:
         """

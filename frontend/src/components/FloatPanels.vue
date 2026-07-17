@@ -1456,6 +1456,68 @@
     </div>
   </div>
 
+  <!-- 纳妃求嗣 - 历史/自定义姓名选择对话框 -->
+  <Teleport to="body">
+    <div v-if="showSpawnPrinceDialog" class="modal-overlay" @click.self="showSpawnPrinceDialog = false">
+      <div class="spawn-prince-dialog animate-fade-in artifact-panel artifact-personnel">
+        <div class="fp-header">
+          <h3>👶 纳妃求嗣</h3>
+          <button class="fp-close" @click="showSpawnPrinceDialog = false">✕</button>
+        </div>
+        <div class="fp-body">
+          <p class="hint-text" style="margin-bottom:12px;">为新皇子赐名。可选择符合史实的历史皇子，亦可自取嘉名。</p>
+          <div class="kv-divider"></div>
+
+          <!-- 选项卡 -->
+          <div class="spawn-tabs">
+            <button class="spawn-tab" :class="{ active: spawnMode === 'historical' }" @click="spawnMode = 'historical'">📜 历史皇子</button>
+            <button class="spawn-tab" :class="{ active: spawnMode === 'custom' }" @click="spawnMode = 'custom'">✏️ 自定义姓名</button>
+          </div>
+
+          <!-- 历史皇子列表 -->
+          <div v-if="spawnMode === 'historical'" class="spawn-historical">
+            <div v-if="historicalChildrenLoading" class="hint-text">加载中...</div>
+            <div v-if="!historicalChildrenLoading && historicalChildren.length === 0" class="empty-note">
+              <p>该势力暂无更多可用的历史皇子。</p>
+              <p class="hint-text">可切换至「自定义姓名」标签自行取名。</p>
+            </div>
+            <div v-for="child in historicalChildren" :key="child.name"
+              class="prince-option" :class="{ selected: selectedHistoricalChild?.name === child.name }"
+              @click="selectedHistoricalChild = child">
+              <div class="po-header">
+                <span class="po-name">{{ child.name }}</span>
+                <span class="po-year" v-if="child.birth_year">{{ child.birth_year }}年</span>
+                <span class="po-available" v-if="!child.available_now" style="color:#c44b3c;">（尚未至出生年）</span>
+              </div>
+              <div class="po-meta">
+                <span class="po-talent">资质：{{ child.talent }}</span>
+                <span class="po-note" v-if="child.note">{{ child.note }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 自定义姓名 -->
+          <div v-if="spawnMode === 'custom'" class="spawn-custom">
+            <label class="custom-name-label">皇子姓名：</label>
+            <input v-model="customPrinceName" class="custom-name-input"
+              placeholder="请输入皇子姓名（2-6字）" maxlength="6"
+              @keyup.enter="confirmSpawnPrince" />
+            <p class="hint-text" style="margin-top:8px;">建议使用有美好寓意的字词，如：承乾、怀瑾、守仁等。</p>
+          </div>
+
+          <div class="kv-divider"></div>
+          <div class="spawn-actions">
+            <button class="btn-small" @click="showSpawnPrinceDialog = false">取消</button>
+            <button class="btn-small btn-primary" @click="confirmSpawnPrince"
+              :disabled="spawnMode === 'historical' ? !selectedHistoricalChild : !customPrinceName.trim()">
+              👶 确认纳妃 (800银)
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
   <!-- 疲病伤病面板 -->
   <div v-if="store.activePanel === 'medical'" class="float-panel animate-fade-in artifact-panel artifact-personnel" style="top:var(--panel-top);left:var(--panel-offset-left);width:400px;max-height:70vh;">
     <div class="fp-header">
@@ -2005,7 +2067,7 @@ const panelGroupClass = computed(() => {
   return `fp-side-${side}`
 })
 import * as API from '@/services/api'
-import { apiClient, strategyAnalyze, getFactionPrisoners, checkVassalRebellion, getFactionOfficials, appointOfficial as apiAppointOfficial, dismissOfficial as apiDismissOfficial, executeOfficial as apiExecuteOfficial, unlockPolicy as apiUnlockPolicy, issueDecree as apiIssueDecree, getRoyalPanel, getMedicalPanel, getSeaPanel, getCulturePanel, getWeather, showToast, listRebels, suppressRebellion, attemptAmbush, raidSupplyLine, borderRaid, annexVassal, sendHostage, recallHostage, moveCapital, performSacrifice, recruitOfficials, getCapitalCandidates, getCapitalHistory } from '@/services/api'
+import { apiClient, strategyAnalyze, getFactionPrisoners, checkVassalRebellion, getFactionOfficials, appointOfficial as apiAppointOfficial, dismissOfficial as apiDismissOfficial, executeOfficial as apiExecuteOfficial, unlockPolicy as apiUnlockPolicy, issueDecree as apiIssueDecree, getRoyalPanel, getHistoricalChildren, getMedicalPanel, getSeaPanel, getCulturePanel, getWeather, showToast, listRebels, suppressRebellion, attemptAmbush, raidSupplyLine, borderRaid, annexVassal, sendHostage, recallHostage, moveCapital, performSacrifice, recruitOfficials, getCapitalCandidates, getCapitalHistory } from '@/services/api'
 import { useFormat } from '@/composables/useFormat'
 import { audioManager } from '@/utils/audioManager'
 
@@ -2151,6 +2213,13 @@ const royalPrinces = ref<any[]>([])
 const selectedPrince = ref<any>(null)
 const princeActionLoading = ref(false)
 const princeActionResult = ref<any>(null)
+// 纳妃求嗣对话框
+const showSpawnPrinceDialog = ref(false)
+const historicalChildren = ref<any[]>([])
+const historicalChildrenLoading = ref(false)
+const selectedHistoricalChild = ref<any>(null)
+const customPrinceName = ref('')
+const spawnMode = ref<'historical' | 'custom'>('historical')
 // 疾医：地块诊所列表
 const clinicTiles = ref<any[]>([])
 // 海策：港口详情展开
@@ -3713,17 +3782,57 @@ async function spawnNewPrince() {
     showToast('银两不足（需要800两）', 'error')
     return
   }
-  const surnames = ['朱', '李', '刘', '陈', '张', '王']
-  const givenNames = ['标', '樉', '棡', '棣', '橚', '桢', '榑', '梓', '杞', '檀']
+  // 先拉取历史子嗣数据
+  historicalChildrenLoading.value = true
+  historicalChildren.value = []
+  selectedHistoricalChild.value = null
+  customPrinceName.value = ''
+  spawnMode.value = 'historical'
+  try {
+    const data = await getHistoricalChildren(store.playerFactionId)
+    historicalChildren.value = data?.available || []
+  } catch {
+    historicalChildren.value = []
+  }
+  historicalChildrenLoading.value = false
+  showSpawnPrinceDialog.value = true
+}
+
+async function confirmSpawnPrince() {
+  let princeName = ''
+  let isCustom = false
+  if (spawnMode.value === 'custom') {
+    princeName = customPrinceName.value.trim()
+    if (!princeName) {
+      showToast('请输入皇子姓名', 'error')
+      return
+    }
+    isCustom = true
+  } else {
+    if (!selectedHistoricalChild.value) {
+      showToast('请选择一位历史皇子', 'error')
+      return
+    }
+    princeName = selectedHistoricalChild.value.name
+    isCustom = false
+  }
+
+  if ((playerFaction.value?.treasury || 0) < 800) {
+    showToast('银两不足（需要800两）', 'error')
+    return
+  }
+
   const newPrince = {
-    name: `${surnames[royalPrinces.value.length % surnames.length]}${givenNames[royalPrinces.value.length % givenNames.length]}`,
+    name: princeName,
     age: 0, status: '新生', martial: 5, civil: 5, charisma: 10,
-    talent: '尚待观察', ambition: '低',
+    talent: selectedHistoricalChild.value?.talent || '尚待观察',
+    ambition: '低',
+    is_historical: !isCustom,
   }
   try {
     await API.submitCommand({
       action: 'decree',
-      params: { content: '纳妃求嗣', decree_type: 'birth', cost: 800, prince_name: newPrince.name },
+      params: { content: '纳妃求嗣', decree_type: 'spawn_prince', cost: 800, prince_name: princeName, custom_name: isCustom },
       faction_id: store.playerFactionId,
     })
     // 即时扣银 + 加民心
@@ -3733,11 +3842,12 @@ async function spawnNewPrince() {
     store.addEvent({
       event_id: `birth_${Date.now()}`, event_type: 'royal', severity: 'major',
       round: store.currentRound, title: '皇子降生',
-      description: `新皇子${newPrince.name}降生，举国欢庆。民心+3。花费800银。`,
+      description: `新皇子${princeName}降生，举国欢庆。民心+3。花费800银。`,
       faction_id: store.playerFactionId, tile_id: '', effects: { realm_stability: 3, treasury: -800 },
-      narrative: `皇宫喜诞麟儿，赐名${newPrince.name}。民心+3。`,
+      narrative: `皇宫喜诞麟儿，赐名${princeName}。民心+3。`,
     })
-    showToast(`新皇子${newPrince.name}降生！`, 'success')
+    showToast(`新皇子${princeName}降生！`, 'success')
+    showSpawnPrinceDialog.value = false
   } catch {
     showToast('纳妃求嗣失败', 'error')
   }
@@ -6278,6 +6388,64 @@ onUnmounted(() => {
 .pc-detail { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(139, 115, 85, 0.15); }
 .pc-actions { display: flex; gap: 4px; flex-wrap: wrap; }
 .prince-result { margin-top: 8px; font-size: 11px; padding: 4px 8px; background: rgba(255,255,255,0.04); border-radius: 3px; }
+
+/* ===== 纳妃求嗣对话框 ===== */
+.spawn-prince-dialog {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 440px; max-height: 70vh; z-index: 9999;
+  background: linear-gradient(180deg, #1a1410 0%, #0d0b08 100%);
+  border: 2px solid var(--gold, #c9a94e); border-radius: 8px;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.6), 0 0 80px rgba(201, 169, 78, 0.15);
+  display: flex; flex-direction: column;
+}
+.spawn-prince-dialog .fp-header { flex-shrink: 0; }
+.spawn-prince-dialog .fp-body { overflow-y: auto; max-height: 55vh; padding: 16px 20px; }
+.spawn-tabs { display: flex; gap: 0; margin-bottom: 12px; border-bottom: 1px solid rgba(139,115,85,0.2); }
+.spawn-tab {
+  flex: 1; padding: 8px 0; text-align: center; font-size: 12px; cursor: pointer;
+  background: none; border: none; color: var(--text-dim, #8b7355);
+  border-bottom: 2px solid transparent; transition: all 0.2s;
+}
+.spawn-tab:hover { color: var(--text, #d4c5a9); }
+.spawn-tab.active {
+  color: var(--gold, #c9a94e); border-bottom-color: var(--gold, #c9a94e); font-weight: bold;
+}
+.prince-option {
+  padding: 10px 12px; margin-bottom: 6px; cursor: pointer;
+  background: rgba(139,115,85,0.05); border: 1px solid rgba(139,115,85,0.12);
+  border-radius: 4px; transition: all 0.2s;
+}
+.prince-option:hover { border-color: var(--gold, #c9a94e); background: rgba(139,115,85,0.1); }
+.prince-option.selected {
+  border-color: var(--gold, #c9a94e); background: rgba(201,169,78,0.12);
+  box-shadow: 0 0 8px rgba(201,169,78,0.15);
+}
+.po-header { display: flex; align-items: center; gap: 8px; }
+.po-name { font-size: 14px; font-weight: bold; color: var(--text, #d4c5a9); }
+.po-year { font-size: 11px; color: var(--text-dim, #8b7355); }
+.po-meta { display: flex; gap: 12px; margin-top: 4px; font-size: 11px; color: var(--text-secondary, #a89880); }
+.po-talent { color: var(--gold, #c9a94e); }
+.po-note { color: var(--text-dim, #8b7355); font-style: italic; }
+.spawn-custom { padding: 8px 0; }
+.custom-name-label { display: block; font-size: 12px; color: var(--text-dim, #8b7355); margin-bottom: 6px; }
+.custom-name-input {
+  width: 100%; padding: 10px 12px; font-size: 15px;
+  background: rgba(139,115,85,0.08); border: 1px solid rgba(139,115,85,0.25);
+  border-radius: 4px; color: var(--text, #d4c5a9);
+  outline: none; font-family: 'STSong', 'SimSun', serif;
+}
+.custom-name-input:focus { border-color: var(--gold, #c9a94e); box-shadow: 0 0 6px rgba(201,169,78,0.15); }
+.custom-name-input::placeholder { color: var(--text-dim, #8b7355); font-size: 13px; }
+.spawn-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+.spawn-actions .btn-primary {
+  background: linear-gradient(135deg, rgba(201,169,78,0.25), rgba(139,115,85,0.15));
+  border-color: var(--gold, #c9a94e); color: var(--gold, #c9a94e);
+}
+.spawn-actions .btn-primary:disabled {
+  opacity: 0.4; cursor: not-allowed;
+}
 
 /* ===== 疾医面板样式 ===== */
 .medical-stats { display: flex; gap: 8px; margin-bottom: 8px; }

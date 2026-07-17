@@ -2,7 +2,7 @@
 Agent配置热更新管理
 
 支持:
-- 从 agent_config.json 加载8个Agent的模型参数
+- 从 agent_config.json 加载十大智能体的模型参数
 - 运行时热重载（不重启服务）
 - 文件监听（轮询检查 mtime 变化）
 - 每Agent独立覆盖模型/温度/最大Token
@@ -27,7 +27,7 @@ DEFAULT_CONFIG_PATH = CONFIG_DIR / "agent_config.json"
 @dataclass
 class AgentModelConfig:
     """单个Agent的模型配置"""
-    agent_key: str                     # "A1" ~ "A8"
+    agent_key: str                     # "A1" ~ "A10"
     model_name: str = ""               # 模型名（空=使用分组默认）
     temperature: float = -1.0          # 温度（-1=使用分组默认）
     max_tokens: int = -1               # 最大Token（-1=使用分组默认）
@@ -50,7 +50,7 @@ class AgentModelConfig:
 
 @dataclass
 class AgentConfigSet:
-    """八大智能体配置集合"""
+    """十大智能体配置集合"""
     A1: AgentModelConfig = field(default_factory=lambda: AgentModelConfig(agent_key="A1"))
     A2: AgentModelConfig = field(default_factory=lambda: AgentModelConfig(agent_key="A2"))
     A3: AgentModelConfig = field(default_factory=lambda: AgentModelConfig(agent_key="A3"))
@@ -59,13 +59,15 @@ class AgentConfigSet:
     A6: AgentModelConfig = field(default_factory=lambda: AgentModelConfig(agent_key="A6"))
     A7: AgentModelConfig = field(default_factory=lambda: AgentModelConfig(agent_key="A7"))
     A8: AgentModelConfig = field(default_factory=lambda: AgentModelConfig(agent_key="A8"))
+    A9: AgentModelConfig = field(default_factory=lambda: AgentModelConfig(agent_key="A9"))
+    A10: AgentModelConfig = field(default_factory=lambda: AgentModelConfig(agent_key="A10"))
 
     def get(self, key: str) -> AgentModelConfig:
         return getattr(self, key, AgentModelConfig(agent_key=key))
 
     def to_dict(self) -> dict:
         result = {}
-        for key in [f"A{i}" for i in range(1, 9)]:
+        for key in [f"A{i}" for i in range(1, 11)]:
             cfg = self.get(key)
             result[key] = {
                 "model_name": cfg.model_name,
@@ -147,7 +149,7 @@ class AgentConfigManager:
 
     def get_all(self) -> dict[str, AgentModelConfig]:
         with self._lock:
-            return {f"A{i}": self._config_set.get(f"A{i}") for i in range(1, 9)}
+            return {f"A{i}": self._config_set.get(f"A{i}") for i in range(1, 11)}
 
     def get_override(self, key: str) -> dict:
         """获取某Agent的有效模型覆盖参数"""
@@ -196,7 +198,7 @@ class AgentConfigManager:
 
     def _parse(self, data: dict) -> AgentConfigSet:
         result = AgentConfigSet()
-        for key in [f"A{i}" for i in range(1, 9)]:
+        for key in [f"A{i}" for i in range(1, 11)]:
             if key in data:
                 cfg = data[key]
                 agent_cfg = AgentModelConfig(
@@ -216,15 +218,17 @@ class AgentConfigManager:
             self._config_path.parent.mkdir(parents=True, exist_ok=True)
             default = {
                 "version": "1.0",
-                "description": "八大智能体模型配置 - 修改后服务自动热更新",
+                "description": "十大智能体模型配置 - 修改后服务自动热更新",
                 "A1": {"agent_name": "谋策阁", "model_group": "advisor", "model_name": "", "temperature": 0.7, "max_tokens": 4096, "enabled": True},
                 "A2": {"agent_name": "群雄殿", "model_group": "advisor", "model_name": "", "temperature": 0.7, "max_tokens": 4096, "enabled": True},
-                "A3": {"agent_name": "律法堂", "model_group": "advisor", "model_name": "", "temperature": 0.6, "max_tokens": 2048, "enabled": True},
+                "A3": {"agent_name": "律法堂", "model_group": "advisor", "model_name": "", "temperature": 0.6, "max_tokens": 4096, "enabled": True},
                 "A4": {"agent_name": "谍报司", "model_group": "enemy", "model_name": "", "temperature": 0.8, "max_tokens": 1024, "enabled": True},
                 "A5": {"agent_name": "司天台", "model_group": "enemy", "model_name": "", "temperature": 0.7, "max_tokens": 1024, "enabled": True},
                 "A6": {"agent_name": "外交署", "model_group": "law", "model_name": "", "temperature": 0.6, "max_tokens": 4096, "enabled": True},
                 "A7": {"agent_name": "宗室府", "model_group": "advisor", "model_name": "", "temperature": 0.6, "max_tokens": 1024, "enabled": True},
                 "A8": {"agent_name": "国史馆", "model_group": "law", "model_name": "", "temperature": 0.5, "max_tokens": 8192, "enabled": True},
+                "A9": {"agent_name": "军机处", "model_group": "enemy", "model_name": "", "temperature": 0.6, "max_tokens": 2048, "enabled": True},
+                "A10": {"agent_name": "度支司", "model_group": "law", "model_name": "", "temperature": 0.4, "max_tokens": 2048, "enabled": True},
             }
             with open(self._config_path, "w", encoding="utf-8") as f:
                 json.dump(default, f, ensure_ascii=False, indent=2)

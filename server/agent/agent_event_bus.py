@@ -1,5 +1,5 @@
 """
-智能体事件总线 - 八大智能体间的消息通知与协作机制
+智能体事件总线 - 十大智能体间的消息通知与协作机制
 
 职责:
 1. 提供 Agent 间的松耦合消息传递
@@ -13,6 +13,7 @@
   A6(缔约) → bus.publish("alliance_formed") → A8(国史) 记录
 """
 from __future__ import annotations
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
@@ -223,9 +224,8 @@ class AgentEventBus:
                 subs = self._subscribers.get(event.event_type, [])
                 for handler in subs:
                     try:
-                        if asyncio and hasattr(handler, '__call__'):
-                            import asyncio as _asyncio
-                            if _asyncio.iscoroutinefunction(handler):
+                        if hasattr(handler, '__call__'):
+                            if asyncio.iscoroutinefunction(handler):
                                 await handler(event)
                             else:
                                 handler(event)
@@ -235,8 +235,7 @@ class AgentEventBus:
                 # 通知通配符订阅者
                 for handler in self._wildcard_subscribers:
                     try:
-                        import asyncio as _asyncio
-                        if _asyncio.iscoroutinefunction(handler):
+                        if asyncio.iscoroutinefunction(handler):
                             await handler(event)
                         else:
                             handler(event)
@@ -291,8 +290,8 @@ class AgentEventBus:
         logger.info("[EventBus] 已重置")
 
 
+
 # 全局单例
-import asyncio
 
 _global_event_bus: Optional[AgentEventBus] = None
 

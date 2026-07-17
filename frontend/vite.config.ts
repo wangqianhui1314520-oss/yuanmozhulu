@@ -22,6 +22,9 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: apiTarget,
           changeOrigin: true,
+          // 回合推进耗时 ~100s（大量 LLM 调用），必须设置足够长的超时
+          timeout: 180000,        // 代理请求超时 180s
+          proxyTimeout: 180000,   // 代理响应超时 180s
         },
       },
     },

@@ -298,6 +298,9 @@
                   <span class="dr-detail">细作{{ net.spies_count || 0 }}人</span>
                   <span class="dr-detail dim">行动点{{ net.action_points || 0 }}</span>
                   <span class="dr-tag danger" v-if="net.discovered">暴露</span>
+                  <span class="dr-risk" v-else :class="riskClass(net)" :title="riskTooltip(net)">
+                    暴露{{ riskPercent(net) }}
+                  </span>
                 </div>
               </div>
               <!-- 回退到 store 数据 -->
@@ -618,6 +621,33 @@ const subTabsMap: Record<string, { id: string; label: string }[]> = {
 
 const currentSubTabs = computed(() => subTabsMap[activePrimary.value] || [])
 
+/** 细作网络暴露风险百分比文本 */
+const riskPercent = (net: any): string => {
+  const passive = net.passive_risk ?? 0
+  const active = net.active_risk ?? 0
+  const maxRisk = Math.max(passive, active)
+  if (net.discovered) return '--'
+  return Math.round(maxRisk * 100) + '%'
+}
+
+/** 风险等级 CSS class */
+const riskClass = (net: any): string => {
+  const passive = net.passive_risk ?? 0
+  const active = net.active_risk ?? 0
+  const maxRisk = Math.max(passive, active)
+  if (net.discovered) return ''
+  if (maxRisk > 0.15) return 'risk-high'
+  if (maxRisk > 0.05) return 'risk-mid'
+  return 'risk-low'
+}
+
+/** 风险提示 tooltip */
+const riskTooltip = (net: any): string => {
+  const p = Math.round((net.passive_risk ?? 0) * 100)
+  const a = Math.round((net.active_risk ?? 0) * 100)
+  return `被动暴露 ${p}%（巡逻盘查） | 行动暴露 ${a}%（执行任务）`
+}
+
 // 切换一级标签时重置二级标签
 watch(activePrimary, () => {
   const subs = subTabsMap[activePrimary.value]
@@ -912,6 +942,17 @@ watch(activePrimary, () => {
 .dr-tag.siege { background: rgba(196, 75, 60, 0.08); color: #c44b3c; }
 .dr-tag.danger { background: rgba(139, 0, 0, 0.1); color: #8b0000; }
 .dr-tag.dim { opacity: 0.6; }
+
+.dr-risk {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 2px;
+  white-space: nowrap;
+  cursor: help;
+}
+.dr-risk.risk-low  { background: rgba(91, 140, 90, 0.1); color: #5b8c5a; }
+.dr-risk.risk-mid  { background: rgba(184, 134, 11, 0.1); color: #b8860b; }
+.dr-risk.risk-high { background: rgba(196, 75, 60, 0.1); color: #c44b3c; }
 
 .truncate {
   max-width: 200px;

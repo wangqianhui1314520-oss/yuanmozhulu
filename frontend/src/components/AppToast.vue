@@ -1,5 +1,5 @@
 <template>
-  <!-- V5.0 统一Toast组件 — 竹简便签风格，由 uiStore 驱动 -->
+  <!-- V5.0 统一Toast组件 — 竹简便签风格，由 props + emit 驱动 -->
   <Transition name="toast" @after-leave="onLeaveEnd">
     <div
       v-if="visible"

@@ -676,6 +676,7 @@ export async function nlProcessEdict(params: {
   direct_execute?: boolean
   use_ai?: boolean
   use_simulation?: boolean
+  source?: string
 }): Promise<NLEdictResult> {
   // P0修复: 去重保护 + 超时设置，防止重复请求和无限等待
   const dedupKey = `nlProcessEdict:${params.faction_id}:${params.edict_text.slice(0, 40)}`
@@ -1645,6 +1646,11 @@ export async function getRoyalPanel(factionId: string): Promise<any> {
   return data.data
 }
 
+export async function getHistoricalChildren(factionId: string): Promise<any> {
+  const { data } = await api.get(`/panel/royal/historical-children/${factionId}`)
+  return data.data
+}
+
 export async function getMedicalPanel(factionId: string): Promise<any> {
   const { data } = await api.get(`/panel/medical/${factionId}`)
   return data.data
@@ -2051,7 +2057,7 @@ export async function runConnectivityTest(options?: {
  */
 export async function quickConnectivityCheck(timeout = 5000): Promise<boolean> {
   try {
-    await apiClient.get('/api/health', { timeout })
+    await apiClient.get('/health', { timeout })
     return true
   } catch {
     return false
@@ -2428,6 +2434,27 @@ export async function getMapLayerConfig(): Promise<any> {
 /** 获取 API Key 状态 */
 export async function getApiKeyStatus(): Promise<any> {
   const { data } = await api.get('/config/api-key-status')
+  return data.data
+}
+
+/** 获取 LLM 额度/降级状态（检测 429 额度耗尽） */
+export async function getLLMQuotaStatus(): Promise<{
+  ai_available: boolean
+  all_fallback: boolean
+  quota_exhausted: boolean
+  solution: {
+    title: string
+    message: string
+    actions: Array<{
+      label: string
+      url: string | null
+      type: 'external' | 'settings' | 'dismiss'
+      hint?: string
+    }>
+  } | null
+  clients: Record<string, { fallback_mode: boolean; model: string }>
+}> {
+  const { data } = await api.get('/config/llm-quota-status')
   return data.data
 }
 
