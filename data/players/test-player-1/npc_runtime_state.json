@@ -1,0 +1,456 @@
+{
+  "version": "3.5",
+  "description": "元末逐鹿 - NPC 运行时状态（不覆盖模板）",
+  "npcs": {
+    "liu_ji": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 85,
+      "ambition": 30,
+      "wisdom": 98,
+      "faction": "ruler_zhuyuan",
+      "title": "诚意伯",
+      "role_label": "军师谋主"
+    },
+    "li_shanchang": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 90,
+      "ambition": 50,
+      "wisdom": 92,
+      "faction": "ruler_zhuyuan",
+      "title": "韩国公",
+      "role_label": "开国宰辅"
+    },
+    "xu_da": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 95,
+      "ambition": 20,
+      "wisdom": 85,
+      "faction": "ruler_zhuyuan",
+      "title": "魏国公",
+      "role_label": "三军统帅"
+    },
+    "chang_yuchun": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 90,
+      "ambition": 40,
+      "wisdom": 65,
+      "faction": "ruler_zhuyuan",
+      "title": "鄂国公",
+      "role_label": "先锋大将"
+    },
+    "song_lian": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 80,
+      "ambition": 10,
+      "wisdom": 90,
+      "faction": "ruler_zhuyuan",
+      "title": "翰林学士",
+      "role_label": "帝师文宗"
+    },
+    "hu_weiyong": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 55,
+      "ambition": 85,
+      "wisdom": 88,
+      "faction": "ruler_zhuyuan",
+      "title": "左丞相",
+      "role_label": "权相能臣"
+    },
+    "zhu_sheng": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 75,
+      "ambition": 5,
+      "wisdom": 95,
+      "faction": "ruler_zhuyuan",
+      "title": "翰林侍讲",
+      "role_label": "隐士谋臣"
+    },
+    "tuotuo": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 95,
+      "ambition": 15,
+      "wisdom": 88,
+      "faction": "ruler_yuan",
+      "title": "中书右丞相",
+      "role_label": "元廷柱石"
+    },
+    "chahan_temur": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 92,
+      "ambition": 25,
+      "wisdom": 82,
+      "faction": "ruler_yuan",
+      "title": "中书平章政事",
+      "role_label": "元廷名将"
+    },
+    "hama": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 30,
+      "ambition": 90,
+      "wisdom": 72,
+      "faction": "ruler_yuan",
+      "title": "中书左丞相",
+      "role_label": "权臣佞幸"
+    },
+    "zhang_dingbian": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 98,
+      "ambition": 10,
+      "wisdom": 70,
+      "faction": "ruler_chen",
+      "title": "太尉",
+      "role_label": "汉军大将"
+    },
+    "zou_pusheng": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 75,
+      "ambition": 65,
+      "wisdom": 80,
+      "faction": "ruler_chen",
+      "title": "太师",
+      "role_label": "开国谋主"
+    },
+    "zhang_bixian": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 85,
+      "ambition": 35,
+      "wisdom": 75,
+      "faction": "ruler_chen",
+      "title": "丞相",
+      "role_label": "汉国丞相"
+    },
+    "zhang_shide": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 95,
+      "ambition": 20,
+      "wisdom": 65,
+      "faction": "ruler_zhang",
+      "title": "平章政事",
+      "role_label": "周国大将"
+    },
+    "lv_zhen": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 80,
+      "ambition": 40,
+      "wisdom": 78,
+      "faction": "ruler_zhang",
+      "title": "左丞相",
+      "role_label": "周国宰相"
+    },
+    "pan_yuanming": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 50,
+      "ambition": 55,
+      "wisdom": 76,
+      "faction": "ruler_zhang",
+      "title": "右丞相",
+      "role_label": "周国外交"
+    },
+    "wang_baobao": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 95,
+      "ambition": 35,
+      "wisdom": 80,
+      "faction": "ruler_wang",
+      "title": "河南王",
+      "role_label": "元廷忠将"
+    },
+    "li_siqi": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 40,
+      "ambition": 70,
+      "wisdom": 78,
+      "faction": "ruler_wang",
+      "title": "邠国公",
+      "role_label": "关陕军阀"
+    },
+    "ming_yuzhen": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 90,
+      "ambition": 30,
+      "wisdom": 75,
+      "faction": "ruler_ming",
+      "title": "大夏皇帝",
+      "role_label": "仁厚之主"
+    },
+    "liu_zhen": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 90,
+      "ambition": 25,
+      "wisdom": 78,
+      "faction": "ruler_ming",
+      "title": "大夏丞相",
+      "role_label": "蜀中谋主"
+    },
+    "fang_guozhen": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 30,
+      "ambition": 55,
+      "wisdom": 72,
+      "faction": "ruler_fang",
+      "title": "浙东海寇",
+      "role_label": "海上枭雄"
+    },
+    "xushou_hui": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 60,
+      "ambition": 40,
+      "wisdom": 55,
+      "faction": "ruler_xushou",
+      "title": "天完皇帝",
+      "role_label": "布贩天子"
+    },
+    "ni_wenjun": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 25,
+      "ambition": 90,
+      "wisdom": 60,
+      "faction": "ruler_xushou",
+      "title": "天完丞相",
+      "role_label": "红巾大将"
+    },
+    "tatar_khan": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 80,
+      "ambition": 75,
+      "wisdom": 68,
+      "faction": "ruler_tatar",
+      "title": "漠北可汗",
+      "role_label": "草原之主"
+    },
+    "yao_guangxiao": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 75,
+      "ambition": 60,
+      "wisdom": 93,
+      "faction": "_wandering",
+      "title": "太子少师",
+      "role_label": "黑衣宰相"
+    },
+    "liu_futong": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 90,
+      "ambition": 55,
+      "wisdom": 78,
+      "faction": "ruler_xushou",
+      "title": "宋国丞相",
+      "role_label": "红巾领袖"
+    },
+    "chen_you_ding": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 98,
+      "ambition": 20,
+      "wisdom": 72,
+      "faction": "ruler_yuan",
+      "title": "福建行省平章",
+      "role_label": "闽中忠臣"
+    },
+    "kuo_kuo": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 93,
+      "ambition": 25,
+      "wisdom": 70,
+      "faction": "ruler_wang",
+      "title": "中书平章",
+      "role_label": "漠北骁将"
+    },
+    "dai_shou": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 88,
+      "ambition": 20,
+      "wisdom": 76,
+      "faction": "ruler_ming",
+      "title": "大夏丞相",
+      "role_label": "蜀中辅臣"
+    },
+    "wan_sheng": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 85,
+      "ambition": 30,
+      "wisdom": 68,
+      "faction": "ruler_ming",
+      "title": "大夏司马",
+      "role_label": "蜀中上将"
+    },
+    "zhang_shixin": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 85,
+      "ambition": 70,
+      "wisdom": 55,
+      "faction": "ruler_zhang",
+      "title": "江浙丞相",
+      "role_label": "周国宗室"
+    },
+    "luo_fucheng": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 55,
+      "ambition": 30,
+      "wisdom": 74,
+      "faction": "ruler_chen",
+      "title": "弘文馆学士",
+      "role_label": "汉国外交"
+    },
+    "tao_an": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 88,
+      "ambition": 15,
+      "wisdom": 84,
+      "faction": "ruler_zhuyuan",
+      "title": "翰林学士",
+      "role_label": "开国文臣"
+    },
+    "zhang_zhong": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 85,
+      "ambition": 20,
+      "wisdom": 82,
+      "faction": "ruler_zhuyuan",
+      "title": "御史中丞",
+      "role_label": "浙东四贤"
+    },
+    "wang_guangyang": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 78,
+      "ambition": 30,
+      "wisdom": 80,
+      "faction": "ruler_zhuyuan",
+      "title": "右丞相",
+      "role_label": "宽和宰辅"
+    },
+    "kang_maocai": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 85,
+      "ambition": 25,
+      "wisdom": 78,
+      "faction": "ruler_zhuyuan",
+      "title": "蕲国公",
+      "role_label": "水军都督"
+    },
+    "deng_yu": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 92,
+      "ambition": 20,
+      "wisdom": 72,
+      "faction": "ruler_zhuyuan",
+      "title": "卫国公",
+      "role_label": "开国名将"
+    },
+    "ye_chen": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 88,
+      "ambition": 15,
+      "wisdom": 83,
+      "faction": "ruler_zhuyuan",
+      "title": "洪都知府",
+      "role_label": "浙东四贤"
+    },
+    "zhang_han": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 90,
+      "ambition": 20,
+      "wisdom": 76,
+      "faction": "ruler_yuan",
+      "title": "元廷使者",
+      "role_label": "元廷说客"
+    },
+    "boluo_temur": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 25,
+      "ambition": 90,
+      "wisdom": 50,
+      "faction": "ruler_yuan",
+      "title": "中书右丞相",
+      "role_label": "元廷军阀"
+    },
+    "chen_li": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 70,
+      "ambition": 30,
+      "wisdom": 58,
+      "faction": "ruler_chen",
+      "title": "汉国太子",
+      "role_label": "末代少主"
+    },
+    "peng_yingyu": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 85,
+      "ambition": 35,
+      "wisdom": 82,
+      "faction": "ruler_xushou",
+      "title": "白莲教首",
+      "role_label": "南派红巾"
+    },
+    "zhang_liangbi": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 35,
+      "ambition": 60,
+      "wisdom": 74,
+      "faction": "ruler_wang",
+      "title": "陕西行省平章",
+      "role_label": "关中军阀"
+    },
+    "ma_huanghou": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 98,
+      "ambition": 10,
+      "wisdom": 82,
+      "faction": "ruler_zhuyuan",
+      "title": "吴国夫人",
+      "role_label": "贤内之助"
+    },
+    "feng_guoyong": {
+      "alive": true,
+      "executed": false,
+      "loyalty": 90,
+      "ambition": 20,
+      "wisdom": 88,
+      "faction": "ruler_zhuyuan",
+      "title": "郢国公",
+      "role_label": "定策元勋"
+    }
+  }
+}

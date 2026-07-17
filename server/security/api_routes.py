@@ -34,36 +34,42 @@ _IP_PATTERN = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
 @router.get("/dashboard")
 async def security_dashboard():
     """IOA 安全态势仪表盘"""
-    ioa = get_ioa_engine()
-    detector = get_anomaly_detector()
-    anonymizer = get_anonymizer()
+    try:
+        ioa = get_ioa_engine()
+        detector = get_anomaly_detector()
+        anonymizer = get_anonymizer()
 
-    dashboard = ioa.get_dashboard()
-    anomaly_report = detector.get_report()
-    anonymizer_stats = anonymizer.get_stats()
+        dashboard = ioa.get_dashboard()
+        anomaly_report = detector.get_report()
+        anonymizer_stats = anonymizer.get_stats()
 
-    return ApiResponse.success({
-        "ioa": {
-            "timestamp": dashboard.timestamp,
-            "risk_profile": dashboard.risk_profile.__dict__,
-            "top_threats": dashboard.top_threats,
-            "anomaly_count_1h": dashboard.anomaly_count_1h,
-            "validation_fail_count_1h": dashboard.validation_fail_count_1h,
-            "agent_suspicious_count_1h": dashboard.agent_suspicious_count_1h,
-            "rate_limit_hits_1h": dashboard.rate_limit_hits_1h,
-            "active_sessions": dashboard.active_sessions,
-            "ai_call_stats": dashboard.ai_call_stats,
-            "recommendations": dashboard.recommendations,
-        },
-        "anomaly": {
-            "total_alerts_1h": anomaly_report.total_alerts,
-            "alerts_by_severity": dict(anomaly_report.alerts_by_severity),
-            "alerts_by_type": dict(anomaly_report.alerts_by_type),
-            "top_alerts": anomaly_report.top_alerts[:10],
-            "overall_score": anomaly_report.overall_score,
-        },
-        "anonymizer": anonymizer_stats,
-    })
+        return ApiResponse.success({
+            "ioa": {
+                "timestamp": dashboard.timestamp,
+                "risk_profile": dashboard.risk_profile.__dict__,
+                "top_threats": dashboard.top_threats,
+                "anomaly_count_1h": dashboard.anomaly_count_1h,
+                "validation_fail_count_1h": dashboard.validation_fail_count_1h,
+                "agent_suspicious_count_1h": dashboard.agent_suspicious_count_1h,
+                "rate_limit_hits_1h": dashboard.rate_limit_hits_1h,
+                "active_sessions": dashboard.active_sessions,
+                "ai_call_stats": dashboard.ai_call_stats,
+                "recommendations": dashboard.recommendations,
+            },
+            "anomaly": {
+                "total_alerts_1h": anomaly_report.total_alerts,
+                "alerts_by_severity": dict(anomaly_report.alerts_by_severity),
+                "alerts_by_type": dict(anomaly_report.alerts_by_type),
+                "top_alerts": anomaly_report.top_alerts[:10],
+                "overall_score": anomaly_report.overall_score,
+            },
+            "anonymizer": anonymizer_stats,
+        })
+    except Exception as e:
+        import logging
+        _log = logging.getLogger("yuanmo.security")
+        _log.error(f"安全仪表盘查询失败: {e}", exc_info=True)
+        return ApiResponse.server_error(f"安全仪表盘暂时不可用: {str(e)}")
 
 
 # ============================================================

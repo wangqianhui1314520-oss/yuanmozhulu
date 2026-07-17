@@ -349,8 +349,16 @@ def init_session_manager(project_dir: Path) -> SessionManager:
 
 
 def get_session_manager() -> SessionManager:
-    """获取全局 SessionManager 实例"""
+    """获取全局 SessionManager 实例（自动恢复：uvicorn reload 后重建）"""
     global _session_manager
     if _session_manager is None:
-        raise RuntimeError("SessionManager 未初始化！请先调用 init_session_manager()")
+        # 尝试自动恢复：从当前文件位置推断项目根目录
+        try:
+            _project = Path(__file__).parent.parent
+            _session_manager = SessionManager(_project)
+            logger.warning(f"SessionManager 自动恢复初始化 (project_dir={_project})")
+        except Exception as e:
+            raise RuntimeError(
+                "SessionManager 未初始化！请先调用 init_session_manager()"
+            ) from e
     return _session_manager

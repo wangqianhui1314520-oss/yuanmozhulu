@@ -286,28 +286,41 @@ app.include_router(security_router)
 @app.middleware("http")
 async def session_middleware(request: Request, call_next):
     player_id = request.headers.get("X-Player-ID", "")
-    if player_id:
-        _sm = get_session_manager()
-        await _sm.get_or_create(player_id)
-        from server.session_manager import set_current_session_id
-        set_current_session_id(player_id)
-        # 更新会话活动时间（TTL 计时器）
-        await _sm.touch_session(player_id)
-        # 提取 API Key（从请求头注入，比 POST body 更安全）
-        api_key = request.headers.get("X-API-Key", "")
-        if api_key and api_key.strip():
-            session = _sm.get(player_id)
-            if session and session.api_key != api_key:
-                await _sm.set_player_api_key(player_id, api_key)
-    else:
-        from server.session_manager import set_current_session_id
-        set_current_session_id(None)
     try:
-        response = await call_next(request)
-        return response
-    finally:
-        from server.session_manager import set_current_session_id
-        set_current_session_id(None)
+        if player_id:
+            try:
+                _sm = get_session_manager()
+            except RuntimeError:
+                # SessionManager 未初始化（uvicorn reload 竞态），尝试自动恢复
+                from server.session_manager import init_session_manager
+                from pathlib import Path as _Path
+                _sm = init_session_manager(_Path(__file__).parent.parent)
+            await _sm.get_or_create(player_id)
+            from server.session_manager import set_current_session_id
+            set_current_session_id(player_id)
+            # 更新会话活动时间（TTL 计时器）
+            await _sm.touch_session(player_id)
+            # 提取 API Key（从请求头注入，比 POST body 更安全）
+            api_key = request.headers.get("X-API-Key", "")
+            if api_key and api_key.strip():
+                session = _sm.get(player_id)
+                if session and session.api_key != api_key:
+                    await _sm.set_player_api_key(player_id, api_key)
+        else:
+            from server.session_manager import set_current_session_id
+            set_current_session_id(None)
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            from server.session_manager import set_current_session_id
+            set_current_session_id(None)
+    except RuntimeError as e:
+        logger.error(f"会话中间件异常: {e}")
+        return JSONResponse(
+            status_code=503,
+            content=ApiResponse.server_error("服务正在初始化，请稍后重试")
+        )
 
 # ============================================================
 # 全局异常处理
@@ -6599,16 +6612,20 @@ async def get_march_path(request: dict):
 @app.get("/api/march/neighbors/{tile_id}")
 async def get_attackable_neighbors(tile_id: str, faction_id: str = ""):
     """获取地块周围可攻击的相邻地块"""
-    if not _sess().world_state:
-        return ApiResponse.forbidden("请先开局")
-    from server.core.settle_engine import MarchEngine
-    engine = MarchEngine(_sess().world_state)
-    neighbors = engine.get_attackable_neighbors(tile_id, faction_id)
-    return ApiResponse.success({
-        "tile_id": tile_id,
-        "neighbors": neighbors,
-        "count": len(neighbors),
-    })
+    try:
+        if not _sess().world_state:
+            return ApiResponse.forbidden("请先开局")
+        from server.core.settle_engine import MarchEngine
+        engine = MarchEngine(_sess().world_state)
+        neighbors = engine.get_attackable_neighbors(tile_id, faction_id)
+        return ApiResponse.success({
+            "tile_id": tile_id,
+            "neighbors": neighbors,
+            "count": len(neighbors),
+        })
+    except Exception as e:
+        logger.error(f"行军邻接地块查询失败 [tile={tile_id}, faction={faction_id}]: {e}")
+        return ApiResponse.server_error(f"邻接地块查询失败: {str(e)}")
 
 
 # ============================================================
