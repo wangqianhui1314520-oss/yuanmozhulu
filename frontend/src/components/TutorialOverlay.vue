@@ -4,7 +4,7 @@
     <Transition name="tutorial-fade">
       <div v-if="store.isVisible && store.currentStep" class="tutorial-overlay">
         <!-- 半透明遮罩（挖洞效果） -->
-        <div class="tutorial-backdrop" @click.self="/* 不关闭 */" />
+        <div class="tutorial-backdrop" @click.self.prevent />
 
         <!-- 步骤卡片 -->
         <div
