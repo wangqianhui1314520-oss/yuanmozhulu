@@ -540,20 +540,6 @@
     <TechTreePanel :visible="showTechTree" :faction-id="store.playerFactionId" @close="showTechTree = false" />
     <MuseumPanel :visible="showMuseum" @close="showMuseum = false" />
     <EndingPanel v-if="store.showEnding" />
-    <!-- 回合大事录圣旨弹窗 -->
-    <TurnSummaryScroll
-      :visible="store.showTurnSummary"
-      :year="store.turnSummaryYear"
-      :month="store.turnSummaryMonth"
-      :round="store.turnSummaryRound"
-      :season="store.turnSummarySeason"
-      :narrative="store.turnSummaryNarrative"
-      :minister-name="store.turnSummaryMinister"
-      :minister-title="store.turnSummaryTitle"
-      :loading="store.turnSummaryLoading"
-      :ai-generated="store.turnSummaryAiGenerated"
-      @close="store.closeTurnSummary()"
-    />
     <WarPanel
       :visible="store.showWarPanel"
       @close="store.showWarPanel = false"
@@ -794,7 +780,6 @@ import DiplomacyDeepPanel from '@/components/DiplomacyDeepPanel.vue'
 import HistoryAnchorPanel from '@/components/HistoryAnchorPanel.vue'
 import AIControlPanel from '@/components/AIControlPanel.vue'
 import EndingPanel from '@/components/EndingPanel.vue'
-import TurnSummaryScroll from '@/components/TurnSummaryScroll.vue'
 import TurnTransition from '@/components/TurnTransition.vue'
 import TurnReport from '@/components/TurnReport.vue'
 import WarPanel from '@/components/WarPanel.vue'
@@ -1781,7 +1766,6 @@ function closeAllPanels() {
   store.showWarPanel = false
   store.showPeacePanel = false
   store.showEnding = false
-  store.showTurnSummary = false
   // 关闭事件详情 / 圣旨结果 / 圣旨抽屉
   eventDetail.value = null
   edictResult.value = null

@@ -1150,12 +1150,12 @@ async function clearAllSaves() {
 async function resetGame() {
   if (confirm('确认重置当前对局？未存档的进度将丢失。')) {
     await store.resetGame()
-    router.push({ name: 'home' }).catch(() => {})
+    await router.push({ name: 'home' }).catch(() => {})
     emit('close')
   }
 }
 
-function goHome() {
+async function goHome() {
   // 已在首页：关闭设置面板即可
   if (isOnHomePage.value) {
     emit('close')
@@ -1163,13 +1163,15 @@ function goHome() {
   }
   // 游戏中：提示进度丢失
   if (store.currentRound > 1 && !confirm('返回首页将丢失当前进度，是否继续？')) return
-  // 先导航到首页（组件存活时执行），再关闭设置面板
-  router.push({ name: 'home' }).catch((err: any) => {
+  // 先导航到首页（等待完成），再关闭设置面板（否则组件销毁会中断导航）
+  try {
+    await router.push({ name: 'home' })
+  } catch (err: any) {
     // NavigationDuplicated：已在首页，正常忽略
     if (err?.name !== 'NavigationDuplicated') {
       console.error('返回首页导航失败:', err)
     }
-  })
+  }
   emit('close')
 }
 </script>

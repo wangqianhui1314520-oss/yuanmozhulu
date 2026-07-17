@@ -17,6 +17,7 @@ from server.models.world_state import (
 )
 from server.models.events import BattleEvent, EventType, EventSeverity
 from server.core.building_config import BUILDING_CONFIG
+from server.core.policy_system import PolicyEngine, MORALE_THRESHOLDS
 
 logger = logging.getLogger("yuanmo.settle")
 
@@ -105,7 +106,6 @@ class SettleEngine:
         # ================================================================
         # 3.0 新增：国策效果结算（民心、治安、徭役）
         # ================================================================
-        from server.core.policy_system import PolicyEngine
         self._policy_engine = PolicyEngine(self.world)
         result["policy_effects"] = self._policy_engine.settle_policy_effects()
 
@@ -231,7 +231,6 @@ class SettleEngine:
                 # 3.0: 科技树国策粮产/土地肥力修饰
                 fid = t.faction_id
                 if fid and fid not in _tech_mod_cache:
-                    from server.core.policy_system import PolicyEngine
                     faction_for_mod = self.world.factions.get(fid)
                     _tech_mod_cache[fid] = PolicyEngine.get_tech_policy_modifiers(faction_for_mod) if faction_for_mod else {}
                 tech_mod = _tech_mod_cache.get(fid, {})
@@ -402,7 +401,6 @@ class SettleEngine:
 
         tax = int(base * morale_factor * tile_factor * season_mult)
         # 3.0: 国策/民心税收修正（复用 phase_settle 中创建的引擎实例，避免重复实例化 + 磁盘 I/O）
-        from server.core.policy_system import MORALE_THRESHOLDS, PolicyEngine
         policy_engine = getattr(self, '_policy_engine', None)
         if policy_engine is None:
             policy_engine = PolicyEngine(self.world)
@@ -453,8 +451,7 @@ class SettleEngine:
         tech_mult = 1.0
         faction_obj = self.world.factions.get(tile.faction_id)
         if faction_obj:
-            from server.core.policy_system import PolicyEngine as _pe_grain
-            tech_mod = _pe_grain.get_tech_policy_modifiers(faction_obj)
+            tech_mod = PolicyEngine.get_tech_policy_modifiers(faction_obj)
             if tech_mod.get("garrison_cost_reduction", 0) > 0:
                 tech_mult = 1.0 - tech_mod["garrison_cost_reduction"]
 
@@ -468,7 +465,6 @@ class SettleEngine:
         clinic_bonus = int(tile.clinic * self.const["clinic_plague_reduction"] * tile.population * 0.01)
 
         # 民心≥75: 人口增长额外+5%（文档声明阈值，从 policy_system MORALE_THRESHOLDS 读取）
-        from server.core.policy_system import MORALE_THRESHOLDS
         growth_threshold = MORALE_THRESHOLDS.get("growth_bonus", 75)
         if tile.morale >= growth_threshold:
             base_growth += int(tile.population * 0.05)
@@ -535,7 +531,6 @@ class SettleEngine:
         # 3.0: 科技树国策人口/抗灾/防疫/防洪修正
         faction_obj = self.world.factions.get(tile.faction_id)
         if faction_obj:
-            from server.core.policy_system import PolicyEngine
             tech_mod = PolicyEngine.get_tech_policy_modifiers(faction_obj)
             # 人口增长加成
             if tech_mod.get("population_growth", 0) > 0:

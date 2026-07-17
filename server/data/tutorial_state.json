@@ -1,9 +1,9 @@
 {
   "faction_fangguozhen": {
-    "current_step": "complete",
-    "completed": false,
-    "skipped": false,
-    "step_index": 7,
+    "current_step": "",
+    "completed": true,
+    "skipped": true,
+    "step_index": 8,
     "completed_steps": [
       "faction_select",
       "sandbox_overview",
@@ -13,5 +13,19 @@
       "tech_research",
       "advance_turn"
     ]
+  },
+  "faction_xushouhui": {
+    "current_step": "",
+    "completed": true,
+    "skipped": true,
+    "step_index": 8,
+    "completed_steps": []
+  },
+  "faction_chenyouliang": {
+    "current_step": "",
+    "completed": true,
+    "skipped": true,
+    "step_index": 8,
+    "completed_steps": []
   }
 }

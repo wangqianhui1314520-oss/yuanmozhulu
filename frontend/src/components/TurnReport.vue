@@ -11,7 +11,7 @@
           <div class="tr-cover">
             <div class="tr-cover-line tr-cover-line-top"></div>
             <div class="tr-cover-content">
-              <div class="tr-cover-title">天下事状</div>
+              <div class="tr-cover-title">天下大事录</div>
               <div class="tr-cover-subtitle">
                 至正{{ year }}年·{{ month }}月·{{ seasonName }}季
               </div>

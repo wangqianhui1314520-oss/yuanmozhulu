@@ -87,17 +87,11 @@ export const useGameStore = defineStore('game', () => {
   const endingData = ref<any>(null)
   const gameStatistics = ref<any>(null)
 
-  // ===== 回合大事录（圣旨弹窗）（v4.4 保留兼容，新流程走 TurnReport） =====
-  const showTurnSummary = ref(false)
+  // ===== 回合大事录叙事数据（供 TurnReport 使用） =====
   const turnSummaryLoading = ref(false)
   const turnSummaryNarrative = ref('')
   const turnSummaryMinister = ref('')
   const turnSummaryTitle = ref('')
-  const turnSummaryAiGenerated = ref(false)
-  const turnSummaryRound = ref(0)
-  const turnSummaryYear = ref(0)
-  const turnSummaryMonth = ref(0)
-  const turnSummarySeason = ref('')
 
   // ===== v4.4 回合过渡动画 + 总结报告 =====
   const showTurnTransition = ref(false)
@@ -429,12 +423,7 @@ export const useGameStore = defineStore('game', () => {
         showTurnTransition.value = true
 
         // 同时异步获取 AI 叙事（TurnReport 展示时用）
-        triggerTurnSummary(
-          currentRound.value,
-          currentYear.value,
-          currentMonth.value,
-          currentSeason.value,
-        )
+        triggerTurnSummary(currentRound.value)
       }
 
       return result
@@ -444,32 +433,25 @@ export const useGameStore = defineStore('game', () => {
   }
 
   /**
-   * 触发回合大事录弹窗：先显示加载态，再异步获取 AI 叙事
+   * 触发回合大事录叙事：离线加载态，再异步获取 AI 叙事
    */
-  function triggerTurnSummary(round: number, year: number, month: number, season: string) {
-    turnSummaryRound.value = round
-    turnSummaryYear.value = year
-    turnSummaryMonth.value = month
-    turnSummarySeason.value = String(season)
+  function triggerTurnSummary(round: number) {
     turnSummaryNarrative.value = ''
     turnSummaryMinister.value = ''
     turnSummaryTitle.value = ''
-    turnSummaryAiGenerated.value = false
     turnSummaryLoading.value = true
-    showTurnSummary.value = true
 
     // 异步获取 AI 叙事（不阻塞 UI）
     _fetchTurnNarrative(round)
   }
 
-  async function _fetchTurnNarrative(round: number) {
+    async function _fetchTurnNarrative(round: number) {
     try {
       const result = await API.fetchTurnNarrative(round)
       if (result) {
         turnSummaryNarrative.value = result.narrative || ''
         turnSummaryMinister.value = result.minister_name || ''
         turnSummaryTitle.value = result.minister_title || ''
-        turnSummaryAiGenerated.value = result.ai_generated || false
       }
     } catch (e) {
       console.warn('[回合大事录] AI 叙事获取失败，使用降级文本:', e)
@@ -479,11 +461,6 @@ export const useGameStore = defineStore('game', () => {
     } finally {
       turnSummaryLoading.value = false
     }
-  }
-
-  function closeTurnSummary() {
-    showTurnSummary.value = false
-    turnSummaryLoading.value = false
   }
 
   /** 过渡动画结束后 → 显示总结报告 */
@@ -1720,8 +1697,6 @@ export const useGameStore = defineStore('game', () => {
     turnSummaryLoading.value = false
     turnSummaryNarrative.value = ''
     turnSummaryTitle.value = ''
-    turnSummaryAiGenerated.value = false
-    showTurnSummary.value = false
     activeRoutes.value = []
     // 图层数据重置
     fogVisibleTileIds.value = new Set<string>()
@@ -1758,11 +1733,9 @@ export const useGameStore = defineStore('game', () => {
     disasterIndex, activeDisasters,
     // 结局
     showEnding, endingData, gameStatistics,
-    // 回合大事录（旧，保留兼容）
-    showTurnSummary, turnSummaryLoading, turnSummaryNarrative,
-    turnSummaryMinister, turnSummaryTitle, turnSummaryAiGenerated,
-    turnSummaryRound, turnSummaryYear, turnSummaryMonth, turnSummarySeason,
-    closeTurnSummary,
+    // 回合大事录叙事数据（TurnReport 使用）
+    turnSummaryLoading, turnSummaryNarrative,
+    turnSummaryMinister, turnSummaryTitle,
     // v4.4: 回合过渡动画 + 总结报告
     showTurnTransition, showTurnReport,
     lastSnapshot, lastBattleEvents, lastOtherEvents, lastTileChanges,
