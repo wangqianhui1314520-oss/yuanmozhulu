@@ -1,0 +1,17 @@
+{
+  "faction_fangguozhen": {
+    "current_step": "complete",
+    "completed": false,
+    "skipped": false,
+    "step_index": 7,
+    "completed_steps": [
+      "faction_select",
+      "sandbox_overview",
+      "issue_edict",
+      "military_action",
+      "diplomacy",
+      "tech_research",
+      "advance_turn"
+    ]
+  }
+}
